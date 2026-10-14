@@ -365,6 +365,7 @@ input[type=range]{accent-color:var(--cream)}
     <label class="toggle"><span>Następna tura po wyjęciu lotek</span><input type="checkbox" id="opt-auto" checked></label>
     <label class="toggle"><span>Blokuj ekspozycję i ostrość aparatu</span><input type="checkbox" id="opt-lock"></label>
     <label class="toggle"><span>Pokaż, co widzi wykrywanie (różowe)</span><input type="checkbox" id="opt-mask"></label>
+    <label class="toggle"><span>Pokaż diagnostykę (liczby na obrazie)</span><input type="checkbox" id="opt-diag"></label>
     <div class="field">
       <span class="lab">Korekta grota (uczy się z Twoich poprawek): <b id="opt-off" class="num">0 mm</b></span>
       <div class="btn-row"><button id="opt-off-reset" class="btn">Wyzeruj korektę</button><button id="opt-voice-test" class="btn">Test głosu</button></div>
@@ -586,31 +587,41 @@ input[type=range]{accent-color:var(--cream)}
   // Blurred colour difference between two frames inside the ROI. Returns Uint16Array.
   // With `shadows` on, pixels that only got darker by the same factor in R, G and B
   // (a cast shadow keeps the surface colour) are ignored.
-  function diffMap(ref, cur, w, h, roi, out, tmp, shadows) {
+  function diffMap(ref, cur, w, h, roi, out, tmp, shadows, jitter, seedOut, seedTmp) {
     const n = w * h;
     out = out && out.length === n ? out : new Uint16Array(n);
     tmp = tmp && tmp.length === n ? tmp : new Uint16Array(n);
+    const J = jitter ? (seedTmp && seedTmp.length === n ? seedTmp : new Uint16Array(n)) : null;
     const mr = meanLum(ref, roi.sample), mc = meanLum(cur, roi.sample);
     let g = mc > 1 ? mr / mc : 1;
     g = Math.max(0.6, Math.min(1.6, g));
     const mask = roi.mask;
     for (let i = 0, j = 0; i < n; i++, j += 4) {
-      if (!mask[i]) { tmp[i] = 0; continue; }
+      if (!mask[i]) { tmp[i] = 0; if (J) J[i] = 0; continue; }
       const cr = cur[j] * g, cg = cur[j + 1] * g, cb = cur[j + 2] * g;
       const dr = ref[j] - cr, dg = ref[j + 1] - cg, db = ref[j + 2] - cb;
       if (shadows && dr > 0 && dg > 0 && db > 0) {
         const kr = (cr + 2) / (ref[j] + 2), kg = (cg + 2) / (ref[j + 1] + 2), kb = (cb + 2) / (ref[j + 2] + 2);
         const kmax = Math.max(kr, kg, kb), kmin = Math.min(kr, kg, kb);
-        if (kmin > 0.3 && kmax < 0.96 && (kmax - kmin) < 0.13 * (kmax + kmin) * 0.5) { tmp[i] = 0; continue; }
+        if (kmin > 0.3 && kmax < 0.96 && (kmax - kmin) < 0.13 * (kmax + kmin) * 0.5) { tmp[i] = 0; if (J) J[i] = 0; continue; }
       }
-      tmp[i] = (dr < 0 ? -dr : dr) + (dg < 0 ? -dg : dg) + (db < 0 ? -db : db);
+      const exact = (dr < 0 ? -dr : dr) + (dg < 0 ? -dg : dg) + (db < 0 ? -db : db);
+      let best = exact;
+      if (J && best > 0) {
+        // Phone stabilisation shifts the picture by up to a pixel: a pixel only counts as changed
+        // when its colour lies outside the range of the 3x3 reference neighbourhood.
+        const x = i % w, y = (i - x) / w;
+        if (x > 0 && y > 0 && x < w - 1 && y < h - 1) best = envelopeDist(ref, j, w, cr, cg, cb);
+      }
+      tmp[i] = exact;
+      if (J) J[i] = best;
     }
-    // Noise level: median raw difference over a sparse sample of the ROI.
+    // Noise level: median raw difference over a sparse sample of the ROI (jitter-tolerant when on).
     const hist = new Uint32Array(768);
     const smp = roi.sample;
     for (let k = 0; k < smp.length; k++) hist[Math.min(767, tmp[smp[k]])]++;
     let acc = 0, noise = 0;
-    for (let v = 0; v < 768; v++) { acc += hist[v]; if (acc * 2 >= smp.length) { noise = v; break; } }
+    for (let v = 0; v < 768; v++) { acc += hist[v]; if (acc * 4 >= smp.length) { noise = Math.round(v * 1.6); break; } }
     // 3x3 box blur (horizontal then vertical)
     for (let y = 0; y < h; y++) {
       const o = y * w;
@@ -622,7 +633,21 @@ input[type=range]{accent-color:var(--cream)}
       const o = y * w;
       for (let x = 0; x < w; x++) tmp[o + x] = (out[o + x - w] + out[o + x] + out[o + x + w]) / 9;
     }
-    return { map: tmp, scratch: out, gain: g, noise };
+    let seed = null;
+    if (J) {
+      // blur the jitter-tolerant map the same way (reuse out as scratch, result into seedOut)
+      seedOut = seedOut && seedOut.length === n ? seedOut : new Uint16Array(n);
+      const S2 = seedOut;
+      for (let y = 0; y < h; y++) {
+        const o = y * w;
+        out[o] = J[o]; out[o + w - 1] = J[o + w - 1];
+        for (let x = 1; x < w - 1; x++) out[o + x] = J[o + x - 1] + J[o + x] + J[o + x + 1];
+      }
+      for (let x = 0; x < w; x++) { S2[x] = out[x] / 3; S2[(h - 1) * w + x] = out[(h - 1) * w + x] / 3; }
+      for (let y = 1; y < h - 1; y++) { const o = y * w; for (let x = 0; x < w; x++) S2[o + x] = (out[o + x - w] + out[o + x] + out[o + x + w]) / 9; }
+      seed = S2;
+    }
+    return { map: tmp, scratch: out, gain: g, noise, seed, seedTmp: J };
   }
 
   function thresholdMap(map, thr, mask) {
@@ -647,6 +672,172 @@ input[type=range]{accent-color:var(--cream)}
       }
     }
     return c * 4;
+  }
+
+  // Distance of colour (cr,cg,cb) from the per-channel min/max range of the 3x3 neighbourhood
+  // around byte offset j in img (RGBA, row width w).
+  function envelopeDist(img, j, w, cr, cg, cb) {
+    let d = 0;
+    for (let c = 0; c < 3; c++) {
+      let lo = 255, hi = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        const o = j + dy * w * 4 + c;
+        const v0 = img[o - 4], v1 = img[o], v2 = img[o + 4];
+        if (v0 < lo) lo = v0; if (v0 > hi) hi = v0;
+        if (v1 < lo) lo = v1; if (v1 > hi) hi = v1;
+        if (v2 < lo) lo = v2; if (v2 > hi) hi = v2;
+      }
+      const v = c === 0 ? cr : c === 1 ? cg : cb;
+      if (v < lo) d += lo - v; else if (v > hi) d += v - hi;
+    }
+    return d;
+  }
+
+  // Global sub-pixel shift between two frames (phone stabilisation), Lucas–Kanade on
+  // half-resolution grey levels inside the ROI, ignoring pixels that really changed.
+  // Returns [sx, sy] in full-resolution pixels such that a(x+sx, y+sy) ~ b(x, y).
+  function estimateShift(a, b, w, h, maskH) {
+    const hw = w >> 1, hh = h >> 1, n = hw * hh;
+    const ga = new Float32Array(n), gb = new Float32Array(n);
+    for (let y = 0; y < hh; y++) for (let x = 0; x < hw; x++) {
+      const p = ((2 * y) * w + 2 * x) * 4, q = p + w * 4, o = y * hw + x;
+      ga[o] = (a[p] + a[p + 4] + a[q] + a[q + 4]) * 0.0833 + (a[p + 1] + a[p + 5] + a[q + 1] + a[q + 5]) * 0.1667;
+      gb[o] = (b[p] + b[p + 4] + b[q] + b[q + 4]) * 0.0833 + (b[p + 1] + b[p + 5] + b[q + 1] + b[q + 5]) * 0.1667;
+    }
+    let sx = 0, sy = 0, cut = 1e9;
+    const samp = (x, y) => {
+      const x0 = Math.floor(x), y0 = Math.floor(y), fx = x - x0, fy = y - y0, o = y0 * hw + x0;
+      return ga[o] * (1 - fx) * (1 - fy) + ga[o + 1] * fx * (1 - fy) + ga[o + hw] * (1 - fx) * fy + ga[o + hw + 1] * fx * fy;
+    };
+    for (let it = 0; it < 5; it++) {
+      let a11 = 0, a12 = 0, a22 = 0, b1 = 0, b2 = 0;
+      const its = [];
+      for (let y = 3; y < hh - 3; y += 1) for (let x = 3; x < hw - 3; x += 1) {
+        const o = y * hw + x;
+        if (!maskH[o]) continue;
+        const X = x + sx, Y = y + sy;
+        const c = samp(X, Y), ix = (samp(X + 1, Y) - samp(X - 1, Y)) * 0.5, iy = (samp(X, Y + 1) - samp(X, Y - 1)) * 0.5;
+        const et = gb[o] - c;
+        if (Math.abs(et) > cut) continue;
+        if (it === 0 && ((x + y) & 7) === 0) its.push(Math.abs(et));
+        a11 += ix * ix; a12 += ix * iy; a22 += iy * iy; b1 += ix * et; b2 += iy * et;
+      }
+      if (it === 0 && its.length) { its.sort((p, q) => p - q); cut = Math.max(6, 4 * its[its.length >> 1]); }
+      const det = a11 * a22 - a12 * a12;
+      if (det < 1e-6) break;
+      const dx = (a22 * b1 - a12 * b2) / det, dy = (a11 * b2 - a12 * b1) / det;
+      sx += dx; sy += dy;
+      if (Math.abs(sx) > 2.5 || Math.abs(sy) > 2.5) { sx = Math.max(-2.5, Math.min(2.5, sx)); sy = Math.max(-2.5, Math.min(2.5, sy)); }
+      if (Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) break;
+    }
+    return [2 * sx, 2 * sy];
+  }
+
+  // Bilinear shift of an RGBA frame: out(x,y) = src(x+sx, y+sy).
+  function shiftRGBA(src, w, h, sx, sy, out) {
+    out = out && out.length === src.length ? out : new Uint8ClampedArray(src.length);
+    const ix = Math.floor(sx), iy = Math.floor(sy), fx = sx - ix, fy = sy - iy;
+    const w00 = (1 - fx) * (1 - fy), w10 = fx * (1 - fy), w01 = (1 - fx) * fy, w11 = fx * fy;
+    for (let y = 0; y < h; y++) {
+      const y0 = Math.min(h - 1, Math.max(0, y + iy)), y1 = Math.min(h - 1, Math.max(0, y + iy + 1));
+      for (let x = 0; x < w; x++) {
+        const x0 = Math.min(w - 1, Math.max(0, x + ix)), x1 = Math.min(w - 1, Math.max(0, x + ix + 1));
+        const p00 = (y0 * w + x0) * 4, p10 = (y0 * w + x1) * 4, p01 = (y1 * w + x0) * 4, p11 = (y1 * w + x1) * 4, o = (y * w + x) * 4;
+        out[o] = src[p00] * w00 + src[p10] * w10 + src[p01] * w01 + src[p11] * w11;
+        out[o + 1] = src[p00 + 1] * w00 + src[p10 + 1] * w10 + src[p01 + 1] * w01 + src[p11 + 1] * w11;
+        out[o + 2] = src[p00 + 2] * w00 + src[p10 + 2] * w10 + src[p01 + 2] * w01 + src[p11 + 2] * w11;
+        out[o + 3] = 255;
+      }
+    }
+    return out;
+  }
+
+  // Half-resolution copy (2x2 average), RGBA.
+  function halfRes(img, w, h, out) {
+    const hw = w >> 1, hh = h >> 1;
+    out = out && out.length === hw * hh * 4 ? out : new Uint8ClampedArray(hw * hh * 4);
+    for (let y = 0; y < hh; y++) for (let x = 0; x < hw; x++) {
+      const a = ((2 * y) * w + 2 * x) * 4, b = a + w * 4, o = (y * hw + x) * 4;
+      out[o] = (img[a] + img[a + 4] + img[b] + img[b + 4]) >> 2;
+      out[o + 1] = (img[a + 1] + img[a + 5] + img[b + 1] + img[b + 5]) >> 2;
+      out[o + 2] = (img[a + 2] + img[a + 6] + img[b + 2] + img[b + 6]) >> 2;
+      out[o + 3] = 255;
+    }
+    return out;
+  }
+
+  // Motion between consecutive frames: on half-resolution copies, a pixel moves only when its
+  // colour leaves the range of its 3x3 neighbourhood in the previous frame (tolerates the
+  // sub-pixel shifts of phone stabilisation), after exposure compensation; the threshold
+  // rises with the camera's own noise. a, b are half-res RGBA; maskH is the half-res ROI.
+  // Changes are also counted per BxB block: a landing dart concentrates them in one place,
+  // camera jitter spreads a few along every edge; `top` is the busiest block.
+  function motionMeasureHalf(a, b, hw, hh, maskH, sample, thr, buf, B) {
+    const ma = meanLum(a, sample), mb = meanLum(b, sample);
+    const g = mb > 1 ? Math.max(0.7, Math.min(1.4, ma / mb)) : 1;
+    const hist = new Uint32Array(768);
+    let n = 0;
+    for (let y = 1; y < hh - 1; y++) {
+      for (let x = 1; x < hw - 1; x++) {
+        const i = y * hw + x;
+        if (!maskH[i]) { buf[i] = 0; continue; }
+        const j = i * 4;
+        let d = envelopeDist(a, j, hw, b[j] * g, b[j + 1] * g, b[j + 2] * g);
+        d = d > 767 ? 767 : d | 0;
+        buf[i] = d; hist[d]++; n++;
+      }
+    }
+    // noise from the lower quartile: when a hand leaves the frame most pixels change at once,
+    // and a median would mistake that change for noise
+    let acc = 0, med = 0;
+    for (let v = 0; v < 768; v++) { acc += hist[v]; if (acc * 4 >= n) { med = v; break; } }
+    const T = Math.max(thr * 0.6, 6 * med, 20);
+    let big = 0;
+    for (let v = Math.ceil(thr * 0.6); v < 768; v++) big += hist[v];
+    B = B || 16;
+    const nbx = Math.ceil(hw / B), nby = Math.ceil(hh / B), cnt = new Uint32Array(nbx * nby);
+    let c = 0;
+    for (let y = 1; y < hh - 1; y++) for (let x = 1; x < hw - 1; x++) {
+      const i = y * hw + x;
+      if (maskH[i] && buf[i] > T) { c++; cnt[((y / B) | 0) * nbx + ((x / B) | 0)]++; }
+    }
+    let top = 0;
+    for (let k = 0; k < cnt.length; k++) if (cnt[k] > top) top = cnt[k];
+    if (n && big > 0.12 * n) top = Math.max(top, B * B); // large change = motion, whatever the noise
+    return { count: c * 4, top, thr: T, median: med };
+  }
+
+  // Motion between consecutive frames on a 2x2 grid, tolerant to 1-pixel jitter and to
+  // exposure changes; the threshold rises with the camera's own noise.
+  function motionMeasure(a, b, w, h, roi, thr, buf) {
+    const m = roi.mask;
+    const ma = meanLum(a, roi.sample), mb = meanLum(b, roi.sample);
+    const g = mb > 1 ? Math.max(0.7, Math.min(1.4, ma / mb)) : 1;
+    const hist = new Uint32Array(768);
+    let n = 0;
+    for (let y = 1; y < h - 1; y += 2) {
+      for (let x = 1; x < w - 1; x += 2) {
+        const i = y * w + x;
+        if (!m[i]) continue;
+        const j = i * 4;
+        const br = b[j] * g, bg = b[j + 1] * g, bb = b[j + 2] * g;
+        let best = Math.abs(a[j] - br) + Math.abs(a[j + 1] - bg) + Math.abs(a[j + 2] - bb);
+        for (let dy = -1; dy <= 1 && best > 0; dy++) for (let dx = -1; dx <= 1; dx++) {
+          if (!dx && !dy) continue;
+          const k = j + (dy * w + dx) * 4;
+          const e = Math.abs(a[k] - br) + Math.abs(a[k + 1] - bg) + Math.abs(a[k + 2] - bb);
+          if (e < best) best = e;
+        }
+        const v = best > 767 ? 767 : best | 0;
+        buf[n++] = v; hist[v]++;
+      }
+    }
+    let acc = 0, med = 0;
+    for (let v = 0; v < 768; v++) { acc += hist[v]; if (acc * 2 >= n) { med = v; break; } }
+    const T = Math.max(thr * 0.75, 5 * med, 24);
+    let c = 0;
+    for (let k = 0; k < n; k++) if (buf[k] > T) c++;
+    return { count: c * 4, thr: T, median: med };
   }
 
   // 8-connected components. Returns labels (root ids) and stats per root.
@@ -720,7 +911,19 @@ input[type=range]{accent-color:var(--cream)}
      opts: { nearDir:[x,y], minComp, minDartArea, gap, occ (Uint8Array|null) } */
   function findDart(mask, w, h, opts, cc) {
     cc = cc || components(mask, w, h);
-    const comps = cc.comps.filter(c => c.area >= opts.minComp);
+    let comps = cc.comps.filter(c => c.area >= opts.minComp);
+    if (opts.seed && comps.length) {
+      // keep components with real change; thin lines from 1-px camera shifts have almost none
+      const sup = new Map();
+      for (const c of comps) sup.set(c.id, 0);
+      const L0 = cc.labels, sd = opts.seed, T = opts.seedThr;
+      for (const c of comps) {
+        let k = 0;
+        for (let y = c.miny; y <= c.maxy; y++) for (let x = c.minx; x <= c.maxx; x++) { const i = y * w + x; if (L0[i] === c.id && sd[i] > T) k++; }
+        sup.set(c.id, k);
+      }
+      comps = comps.filter(c => sup.get(c.id) >= 0.25 * c.area);
+    }
     if (!comps.length) return null;
     const main = comps[0];
     // Candidate pieces near the biggest change: a dart often splits into flight, shaft and
@@ -960,16 +1163,28 @@ input[type=range]{accent-color:var(--cream)}
     this.settleMs = cfg.settleMs || 380;
     this.offsetMm = cfg.offsetMm || 0;
     this.shadows = cfg.shadows !== false;
+    this.jitter = cfg.jitter !== false;
+    this.align = cfg.align !== false;
+    this.mbuf = new Uint16Array((cfg.w >> 1) * (cfg.h >> 1) + 16);
+    this.prevHalf = null; this.curHalf = null;
+    this.diag = { mv: 0, mvThr: 0, moving: false, A: 0, result: 'start', at: 0, frames: 0 };
     this.useBarrel = cfg.barrel !== false;
     this.pointMin = cfg.pointMin != null ? cfg.pointMin : 14;
     this.pointK = cfg.pointK != null ? cfg.pointK : 3.2;
     this.ppm = localScale(this.Hp, 0, 0);
+    this.blockB = Math.max(8, Math.round(15 * this.ppm));          // ~30 mm blocks at half resolution
+    this.blockLimit = Math.max(6, Math.round(0.08 * this.blockB * this.blockB));
     const a = this.ppm * this.ppm;
     this.lim = {
       minComp: Math.max(4, 4 * a), minDartArea: Math.max(30, 110 * a), maxDartArea: 9000 * a,
       noise: Math.max(10, 25 * a), clean: Math.max(40, 90 * a), motion: Math.max(24, 30 * a), gap: 24 * this.ppm
     };
     this.roi = buildRoi(this.Hpi, this.w, this.h, 300);
+    {
+      const hw = this.w >> 1, hh = this.h >> 1, mh = new Uint8Array(hw * hh), smp = [];
+      for (let y = 0; y < hh; y++) for (let x = 0; x < hw; x++) if (this.roi.mask[(2 * y) * this.w + 2 * x]) { mh[y * hw + x] = 1; if (!(x & 1) && !(y & 1)) smp.push(y * hw + x); }
+      this.roiHalf = mh; this.roiHalfSample = Int32Array.from(smp);
+    }
     const n = this.w * this.h;
     this.ref = null; this.turnRef = null; this.prev = null;
     this.buf1 = new Uint16Array(n); this.buf2 = new Uint16Array(n);
@@ -984,6 +1199,7 @@ input[type=range]{accent-color:var(--cream)}
     this.ref = Uint8ClampedArray.from(frame);
     this.turnRef = Uint8ClampedArray.from(frame);
     this.prev = Uint8ClampedArray.from(frame);
+    this.prevHalf = halfRes(frame, this.w, this.h, null);
     this.occ.fill(0); this.dartsInTurn = 0; this.turnFull = false; this.blockedSince = 0; this.moving = false; this.sawBlock = false;
   };
   // Accept the current picture as the new reference without starting a new turn
@@ -994,18 +1210,30 @@ input[type=range]{accent-color:var(--cream)}
     this.dartsInTurn = Math.max(this.dartsInTurn, 1);
   };
   Detector.prototype.changeCount = function (a, b) {
-    const d = diffMap(a, b, this.w, this.h, this.roi, this.buf1, this.buf2, this.shadows);
+    const d = diffMap(a, b, this.w, this.h, this.roi, this.buf1, this.buf2, this.shadows, this.jitter, this.seedBuf, this.seedTmp);
     this.buf1 = d.scratch; this.buf2 = d.map;
+    if (d.seed) { this.seedBuf = d.seed; this.seedTmp = d.seedTmp; }
     this.lastGain = d.gain;
     this.noise = d.noise;
-    return thresholdMap(d.map, Math.max(this.thr, 2.2 * d.noise), this.mask);
+    const T = Math.max(this.thr, 2.2 * d.noise);
+    const r = thresholdMap(d.map, T, this.mask);
+    // Area that is still changed when 1-px camera shifts are forgiven: used for decisions.
+    let robust = r.count;
+    if (d.seed) { robust = 0; const sd = d.seed; for (let i = 0; i < sd.length; i++) if (sd[i] > T) robust++; }
+    r.robust = robust; r.seed = d.seed; r.T = T;
+    return r;
   };
   Detector.prototype.step = function (frame, now) {
     if (!this.ref) { this.reset(frame); this.lastCheck = now; return []; }
     const ev = [];
-    const mv = quickChange(this.prev, frame, this.w, this.h, this.roi, this.thr);
+    this.curHalf = halfRes(frame, this.w, this.h, this.curHalf);
+    if (!this.prevHalf) this.prevHalf = Uint8ClampedArray.from(this.curHalf);
+    const M = motionMeasureHalf(this.prevHalf, this.curHalf, this.w >> 1, this.h >> 1, this.roiHalf, this.roiHalfSample, this.thr, this.mbuf, this.blockB);
+    this.prevHalf.set(this.curHalf);
     this.prev.set(frame);
-    if (mv > this.lim.motion) {
+    this.diag.mv = M.top; this.diag.mvLimit = this.blockLimit; this.diag.mvThr = M.thr; this.diag.mvMed = M.median;
+    this.diag.moving = this.moving; this.diag.frames++;
+    if (M.top > this.blockLimit) {
       if (!this.moving) { ev.push({ type: 'motion' }); this.motionStart = now; }
       this.moving = true; this.lastMotion = now;
       return ev;
@@ -1014,26 +1242,40 @@ input[type=range]{accent-color:var(--cream)}
       this.moving = false; this.lastCheck = now;
       // A thrown dart makes a short burst of motion; a person at the board makes a long one.
       const long = (this.lastMotion - this.motionStart) > this.personMs || this.sawBlock;
-      return ev.concat(this.analyze(frame, now, false, long));
+      const out = this.analyze(frame, now, false, long);
+      this.diag.at = now; this.diag.result = out.length ? out[0].type : 'nothing';
+      if (!out.length) out.push({ type: 'quiet' });
+      return ev.concat(out);
     }
-    if (!this.moving && now - this.lastCheck > 1500) {
+    if (!this.moving && now - this.lastCheck > 1800) {
       this.lastCheck = now;
       return ev.concat(this.analyze(frame, now, true));
     }
     return ev;
   };
+  // Reference aligned to the current frame (undoes stabilisation shifts).
+  Detector.prototype.aligned = function (src, frame, slot) {
+    if (!this.align) return src;
+    const sh = estimateShift(src, frame, this.w, this.h, this.roiHalf);
+    this.diag.shift = sh;
+    if (Math.hypot(sh[0], sh[1]) < 0.12) return src;
+    this[slot] = shiftRGBA(src, this.w, this.h, sh[0], sh[1], this[slot]);
+    return this[slot];
+  };
   Detector.prototype.analyze = function (frame, now, quiet, long) {
     // 1. Darts pulled out? Compare with the board as it was at the start of the turn.
     if (this.dartsInTurn > 0 || this.turnFull) {
-      const c0 = this.changeCount(this.turnRef, frame).count;
+      const c0 = this.changeCount(this.aligned(this.turnRef, frame, 'alignT'), frame).robust;
       if (c0 < this.lim.clean) {
         this.reset(frame);
         return [{ type: 'takeout' }];
       }
     }
-    const th = this.changeCount(this.ref, frame);
+    const refA = this.aligned(this.ref, frame, 'alignR');
+    const th = this.changeCount(refA, frame);
     this.lastMask = th.mask;
-    const A = th.count;
+    const A = th.robust;
+    this.diag.A = A; this.diag.noise = this.noise;
     if (A < this.lim.noise) {
       if (quiet) { this.ref.set(frame); if (this.dartsInTurn === 0) this.turnRef.set(frame); }
       this.blockedSince = 0;
@@ -1057,19 +1299,20 @@ input[type=range]{accent-color:var(--cream)}
     this.labels = cc.labels;
     const det = findDart(th.mask, this.w, this.h, {
       nearDir: this.nearDir, minComp: this.lim.minComp, minDartArea: this.lim.minDartArea,
-      gap: this.lim.gap, occ: this.dartsInTurn ? this.occ : null, weights: this.useBarrel ? this.buf2 : null
+      gap: this.lim.gap, occ: this.dartsInTurn ? this.occ : null, weights: this.useBarrel ? this.buf2 : null,
+      seed: th.seed, seedThr: th.T
     }, cc);
     if (!det) return [];
     if (this.dartsInTurn > 0) {
-      const toStart = regionDiff(frame, this.turnRef, det.pixels);
-      const toRef = regionDiff(frame, this.ref, det.pixels);
+      const toStart = regionDiff(frame, this.aligned(this.turnRef, frame, 'alignT'), det.pixels);
+      const toRef = regionDiff(frame, refA, det.pixels);
       if (toStart < 0.45 * toRef) { this.ref.set(frame); return [{ type: 'removed' }]; }
     }
     // Follow the thin steel point beyond the barrel.
     const gain = this.lastGain || 1;
     const bt = applyH(this.Hpi, det.tip[0], det.tip[1]);
     const maxLen = Math.round(30 * localScale(this.Hp, bt[0], bt[1]));
-    const xt = extendTip(this.ref, frame, this.w, this.h, gain, det.tip, det.axis, maxLen, Math.max(this.pointMin, this.pointK * (this.noise || 0)));
+    const xt = extendTip(refA, frame, this.w, this.h, gain, det.tip, det.axis, maxLen, Math.max(this.pointMin, this.pointK * (this.noise || 0)));
     det.barrelTip = det.tip.slice();
     det.ext = xt.ext;
     det.tip = xt.end;
@@ -1539,7 +1782,7 @@ input[type=range]{accent-color:var(--cream)}
     SECTORS, RING, CAL_ANGLES, CAL_LABELS, calBoardPoints,
     makeDart, scoreAt, wireDistance,
     homography, applyH, invertH, mulH, localScale, makeCalibration, boardOutline,
-    buildRoi, meanLum, diffMap, thresholdMap, quickChange, components, findDart, extendTip, regionDiff, markOcclusion, Detector,
+    buildRoi, meanLum, diffMap, thresholdMap, quickChange, motionMeasure, motionMeasureHalf, halfRes, estimateShift, shiftRGBA, components, findDart, extendTip, regionDiff, markOcclusion, Detector,
     autoCalibrate, classifyColors,
     evalTurn, createGame, remainingOf, currentView, turnOpen, addDart, setDart, removeDart, commitTurn, undo, playerStats,
     checkout, sayDart
@@ -1563,7 +1806,7 @@ const S = {
   pts: null, cal: null, sel: 0,
   proc: null, det: null, frameData: null, resetPending: false, rebasePending: false,
   mode: 'intro', manual: false, camHidden: false,
-  settings: Object.assign({ thr: 60, shadows: true, autoNext: true, voice: true, mask: false, lock: false }, store.get('settings', {})),
+  settings: Object.assign({ thr: 60, shadows: true, autoNext: true, voice: true, mask: false, lock: false, diag: false }, store.get('settings', {})),
   offset: Object.assign({ mm: 0, samples: [] }, store.get('offset', {})),
   game: null, status: 'idle', blockedShown: false, lastProc: 0, maskImg: null, maskCanvas: null
 };
@@ -1897,7 +2140,14 @@ function processFrame(now) {
     return;
   }
   S.det.turnFull = !C.turnOpen(S.game);
+  S.fps = S.lastFrameAt ? 0.85 * (S.fps || 10) + 0.15 * (1000 / Math.max(1, now - S.lastFrameAt)) : 10;
+  S.lastFrameAt = now;
   const evs = S.det.step(data, now);
+  // The picture keeps changing for a long time with nobody at the board: tell the player.
+  if (S.det.moving && now - S.det.motionStart > 8000 && !S.blockedShown) {
+    $('#stage-msg-t').textContent = 'Obraz ciągle się zmienia. Postaw telefon nieruchomo (statyw albo oparcie) i sprawdź, czy w kadrze nic nie miga ani się nie rusza.';
+    showStageMsg();
+  }
   for (const e of evs) handleEvent(e);
   if (S.settings.mask && S.det.lastMask && evs.length) paintMask();
 }
@@ -1922,10 +2172,11 @@ function handleEvent(e) {
   }
   if (e.type === 'blocked') {
     setStatus('blocked');
-    if (e.ms > 2500 && !S.blockedShown) showStageMsg();
+    if (e.ms > 2500 && !S.blockedShown) { $('#stage-msg-t').textContent = 'Coś zasłania tarczę albo telefon się poruszył.'; showStageMsg(); }
     return;
   }
   if (e.type === 'ignored') { setStatus('pull'); return; }
+  if (e.type === 'quiet') { if (S.status === 'motion') setStatus(S.game.winner != null ? 'win' : (C.turnOpen(S.game) ? 'ready' : 'pull')); return; }
   if (e.type === 'removed' || e.type === 'rebased') { hideStageMsg(); setStatus(S.game.winner != null ? 'win' : (C.turnOpen(S.game) ? 'ready' : 'pull')); }
 }
 
@@ -2113,6 +2364,7 @@ function drawOverlay() {
       ctx.globalAlpha = 0.85; ctx.drawImage(S.maskCanvas, a[0], a[1], P.w * m.scale, P.h * m.scale); ctx.globalAlpha = 1;
     }
     drawBoard(ctx, S.cal.H, m.v2s, { color: 'rgba(255,240,200,.28)', width: 1 });
+    if (S.settings.diag && S.det) drawDiag(ctx);
     S.game.cur.darts.forEach((d, i) => {
       if (!d.tip) return;
       const s = m.v2s(d.tip);
@@ -2125,6 +2377,26 @@ function drawOverlay() {
       ctx.fillStyle = '#fff'; ctx.fillText(t, s[0] + 11, s[1]);
     });
   }
+}
+
+const RESULT_PL = { dart: 'lotka', quiet: 'brak lotki', nothing: 'brak zmian', blocked: 'zasłonięte', takeout: 'wyjęcie lotek', rebased: 'nowe tło (ktoś przy tarczy)', removed: 'lotka wyjęta', ignored: 'tura pełna', start: '—' };
+function drawDiag(ctx) {
+  const d = S.det.diag, P = S.proc;
+  const sh = d.shift ? d.shift.map(v => v.toFixed(1)).join(', ') : '0, 0';
+  const lines = [
+    'Ruch: ' + d.mv + ' / ' + d.mvLimit + (S.det.moving ? '  (RUCH ' + ((performance.now() - S.det.motionStart) / 1000).toFixed(1) + ' s)' : '  (spokój)'),
+    'Zmiana: ' + (d.A || 0) + ' px  (lotka ' + Math.round(S.det.lim.minDartArea) + '–' + Math.round(S.det.lim.maxDartArea) + ')',
+    'Szum: ' + (d.noise != null ? d.noise : '–') + '   próg ruchu: ' + Math.round(d.mvThr || 0) + '   przesunięcie: ' + sh + ' px',
+    'Wynik: ' + (RESULT_PL[d.result] || d.result) + '   lotek w turze: ' + S.det.dartsInTurn,
+    'Obraz: ' + S.vw + '×' + S.vh + ' → ' + P.pw + '×' + P.ph + '   ' + (S.fps || 0).toFixed(1) + ' kl/s   ' + S.det.ppm.toFixed(2) + ' px/mm'
+  ];
+  ctx.save();
+  ctx.font = '600 12px ui-monospace, Menlo, Consolas, monospace';
+  const wMax = Math.max(...lines.map(l => ctx.measureText(l).width)) + 16;
+  ctx.fillStyle = 'rgba(0,0,0,.72)'; ctx.fillRect(6, 6, wMax, lines.length * 16 + 10);
+  ctx.fillStyle = '#f0e8d3'; ctx.textBaseline = 'top';
+  lines.forEach((l, i) => ctx.fillText(l, 14, 12 + i * 16));
+  ctx.restore();
 }
 
 function drawLoupe(cal, m) {
@@ -2152,7 +2424,7 @@ requestAnimationFrame(loop);
 
 /* ---------------- Stage message (blocked view) ---------------- */
 function showStageMsg() { S.blockedShown = true; $('#stage-msg').hidden = false; }
-function hideStageMsg() { S.blockedShown = false; $('#stage-msg').hidden = true; }
+function hideStageMsg() { S.blockedShown = false; $('#stage-msg').hidden = true; $('#stage-msg-t').textContent = 'Coś zasłania tarczę albo telefon się poruszył.'; }
 $('#btn-newbg').addEventListener('click', () => { S.resetPending = true; hideStageMsg(); toast('Nowe tło zapisane.'); });
 $('#btn-recal').addEventListener('click', () => { hideStageMsg(); showScreen('cal'); autoCalSoon(); });
 
@@ -2378,7 +2650,7 @@ $('#new-go').addEventListener('click', () => {
 function openSettings() {
   $('#opt-thr').value = S.settings.thr; $('#opt-thr-v').textContent = S.settings.thr;
   $('#opt-shadow').checked = S.settings.shadows; $('#opt-auto').checked = S.settings.autoNext;
-  $('#opt-lock').checked = S.settings.lock; $('#opt-mask').checked = S.settings.mask;
+  $('#opt-lock').checked = S.settings.lock; $('#opt-mask').checked = S.settings.mask; $('#opt-diag').checked = S.settings.diag;
   $('#opt-off').textContent = (S.offset.mm >= 0 ? '+' : '') + S.offset.mm.toFixed(1) + ' mm';
   openSheet('#sh-set');
 }
@@ -2387,6 +2659,7 @@ $('#opt-thr').addEventListener('input', (e) => { S.settings.thr = +e.target.valu
 $('#opt-shadow').addEventListener('change', (e) => { S.settings.shadows = e.target.checked; if (S.det) S.det.shadows = e.target.checked; saveSettings(); });
 $('#opt-auto').addEventListener('change', (e) => { S.settings.autoNext = e.target.checked; saveSettings(); });
 $('#opt-mask').addEventListener('change', (e) => { S.settings.mask = e.target.checked; S.maskImg = null; saveSettings(); });
+$('#opt-diag').addEventListener('change', (e) => { S.settings.diag = e.target.checked; saveSettings(); });
 $('#opt-lock').addEventListener('change', async (e) => {
   S.settings.lock = e.target.checked; saveSettings();
   const res = await applyLocks(S.settings.lock);
