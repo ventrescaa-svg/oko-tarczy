@@ -81,6 +81,7 @@ button{cursor:pointer;touch-action:manipulation}
 .readout{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:.92rem;color:var(--muted)}
 .readout b{color:var(--fg);font-weight:600}
 .readout .ok{color:var(--green)} .readout .bad{color:var(--amber)}
+.readout .busy{color:var(--cream)}
 .zoom-row{display:flex;align-items:center;gap:10px}
 .zoom-row input{flex:1}
 .btn-row{display:flex;gap:8px}
@@ -213,7 +214,7 @@ input[type=range]{accent-color:var(--cream)}
     <ol class="steps">
       <li><div><b>20 na górze, na czarnym polu.</b><small>Standardowa tarcza sizalowa pod rzutki stalowe.</small></div></li>
       <li><div><b>Statyw z boku tarczy, poza linią rzutu.</b><small>Obiektyw mniej więcej na wysokości bulla (173 cm).</small></div></li>
-      <li><div><b>Kąt około 45°.</b><small>Tarcza lekko spłaszczona, a między lotką a tarczą widać grot. Aplikacja zmierzy kąt przy kalibracji.</small></div></li>
+      <li><div><b>Kąt około 45°.</b><small>Tarcza lekko spłaszczona, a między lotką a tarczą widać grot. Aplikacja sama znajdzie tarczę i zmierzy kąt.</small></div></li>
       <li><div><b>Tarcza wypełnia prawie cały kadr.</b><small>Cały pierścień podwójnych w kadrze. Zoom ustawisz w aplikacji.</small></div></li>
       <li><div><b>Równe światło bez cieni.</b><small>Najlepiej ring light. Żadnej lampy świecącej w obiektyw.</small></div></li>
       <li><div><b>Ładowarka podłączona, telefon nieruchomo.</b><small>Każde przesunięcie telefonu wymaga ponownej kalibracji.</small></div></li>
@@ -236,7 +237,7 @@ input[type=range]{accent-color:var(--cream)}
 <section id="scr-stage" class="mode-cal" hidden>
   <header class="cal-top cal-only">
     <h2>Kalibracja</h2>
-    <p id="cal-help">Wybierz punkt i przesuń palcem w dowolnym miejscu obrazu. Każdy punkt to miejsce, gdzie drut między dwoma polami dotyka zewnętrznego drutu podwójnych.</p>
+    <p id="cal-help">Aplikacja sama szuka tarczy i rysuje na niej siatkę. Telefonem nie ruszaj. Jeśli siatka nie leży na drutach, wybierz punkt przyciskiem na dole i przesuń palcem w dowolnym miejscu obrazu.</p>
   </header>
 
   <div class="board-panel game-only" id="board-panel">
@@ -292,7 +293,7 @@ input[type=range]{accent-color:var(--cream)}
       <label for="zoom">Zoom</label><input type="range" id="zoom" min="1" max="4" step="0.1" value="1"><span id="zoom-v" class="num">1.0×</span>
     </div>
     <div class="btn-row">
-      <button id="cal-reset" class="btn">Ułóż od nowa</button>
+      <button id="cal-auto" class="btn">Znajdź tarczę</button>
       <button id="cal-done" class="btn primary">Gotowe, gramy</button>
     </div>
   </footer>
@@ -793,6 +794,47 @@ input[type=range]{accent-color:var(--cream)}
       fx = F.ax; fy = F.ay;
       if (fx * ax + fy * ay < 0) { fx = -fx; fy = -fy; }
     }
+    // Barrel line: the metal barrel changes the picture the most, so fit a line to the
+    // strongest pixels of the front half (RANSAC), ignoring shadows and occlusion fringes.
+    let barrel = null;
+    if (opts.weights && front.length > 30) {
+      const W8 = opts.weights;
+      const fr = front.slice().sort((a, b) => W8[pix[b]] - W8[pix[a]]);
+      const strong = fr.slice(0, Math.max(20, Math.floor(fr.length * 0.4)));
+      let seed = 777;
+      const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+      const tol = 1.6 + 0.012 * length;
+      let best = -1, bl = null;
+      for (let it = 0; it < 80; it++) {
+        const a = strong[Math.floor(rnd() * strong.length)], b = strong[Math.floor(rnd() * strong.length)];
+        const dx = xs[b] - xs[a], dy = ys[b] - ys[a], L = Math.hypot(dx, dy);
+        if (L < 0.12 * length) continue;
+        const ux = dx / L, uy = dy / L;
+        if (Math.abs(ux * fx + uy * fy) < 0.85) continue; // stay near the dart direction
+        let sc = 0;
+        for (const k of front) { if (Math.abs(-(xs[k] - xs[a]) * uy + (ys[k] - ys[a]) * ux) < tol) sc += W8[pix[k]]; }
+        if (sc > best) { best = sc; bl = [xs[a], ys[a], ux, uy]; }
+      }
+      if (bl) {
+        const inl = [];
+        for (const k of front) if (Math.abs(-(xs[k] - bl[0]) * bl[3] + (ys[k] - bl[1]) * bl[2]) < tol) inl.push(k);
+        if (inl.length > 12) {
+          // weighted PCA of the inliers
+          let sw = 0, mx = 0, my = 0;
+          for (const k of inl) { const wv = W8[pix[k]]; sw += wv; mx += wv * xs[k]; my += wv * ys[k]; }
+          mx /= sw; my /= sw;
+          let cxx = 0, cyy = 0, cxy = 0;
+          for (const k of inl) { const wv = W8[pix[k]], dx = xs[k] - mx, dy = ys[k] - my; cxx += wv * dx * dx; cyy += wv * dy * dy; cxy += wv * dx * dy; }
+          const th = 0.5 * Math.atan2(2 * cxy, cxx - cyy);
+          let ux = Math.cos(th), uy = Math.sin(th);
+          if (ux * fx + uy * fy < 0) { ux = -ux; uy = -uy; }
+          const ts = inl.map(k => (xs[k] - mx) * ux + (ys[k] - my) * uy).sort((a, b) => a - b);
+          const tf = ts[Math.min(ts.length - 1, Math.round(0.99 * (ts.length - 1)))];
+          barrel = { tip: [mx + ux * tf, my + uy * tf], axis: [ux, uy], count: inl.length };
+          fx = ux; fy = uy;
+        }
+      }
+    }
     // Tip: robust extreme along the axis, centred across the thin front end.
     const band = Math.max(2.5, 0.04 * length);
     const nx = -ay, ny = ax;
@@ -814,7 +856,11 @@ input[type=range]{accent-color:var(--cream)}
       }
     }
     const tailW = tc ? Math.sqrt(Math.max(0, tsp2 / tc - (tsp / tc) * (tsp / tc))) : 0;
-    const tip = [P.cx + ax * tHi + nx * sMean, P.cy + ay * tHi + ny * sMean];
+    let tip = [P.cx + ax * tHi + nx * sMean, P.cy + ay * tHi + ny * sMean];
+    if (barrel) {
+      // The front end of the barrel line (includes the point when it is visible).
+      tip = barrel.tip.slice();
+    }
 
     if (opts.occ) {
       const r = 3;
@@ -834,30 +880,48 @@ input[type=range]{accent-color:var(--cream)}
   /* The steel point is thin and often low-contrast (silver on cream sisal), so the blurred
      mask usually stops at the barrel. Walk along the dart axis past the detected front on the
      unblurred difference with a lower threshold and extend the tip while the point is visible. */
-  function extendTip(ref, cur, w, h, gain, tip, axis, maxLen, thrLow) {
-    const ax = axis[0], ay = axis[1], nx = -ay, ny = ax;
-    let last = 0, gap = 0, prevHit = true;
+  function extendTip(ref, cur, w, h, gain, tip, axis, maxLen, thrLow, opt) {
+    opt = opt || {};
+    const maxDev = opt.maxDev != null ? opt.maxDev : 6, side = opt.side != null ? opt.side : 1, stepOff = opt.stepOff != null ? opt.stepOff : 0.6;
+    const u0x = axis[0], u0y = axis[1], cosMax = Math.cos(maxDev * Math.PI / 180);
+    let ux = u0x, uy = u0y, px = tip[0], py = tip[1];
+    let lastX = px, lastY = py, lastLen = 0, gap = 0, prevHit = true;
+    const diffAt = (x, y) => {
+      if (x < 0 || y < 0 || x >= w || y >= h) return 0;
+      const j = (y * w + x) * 4;
+      const cr = cur[j] * gain, cg = cur[j + 1] * gain, cb = cur[j + 2] * gain;
+      if (cr < ref[j] && cg < ref[j + 1] && cb < ref[j + 2]) {
+        const kr = (cr + 2) / (ref[j] + 2), kg = (cg + 2) / (ref[j + 1] + 2), kb = (cb + 2) / (ref[j + 2] + 2);
+        const kmax = Math.max(kr, kg, kb), kmin = Math.min(kr, kg, kb);
+        if (ref[j] + ref[j + 1] + ref[j + 2] > 150 && kmin > 0.3 && kmax < 0.96 && (kmax - kmin) < 0.13 * (kmax + kmin) * 0.5) return 0;
+      }
+      return Math.abs(ref[j] - cr) + Math.abs(ref[j + 1] - cg) + Math.abs(ref[j + 2] - cb);
+    };
+    // Track the point step by step: look sideways for the strongest change, follow it,
+    // and let the direction drift at most 15 degrees from the barrel axis.
     for (let s = 1; s <= maxLen; s++) {
-      let best = 0;
-      for (let q = -1; q <= 1; q++) {
-        const x = Math.round(tip[0] + ax * s + nx * q), y = Math.round(tip[1] + ay * s + ny * q);
-        if (x < 0 || y < 0 || x >= w || y >= h) continue;
-        const j = (y * w + x) * 4;
-        const cr = cur[j] * gain, cg = cur[j + 1] * gain, cb = cur[j + 2] * gain;
-        if (cr < ref[j] && cg < ref[j + 1] && cb < ref[j + 2]) {
-          const kr = (cr + 2) / (ref[j] + 2), kg = (cg + 2) / (ref[j + 1] + 2), kb = (cb + 2) / (ref[j + 2] + 2);
-          const kmax = Math.max(kr, kg, kb), kmin = Math.min(kr, kg, kb);
-          if (kmin > 0.3 && kmax < 0.96 && (kmax - kmin) < 0.13 * (kmax + kmin) * 0.5) continue;
-        }
-        const d = Math.abs(ref[j] - cr) + Math.abs(ref[j + 1] - cg) + Math.abs(ref[j + 2] - cb);
-        if (d > best) best = d;
+      const nx = -uy, ny = ux;
+      let best = 0, bq = 0;
+      for (let q = -side; q <= side; q++) {
+        const o = q * stepOff;
+        const d = diffAt(Math.round(px + ux + nx * o), Math.round(py + uy + ny * o));
+        if (d > best || (d === best && Math.abs(o) < Math.abs(bq))) { best = d; bq = o; }
       }
       const hit = best > thrLow;
-      if (hit && (prevHit || s === 1)) { last = s; gap = 0; }
-      else if (!hit && ++gap > 2) break;
+      if (hit) {
+        const qx = px + ux + nx * bq, qy = py + uy + ny * bq;
+        let dx = qx - px, dy = qy - py; const L = Math.hypot(dx, dy) || 1; dx /= L; dy /= L;
+        let vx = 0.8 * ux + 0.2 * dx, vy = 0.8 * uy + 0.2 * dy; const vl = Math.hypot(vx, vy); vx /= vl; vy /= vl;
+        if (vx * u0x + vy * u0y > cosMax) { ux = vx; uy = vy; }
+        px = qx; py = qy;
+        if (prevHit || s === 1) { lastX = px; lastY = py; lastLen = s; gap = 0; }
+      } else {
+        px += ux; py += uy;
+        if (++gap > 2) break;
+      }
       prevHit = hit;
     }
-    return last;
+    return { ext: lastLen, end: [lastX, lastY] };
   }
 
   // Mean colour difference between two frames over given pixel indices.
@@ -896,6 +960,9 @@ input[type=range]{accent-color:var(--cream)}
     this.settleMs = cfg.settleMs || 380;
     this.offsetMm = cfg.offsetMm || 0;
     this.shadows = cfg.shadows !== false;
+    this.useBarrel = cfg.barrel !== false;
+    this.pointMin = cfg.pointMin != null ? cfg.pointMin : 14;
+    this.pointK = cfg.pointK != null ? cfg.pointK : 3.2;
     this.ppm = localScale(this.Hp, 0, 0);
     const a = this.ppm * this.ppm;
     this.lim = {
@@ -990,7 +1057,7 @@ input[type=range]{accent-color:var(--cream)}
     this.labels = cc.labels;
     const det = findDart(th.mask, this.w, this.h, {
       nearDir: this.nearDir, minComp: this.lim.minComp, minDartArea: this.lim.minDartArea,
-      gap: this.lim.gap, occ: this.dartsInTurn ? this.occ : null
+      gap: this.lim.gap, occ: this.dartsInTurn ? this.occ : null, weights: this.useBarrel ? this.buf2 : null
     }, cc);
     if (!det) return [];
     if (this.dartsInTurn > 0) {
@@ -1002,10 +1069,10 @@ input[type=range]{accent-color:var(--cream)}
     const gain = this.lastGain || 1;
     const bt = applyH(this.Hpi, det.tip[0], det.tip[1]);
     const maxLen = Math.round(30 * localScale(this.Hp, bt[0], bt[1]));
-    const ext = extendTip(this.ref, frame, this.w, this.h, gain, det.tip, det.axis, maxLen, Math.max(this.thr * 0.5, 3 * (this.noise || 0)));
+    const xt = extendTip(this.ref, frame, this.w, this.h, gain, det.tip, det.axis, maxLen, Math.max(this.pointMin, this.pointK * (this.noise || 0)));
     det.barrelTip = det.tip.slice();
-    det.ext = ext;
-    det.tip = [det.tip[0] + det.axis[0] * ext, det.tip[1] + det.axis[1] * ext];
+    det.ext = xt.ext;
+    det.tip = xt.end;
     markOcclusion(this.occ, det.pixels, this.w, this.h, 2);
     this.ref.set(frame);
     this.dartsInTurn++;
@@ -1021,6 +1088,287 @@ input[type=range]{accent-color:var(--cream)}
     const s = localScale(this.Hp, b[0], b[1]);
     return [det.tip[0] + det.axis[0] * this.offsetMm * s, det.tip[1] + det.axis[1] * this.offsetMm * s];
   };
+
+  /* ---------- Automatic calibration ----------
+     1. Classify red and green pixels (treble/double rings and bull).
+     2. Rays from the colour centre -> outer edge of the double ring -> RANSAC ellipse.
+     3. Refine a full homography so the colour edges land on the real ring radii
+        (15.9 / 99 / 107 / 162 / 170 mm), Levenberg–Marquardt with robust weights.
+     4. Find the rotation from the black/cream and red/green sector pattern,
+        choosing the black sector nearest the top of the picture as 20. */
+  function colorClass(r, g, b) {
+    const mx = r > g ? (r > b ? r : b) : (g > b ? g : b);
+    const mn = r < g ? (r < b ? r : b) : (g < b ? g : b);
+    if (mx < 40) return 0;
+    const d = mx - mn, s = d / mx;
+    if (d === 0) return 0;
+    let hdeg;
+    if (mx === r) hdeg = 60 * (((g - b) / d) % 6);
+    else if (mx === g) hdeg = 60 * ((b - r) / d + 2);
+    else hdeg = 60 * ((r - g) / d + 4);
+    if (hdeg < 0) hdeg += 360;
+    if (s > 0.42 && (hdeg < 14 || hdeg > 330)) return 1;
+    if (s > 0.30 && hdeg > 85 && hdeg < 175) return 2;
+    return 0;
+  }
+
+  function classifyColors(img, w, h) {
+    const n = w * h, raw = new Uint8Array(n), cls = new Uint8Array(n);
+    for (let i = 0, j = 0; i < n; i++, j += 4) raw[i] = colorClass(img[j], img[j + 1], img[j + 2]);
+    // drop isolated pixels (fewer than 3 coloured 8-neighbours)
+    for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x;
+      if (!raw[i]) continue;
+      let c = 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if ((dx || dy) && raw[i + dy * w + dx]) c++;
+      if (c >= 3) cls[i] = raw[i];
+    }
+    return cls;
+  }
+
+  function conicFromPoints(P, idx) {
+    // Ax^2+Bxy+Cy^2+Dx+Ey+F=0 with A+C=1  ->  A(x^2-y^2)+Bxy+Dx+Ey+F = -y^2
+    const M = Array.from({ length: 5 }, () => new Float64Array(5)), v = new Float64Array(5);
+    for (const k of idx) {
+      const x = P[k][0], y = P[k][1];
+      const row = [x * x - y * y, x * y, x, y, 1], rhs = -y * y;
+      for (let a = 0; a < 5; a++) { v[a] += row[a] * rhs; for (let b = 0; b < 5; b++) M[a][b] += row[a] * row[b]; }
+    }
+    const s = solveLinear(M.map(r => Array.from(r)), Array.from(v));
+    if (!s) return null;
+    return [s[0], s[1], 1 - s[0], s[2], s[3], s[4]];
+  }
+  function sampsonDist(c, x, y) {
+    const [A, B, C, D, E, F] = c;
+    const q = A * x * x + B * x * y + C * y * y + D * x + E * y + F;
+    const gx = 2 * A * x + B * y + D, gy = B * x + 2 * C * y + E;
+    return Math.abs(q) / (Math.hypot(gx, gy) || 1e-9);
+  }
+  function conicToEllipse(c) {
+    const [A, B, C, D, E, F] = c;
+    const det = 4 * A * C - B * B;
+    if (det <= 0) return null;
+    const x0 = (B * E - 2 * C * D) / det, y0 = (B * D - 2 * A * E) / det;
+    const F0 = A * x0 * x0 + B * x0 * y0 + C * y0 * y0 + D * x0 + E * y0 + F;
+    const tr = A + C, dt = A * C - B * B / 4, disc = Math.sqrt(Math.max(0, tr * tr / 4 - dt));
+    const l1 = tr / 2 + disc, l2 = tr / 2 - disc;
+    if (!(l1 > 0 && l2 > 0 && F0 < 0)) return null;
+    const a1 = Math.sqrt(-F0 / l1), a2 = Math.sqrt(-F0 / l2);
+    let v1;
+    if (Math.abs(B) > 1e-12) v1 = [B / 2, l1 - A];
+    else v1 = A >= C ? [1, 0] : [0, 1];
+    const n1 = Math.hypot(v1[0], v1[1]); v1 = [v1[0] / n1, v1[1] / n1];
+    return { cx: x0, cy: y0, a1, a2, e1: v1, e2: [-v1[1], v1[0]] };
+  }
+
+  function ransacEllipse(P, iters, thr, rnd) {
+    if (P.length < 12) return null;
+    // normalise for conditioning
+    let mx = 0, my = 0;
+    for (const p of P) { mx += p[0]; my += p[1]; }
+    mx /= P.length; my /= P.length;
+    let sc = 0;
+    for (const p of P) sc += Math.hypot(p[0] - mx, p[1] - my);
+    sc = sc / P.length || 1;
+    const Q = P.map(p => [(p[0] - mx) / sc, (p[1] - my) / sc]);
+    const t = thr / sc;
+    const n = Q.length;
+    let best = null, bestIn = null;
+    for (let it = 0; it < iters; it++) {
+      const idx = [];
+      for (let k = 0; k < 5; k++) idx.push(Math.floor(((k + rnd()) / 5) * n) % n); // spread around the rays
+      const c = conicFromPoints(Q, idx);
+      if (!c || !conicToEllipse(c)) continue;
+      const inl = [];
+      for (let k = 0; k < n; k++) if (sampsonDist(c, Q[k][0], Q[k][1]) < t) inl.push(k);
+      if (!bestIn || inl.length > bestIn.length) { best = c; bestIn = inl; }
+    }
+    if (!best) return null;
+    for (let r = 0; r < 3; r++) {
+      const c = conicFromPoints(Q, bestIn);
+      if (!c) break;
+      const inl = [];
+      for (let k = 0; k < n; k++) if (sampsonDist(c, Q[k][0], Q[k][1]) < t) inl.push(k);
+      best = c; bestIn = inl;
+    }
+    const e = conicToEllipse(best);
+    if (!e) return null;
+    return {
+      cx: e.cx * sc + mx, cy: e.cy * sc + my, a1: e.a1 * sc, a2: e.a2 * sc, e1: e.e1, e2: e.e2,
+      inliers: bestIn.length, total: n
+    };
+  }
+
+  function autoCalibrate(img, w, h, opts) {
+    opts = opts || {};
+    let seed = 12345;
+    const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+    const cls = classifyColors(img, w, h);
+    // 1. colour centre
+    const xs = [], ys = [];
+    for (let y = 0; y < h; y += 2) for (let x = 0; x < w; x += 2) if (cls[y * w + x]) { xs.push(x); ys.push(y); }
+    if (xs.length < w * h * 0.002) return { ok: false, reason: 'nocolor' };
+    xs.sort((a, b) => a - b); ys.sort((a, b) => a - b);
+    const cx0 = xs[xs.length >> 1], cy0 = ys[ys.length >> 1];
+    // 2. outer edge of the double ring along rays
+    const rays = [];
+    const maxR = Math.hypot(w, h);
+    for (let k = 0; k < 360; k++) {
+      const a = k * Math.PI / 180, dx = Math.cos(a), dy = Math.sin(a);
+      let last = -1, run = 0;
+      for (let r = 3; r < maxR; r++) {
+        const x = Math.round(cx0 + dx * r), y = Math.round(cy0 + dy * r);
+        if (x < 0 || y < 0 || x >= w || y >= h) break;
+        if (cls[y * w + x]) { run++; if (run >= 2) last = r + 0.5; } else run = 0;
+      }
+      if (last > 0) rays.push([cx0 + dx * last, cy0 + dy * last]);
+    }
+    const thr = Math.max(1.5, Math.min(w, h) / 300);
+    const el = ransacEllipse(rays, 500, thr, rnd);
+    if (!el || el.inliers < 0.35 * el.total) return { ok: false, reason: 'noellipse' };
+
+    // 3. homography refinement on colour edges
+    const s = (el.a1 + el.a2) / 2, ox = el.cx, oy = el.cy;
+    let L = [170 * el.e1[0] / el.a1, 170 * el.e1[1] / el.a1, 170 * el.e2[0] / el.a2, 170 * el.e2[1] / el.a2];
+    if (L[0] * L[3] - L[1] * L[2] > 0) { L[2] = -L[2]; L[3] = -L[3]; }
+    // G maps normalised image coords u=(x-ox)/s to board mm
+    let G = [L[0] * s, L[1] * s, 0, L[2] * s, L[3] * s, 0, 0, 0, 1];
+    // edge samples: coloured pixel p with a non-coloured 4-neighbour q
+    const E = [];
+    for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x;
+      if (!cls[i]) continue;
+      if (!cls[i + 1]) E.push(x, y, x + 1, y);
+      if (!cls[i - 1]) E.push(x, y, x - 1, y);
+      if (!cls[i + w]) E.push(x, y, x, y + 1);
+      if (!cls[i - w]) E.push(x, y, x, y - 1);
+    }
+    let ne = E.length / 4;
+    const maxSamples = 9000, stride = Math.max(1, Math.floor(ne / maxSamples));
+    const S = [];
+    for (let k = 0; k < ne; k += stride) {
+      const px = E[k * 4], py = E[k * 4 + 1], qx = E[k * 4 + 2], qy = E[k * 4 + 3];
+      S.push([((px + qx) / 2 - ox) / s, ((py + qy) / 2 - oy) / s, (px - ox) / s, (py - oy) / s, (qx - ox) / s, (qy - oy) / s]);
+    }
+    const OUTER = [RING.outerBull, RING.trebleOut, RING.doubleOut], INNER = [RING.trebleIn, RING.doubleIn];
+    const rho = (g, u, v) => { const W = g[6] * u + g[7] * v + 1; return Math.hypot((g[0] * u + g[1] * v + g[2]) / W, (g[3] * u + g[4] * v + g[5]) / W); };
+    const sched = [24, 16, 10, 7, 5, 4, 3, 3, 3, 3, 2.5, 2.5, 2.5, 2.5, 2.5];
+    let lambda = 1e-3, used = 0, rms = 99;
+    const collect = (g, tol) => {
+      const rows = [];
+      for (const sm of S) {
+        const rp = rho(g, sm[2], sm[3]), rq = rho(g, sm[4], sm[5]);
+        const cand = rq > rp ? OUTER : INNER;
+        const r0 = rho(g, sm[0], sm[1]);
+        let R = cand[0];
+        for (const c of cand) if (Math.abs(r0 - c) < Math.abs(r0 - R)) R = c;
+        if (Math.abs(r0 - R) < tol) rows.push([sm[0], sm[1], R]);
+      }
+      return rows;
+    };
+    const cost = (g, rows, delta) => {
+      let c = 0;
+      for (const [u, v, R] of rows) { const r = rho(g, u, v) - R, a = Math.abs(r); c += a <= delta ? r * r : 2 * delta * a - delta * delta; }
+      return c;
+    };
+    for (let it = 0; it < sched.length; it++) {
+      const tol = sched[it], delta = Math.max(1.2, tol / 3);
+      const rows = collect(G, tol);
+      used = rows.length;
+      if (rows.length < 60) return { ok: false, reason: 'noedges' };
+      const JTJ = Array.from({ length: 8 }, () => new Array(8).fill(0)), JTr = new Array(8).fill(0);
+      for (const [u, v, R] of rows) {
+        const W = G[6] * u + G[7] * v + 1, X = G[0] * u + G[1] * v + G[2], Y = G[3] * u + G[4] * v + G[5];
+        const bx = X / W, by = Y / W, p = Math.hypot(bx, by) || 1e-9, r = p - R;
+        const wt = Math.abs(r) <= delta ? 1 : delta / Math.abs(r);
+        const cx = bx / p / W, cy = by / p / W;
+        const J = [cx * u, cx * v, cx, cy * u, cy * v, cy, -p * u / W, -p * v / W];
+        for (let a = 0; a < 8; a++) { JTr[a] += wt * J[a] * r; for (let b = 0; b < 8; b++) JTJ[a][b] += wt * J[a] * J[b]; }
+      }
+      const c0 = cost(G, rows, delta);
+      let improved = false;
+      for (let tries = 0; tries < 6 && !improved; tries++) {
+        const A = JTJ.map((row, a) => row.map((val, b) => a === b ? val * (1 + lambda) + 1e-9 : val));
+        const d = solveLinear(A, JTr.map(x => -x));
+        if (!d) { lambda *= 10; continue; }
+        const G2 = G.slice(); for (let a = 0; a < 8; a++) G2[a] += d[a];
+        if (cost(G2, rows, delta) < c0) { G = G2; lambda = Math.max(1e-7, lambda / 3); improved = true; }
+        else lambda *= 8;
+      }
+    }
+    const fin = collect(G, 3);
+    let ss = 0, good = 0;
+    for (const [u, v, R] of fin) { const r = rho(G, u, v) - R; if (Math.abs(r) < 1.5) { good++; ss += r * r; } }
+    rms = good ? Math.sqrt(ss / good) : 99;
+    // pixel-space G: board = G * T * [x,y,1], T = normalisation
+    let Gp = mulH(G, [1 / s, 0, -ox / s, 0, 1 / s, -oy / s, 0, 0, 1]);
+    let Hp = invertH(Gp);
+    if (!Hp) return { ok: false, reason: 'singular' };
+    // keep the handedness of a non-mirrored camera: board (x right, y up) -> image (x right, y down)
+    {
+      const c = applyH(Hp, 0, 0), ex = applyH(Hp, 10, 0), ey = applyH(Hp, 0, 10);
+      const det = (ex[0] - c[0]) * (ey[1] - c[1]) - (ex[1] - c[1]) * (ey[0] - c[0]);
+      if (det > 0) { Gp = mulH([1, 0, 0, 0, -1, 0, 0, 0, 1], Gp); Hp = invertH(Gp); }
+    }
+    // 4. rotation from the sector pattern
+    const NA = 720, sig = new Float32Array(NA);
+    const lumAt = (bx, by) => {
+      const q = applyH(Hp, bx, by), x = Math.round(q[0]), y = Math.round(q[1]);
+      if (x < 0 || y < 0 || x >= w || y >= h) return -1;
+      const j = (y * w + x) * 4; return img[j] * 0.299 + img[j + 1] * 0.587 + img[j + 2] * 0.114;
+    };
+    const clsAt = (bx, by) => {
+      const q = applyH(Hp, bx, by), x = Math.round(q[0]), y = Math.round(q[1]);
+      if (x < 0 || y < 0 || x >= w || y >= h) return 0;
+      const j = (y * w + x) * 4; return colorClass(img[j], img[j + 1], img[j + 2]);
+    };
+    for (const R of [60, 80, 125, 145]) {
+      const L2 = [];
+      for (let k = 0; k < NA; k++) { const a = k / NA * 2 * Math.PI; L2.push(lumAt(R * Math.cos(a), R * Math.sin(a))); }
+      const valid = L2.filter(v => v >= 0).sort((a, b) => a - b);
+      const med = valid[valid.length >> 1];
+      L2.forEach((v, k) => { if (v >= 0) sig[k] += v < med ? 1 : -1; });
+    }
+    for (const R of [103, 166]) {
+      for (let k = 0; k < NA; k++) {
+        const a = k / NA * 2 * Math.PI, c = clsAt(R * Math.cos(a), R * Math.sin(a));
+        if (c === 1) sig[k] += 1.5; else if (c === 2) sig[k] -= 1.5;
+      }
+    }
+    let bestA = 0, bestC = -Infinity, absSum = 0;
+    for (let k = 0; k < NA; k++) absSum += Math.abs(sig[k]);
+    for (let ai = 0; ai < 144; ai++) {
+      const al = ai * 0.25;
+      let c = 0;
+      for (let k = 0; k < NA; k++) {
+        const th = k / NA * 360;
+        const kk = Math.floor(((((90 + al - th + 9) % 360) + 360) % 360) / 18);
+        c += (kk % 2 === 0 ? 1 : -1) * sig[k];
+      }
+      if (c > bestC) { bestC = c; bestA = al; }
+    }
+    const pattern = absSum ? bestC / absSum : 0;
+    // 20 = the black sector pointing most "up". Up comes from the phone's gravity sensor
+    // when available (works with a tilted phone), otherwise the top of the picture.
+    const c0p = applyH(Hp, 0, 0);
+    const up = opts.up && Math.hypot(opts.up[0], opts.up[1]) > 0.1 ? opts.up : [0, -1];
+    const upn = Math.hypot(up[0], up[1]);
+    let bestPhi = 90 + bestA, bestUp = Infinity;
+    for (let j = 0; j < 10; j++) {
+      const phi = 90 + bestA + 36 * j, a = phi * Math.PI / 180;
+      const q = applyH(Hp, 150 * Math.cos(a), 150 * Math.sin(a));
+      const len = Math.hypot(q[0] - c0p[0], q[1] - c0p[1]) || 1;
+      const al = -((q[0] - c0p[0]) * up[0] + (q[1] - c0p[1]) * up[1]) / (len * upn);
+      if (al < bestUp) { bestUp = al; bestPhi = phi; }
+    }
+    const beta = (bestPhi - 90) * Math.PI / 180;
+    const Rm = [Math.cos(beta), Math.sin(beta), 0, -Math.sin(beta), Math.cos(beta), 0, 0, 0, 1];
+    const Gt = mulH(Rm, Gp), Ht = invertH(Gt);
+    if (!Ht) return { ok: false, reason: 'singular' };
+    const pts = calBoardPoints().map(p => applyH(Ht, p[0], p[1]));
+    const ok = good >= 150 && rms < 2.2 && pattern > 0.45 && bestUp < -0.5;
+    return { ok, pts, H: Ht, rms, edges: good, used, pattern, upness: -bestUp, ellipse: el, reason: ok ? '' : 'quality' };
+  }
 
   /* ---------- 501 game ---------- */
   function evalTurn(startRem, darts, doubleOut) {
@@ -1192,6 +1540,7 @@ input[type=range]{accent-color:var(--cream)}
     makeDart, scoreAt, wireDistance,
     homography, applyH, invertH, mulH, localScale, makeCalibration, boardOutline,
     buildRoi, meanLum, diffMap, thresholdMap, quickChange, components, findDart, extendTip, regionDiff, markOcclusion, Detector,
+    autoCalibrate, classifyColors,
     evalTurn, createGame, remainingOf, currentView, turnOpen, addDart, setDart, removeDart, commitTurn, undo, playerStats,
     checkout, sayDart
   };
@@ -1363,7 +1712,7 @@ S.video.addEventListener('resize', () => {
   if (S.vw && (S.video.videoWidth !== S.vw || S.video.videoHeight !== S.vh)) {
     S.vw = S.video.videoWidth; S.vh = S.video.videoHeight;
     S.pts = defaultPoints(); S.cal = C.makeCalibration(S.pts); S.proc = null; S.det = null;
-    if (S.mode === 'game' && !S.manual) { toast('Obraz się obrócił. Skalibruj ponownie.'); showScreen('cal'); }
+    if (S.mode === 'game' && !S.manual) { toast('Obraz się obrócił. Szukam tarczy od nowa.'); showScreen('cal'); autoCalSoon(); }
   }
   sizeOverlay();
 });
@@ -1404,7 +1753,68 @@ function updateReadout() {
   r.innerHTML = html;
 }
 
-$('#cal-reset').addEventListener('click', () => { S.pts = defaultPoints(); selectPoint(0); updateReadout(); });
+/* ---------- Automatic calibration ---------- */
+S.grav = null;
+window.addEventListener('devicemotion', (e) => {
+  const g = e.accelerationIncludingGravity;
+  if (!g || g.x == null || g.y == null) return;
+  const a = 0.25;
+  S.grav = S.grav ? [S.grav[0] * (1 - a) + g.x * a, S.grav[1] * (1 - a) + g.y * a] : [g.x, g.y];
+});
+// "Up" in picture coordinates from the gravity sensor (null when unknown).
+function upVector() {
+  if (!S.grav || Math.hypot(S.grav[0], S.grav[1]) < 3) return null;
+  const ax = S.grav[0], ay = S.grav[1];
+  const ang = (((screen.orientation && screen.orientation.angle) || window.orientation || 0) % 360 + 360) % 360;
+  let v = ang === 90 ? [-ay, -ax] : ang === 180 ? [-ax, ay] : ang === 270 ? [ay, ax] : [ax, -ay];
+  const n = Math.hypot(v[0], v[1]); v = [v[0] / n, v[1] / n];
+  if (v[1] > 0) v = [-v[0], -v[1]]; // sensor sign differs on some devices; up is never below the horizon here
+  return v;
+}
+function grabFrame(maxD) {
+  const s = Math.min(1, maxD / Math.max(S.vw, S.vh));
+  const w = Math.round(S.vw * s), h = Math.round(S.vh * s);
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(S.video, 0, 0, w, h);
+  return { data: ctx.getImageData(0, 0, w, h).data, w, h, s };
+}
+const AUTO_FAIL = {
+  nocolor: 'Nie widzę czerwono-zielonych pierścieni. Sprawdź, czy cała tarcza jest w kadrze i czy jest dość światła.',
+  noellipse: 'Nie udało się dopasować kształtu tarczy. Popraw światło albo ustaw punkty ręcznie.',
+  noedges: 'Za mało widać pierścieni. Przybliż tarczę albo popraw światło.',
+  quality: 'Dopasowanie jest niepewne. Sprawdź siatkę i popraw punkty ręcznie.',
+  singular: 'Nie udało się dopasować tarczy. Ustaw punkty ręcznie.',
+  error: 'Nie udało się dopasować tarczy. Ustaw punkty ręcznie.'
+};
+let autoBusy = false;
+async function runAutoCal(quiet) {
+  if (!S.vw || autoBusy || S.video.readyState < 2) return false;
+  autoBusy = true;
+  $('#readout').innerHTML = '<span class="busy">Szukam tarczy…</span>';
+  $('#cal-auto').disabled = true;
+  await new Promise(r => setTimeout(r, 40));
+  let res;
+  try { const f = grabFrame(800); res = C.autoCalibrate(f.data, f.w, f.h, { up: upVector() }); if (res.pts) res.pts = res.pts.map(p => [p[0] / f.s, p[1] / f.s]); }
+  catch (e) { res = { ok: false, reason: 'error' }; }
+  autoBusy = false; $('#cal-auto').disabled = false;
+  if (res.ok || (res.reason === 'quality' && res.pts)) {
+    S.pts = res.pts; selectPoint(0); updateReadout();
+    if (res.ok) toast('Znalazłem tarczę. Sprawdź, czy siatka leży na drutach.', 3200);
+    else toast(AUTO_FAIL.quality, 4000);
+    return res.ok;
+  }
+  updateReadout();
+  if (!quiet) toast(AUTO_FAIL[res.reason] || AUTO_FAIL.error, 4500);
+  return false;
+}
+function autoCalSoon() {
+  setTimeout(async () => {
+    if (S.mode !== 'cal') return;
+    if (!(await runAutoCal(true))) setTimeout(() => { if (S.mode === 'cal') runAutoCal(false); }, 1500);
+  }, 900);
+}
+$('#cal-auto').addEventListener('click', () => runAutoCal(false));
 $('#cal-done').addEventListener('click', () => {
   S.cal = C.makeCalibration(S.pts);
   if (!S.cal) { toast('Popraw punkty, zanim zaczniesz.'); return; }
@@ -1744,7 +2154,7 @@ requestAnimationFrame(loop);
 function showStageMsg() { S.blockedShown = true; $('#stage-msg').hidden = false; }
 function hideStageMsg() { S.blockedShown = false; $('#stage-msg').hidden = true; }
 $('#btn-newbg').addEventListener('click', () => { S.resetPending = true; hideStageMsg(); toast('Nowe tło zapisane.'); });
-$('#btn-recal').addEventListener('click', () => { hideStageMsg(); showScreen('cal'); });
+$('#btn-recal').addEventListener('click', () => { hideStageMsg(); showScreen('cal'); autoCalSoon(); });
 
 /* ---------------- Keypad ---------------- */
 function buildPad(host, onPick) {
@@ -1878,6 +2288,7 @@ $('#btn-start').addEventListener('click', async () => {
   S.manual = false;
   S.pts = loadPoints(); selectPoint(0);
   showScreen('cal');
+  autoCalSoon();
 });
 $('#btn-manual').addEventListener('click', () => {
   S.manual = true;
@@ -1923,7 +2334,7 @@ $('#sh-menu').addEventListener('click', async (e) => {
   if (act === 'newgame') openNew();
   else if (act === 'calib') {
     if (S.manual || !S.stream) { const ok = await startCamera(); if (!ok) { showScreen('intro'); return; } S.manual = false; S.pts = loadPoints(); }
-    selectPoint(0); showScreen('cal');
+    selectPoint(0); showScreen('cal'); autoCalSoon();
   }
   else if (act === 'settings') openSettings();
   else if (act === 'cam') { S.camHidden = !S.camHidden; showScreen('game'); }
