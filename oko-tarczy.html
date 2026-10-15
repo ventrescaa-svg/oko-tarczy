@@ -320,6 +320,7 @@ input[type=range]{accent-color:var(--cream)}
     </div>
     <p class="hint">Albo wybierz pole z klawiatury:</p>
     <div id="fix-pad"></div>
+    <button id="fix-export" class="btn ghost">Zapisz obraz do analizy</button>
     <button id="fix-cancel" class="btn ghost">Anuluj</button>
   </div>
 </div>
@@ -752,6 +753,22 @@ input[type=range]{accent-color:var(--cream)}
     return out;
   }
 
+  // Same as envelopeDist over a 5x5 neighbourhood: also forgives earlier darts that moved
+  // a couple of pixels when the new one hit (their colours are still right next to it).
+  function envelopeDist2(img, j, w, cr, cg, cb) {
+    let d = 0;
+    for (let c = 0; c < 3; c++) {
+      let lo = 255, hi = 0;
+      for (let dy = -2; dy <= 2; dy++) {
+        const o = j + dy * w * 4 + c;
+        for (let dx = -8; dx <= 8; dx += 4) { const v0 = img[o + dx]; if (v0 < lo) lo = v0; if (v0 > hi) hi = v0; }
+      }
+      const v = c === 0 ? cr : c === 1 ? cg : cb;
+      if (v < lo) d += lo - v; else if (v > hi) d += v - hi;
+    }
+    return d;
+  }
+
   // Half-resolution copy (2x2 average), RGBA.
   function halfRes(img, w, h, out) {
     const hw = w >> 1, hh = h >> 1;
@@ -923,6 +940,14 @@ input[type=range]{accent-color:var(--cream)}
         sup.set(c.id, k);
       }
       comps = comps.filter(c => sup.get(c.id) >= 0.25 * c.area);
+    }
+    if (opts.occ && comps.length) {
+      const L1 = cc.labels, oc = opts.occ;
+      comps = comps.filter(c => {
+        let inside = 0;
+        for (let y = c.miny; y <= c.maxy; y++) for (let x = c.minx; x <= c.maxx; x++) { const i = y * w + x; if (L1[i] === c.id && oc[i]) inside++; }
+        return inside < (opts.occDrop != null ? opts.occDrop : 0.6) * c.area;
+      });
     }
     if (!comps.length) return null;
     const main = comps[0];
@@ -1160,11 +1185,12 @@ input[type=range]{accent-color:var(--cream)}
     this.Hp = cfg.Hp; this.Hpi = invertH(cfg.Hp);
     this.nearDir = cfg.nearDir || [1, 0];
     this.thr = cfg.thr || 60;
-    this.settleMs = cfg.settleMs || 380;
+    this.settleMs = cfg.settleMs || 600;
     this.offsetMm = cfg.offsetMm || 0;
     this.shadows = cfg.shadows !== false;
     this.jitter = cfg.jitter !== false;
     this.align = cfg.align !== false;
+    this.occDrop = cfg.occDrop != null ? cfg.occDrop : 2;
     this.mbuf = new Uint16Array((cfg.w >> 1) * (cfg.h >> 1) + 16);
     this.prevHalf = null; this.curHalf = null;
     this.diag = { mv: 0, mvThr: 0, moving: false, A: 0, result: 'start', at: 0, frames: 0 };
@@ -1200,7 +1226,7 @@ input[type=range]{accent-color:var(--cream)}
     this.turnRef = Uint8ClampedArray.from(frame);
     this.prev = Uint8ClampedArray.from(frame);
     this.prevHalf = halfRes(frame, this.w, this.h, null);
-    this.occ.fill(0); this.dartsInTurn = 0; this.turnFull = false; this.blockedSince = 0; this.moving = false; this.sawBlock = false;
+    this.occ.fill(0); if (this.occWide) this.occWide.fill(0); this.dartsInTurn = 0; this.turnFull = false; this.blockedSince = 0; this.moving = false; this.sawBlock = false;
   };
   // Accept the current picture as the new reference without starting a new turn
   // (used after a dart was entered by hand).
@@ -1300,7 +1326,7 @@ input[type=range]{accent-color:var(--cream)}
     const det = findDart(th.mask, this.w, this.h, {
       nearDir: this.nearDir, minComp: this.lim.minComp, minDartArea: this.lim.minDartArea,
       gap: this.lim.gap, occ: this.dartsInTurn ? this.occ : null, weights: this.useBarrel ? this.buf2 : null,
-      seed: th.seed, seedThr: th.T
+      seed: th.seed, seedThr: th.T, occDrop: this.occDrop
     }, cc);
     if (!det) return [];
     if (this.dartsInTurn > 0) {
@@ -1316,14 +1342,46 @@ input[type=range]{accent-color:var(--cream)}
     det.barrelTip = det.tip.slice();
     det.ext = xt.ext;
     det.tip = xt.end;
+    if (!this.occPrev || this.occPrev.length !== this.occ.length) this.occPrev = new Uint8Array(this.occ.length);
+    this.occPrev.set(this.occ);
     markOcclusion(this.occ, det.pixels, this.w, this.h, 2);
+    if (!this.occWide || this.occWide.length !== this.occ.length) this.occWide = new Uint8Array(this.occ.length);
+    markOcclusion(this.occWide, det.pixels, this.w, this.h, Math.max(3, Math.round(4 * this.ppm)));
     this.ref.set(frame);
     this.dartsInTurn++;
     const tipRaw = det.tip.slice();
     const tip = this.applyOffset(det);
     const b = applyH(this.Hpi, tip[0], tip[1]);
-    return [{ type: 'dart', det, tip, tipRaw, board: b }];
+    // The point may continue behind an earlier dart (camera at the side, tight group).
+    det.hidden = false;
+    if (this.dartsInTurn > 1) {
+      const bs = localScale(this.Hp, b[0], b[1]), L = Math.round(25 * bs);
+      for (let s2 = 1; s2 <= L && !det.hidden; s2++) {
+        const x = Math.round(det.tip[0] + det.axis[0] * s2), y = Math.round(det.tip[1] + det.axis[1] * s2);
+        if (x < 0 || y < 0 || x >= this.w || y >= this.h) break;
+        if (this.occPrev && this.occPrev[y * this.w + x]) det.hidden = true;
+      }
+    }
+    const dbg = this.debugCrop(refA, frame, th.mask, det);
+    return [{ type: 'dart', det, tip, tipRaw, board: b, debug: dbg }];
   };
+  // Small crops (reference, current frame, change mask) around a detection, for the
+  // "save for analysis" button. Taken before the reference is replaced.
+  Detector.prototype.debugCrop = function (refA, frame, mask, det) {
+    const bb = det.bbox, m = 40;
+    const x0 = Math.max(0, Math.min(bb.minx, Math.floor(det.tip[0])) - m), y0 = Math.max(0, Math.min(bb.miny, Math.floor(det.tip[1])) - m);
+    const x1 = Math.min(this.w - 1, Math.max(bb.maxx, Math.ceil(det.tip[0])) + m), y1 = Math.min(this.h - 1, Math.max(bb.maxy, Math.ceil(det.tip[1])) + m);
+    const cw = x1 - x0 + 1, ch = y1 - y0 + 1;
+    const ref = new Uint8ClampedArray(cw * ch * 4), cur = new Uint8ClampedArray(cw * ch * 4), mk = new Uint8Array(cw * ch);
+    for (let y = 0; y < ch; y++) {
+      const so = ((y + y0) * this.w + x0) * 4, d = y * cw * 4;
+      ref.set(refA.subarray(so, so + cw * 4), d); cur.set(frame.subarray(so, so + cw * 4), d);
+      for (let x = 0; x < cw; x++) mk[y * cw + x] = mask[(y + y0) * this.w + x0 + x];
+    }
+    return { x0, y0, w: cw, h: ch, ref, cur, mask: mk, tip: det.tip.slice(), barrel: (det.barrelTip || det.tip).slice(), axis: det.axis.slice(),
+      ext: det.ext, area: det.area, hidden: det.hidden, nearOcc: det.tipNearOcc, noise: this.noise, shift: this.diag.shift || [0, 0], dartsInTurn: this.dartsInTurn };
+  };
+
   // Move the tip along the dart axis by the learned correction (board mm).
   Detector.prototype.applyOffset = function (det) {
     if (!this.offsetMm) return det.tip.slice();
@@ -2185,8 +2243,8 @@ function onDart(e) {
   const sc = C.scoreAt(e.board[0], e.board[1]);
   const tipV = toVideo(e.tip), rawV = toVideo(e.tipRaw);
   const wd = C.wireDistance(e.board[0], e.board[1]);
-  const unsure = (e.det.tipNearOcc && e.det.ext < 3) || wd < 1.5;
-  const d = Object.assign({}, sc, { auto: true, unsure, tip: tipV, raw: rawV, axis: e.det.axis.slice(), snap: captureSnap(tipV) });
+  const unsure = (e.det.tipNearOcc && e.det.ext < 3) || e.det.hidden || wd < 1.5;
+  const d = Object.assign({}, sc, { auto: true, unsure, tip: tipV, raw: rawV, axis: e.det.axis.slice(), snap: captureSnap(tipV), debug: e.debug, board: e.board.slice() });
   const v = C.addDart(S.game, d);
   if (!v) return;
   hideStageMsg();
@@ -2365,16 +2423,20 @@ function drawOverlay() {
     }
     drawBoard(ctx, S.cal.H, m.v2s, { color: 'rgba(255,240,200,.28)', width: 1 });
     if (S.settings.diag && S.det) drawDiag(ctx);
+    const placed = [];
     S.game.cur.darts.forEach((d, i) => {
       if (!d.tip) return;
       const s = m.v2s(d.tip);
+      let ly = s[1];
+      for (let k = 0; k < 3; k++) if (placed.some(p => Math.abs(p[0] - s[0]) < 70 && Math.abs(p[1] - ly) < 17)) ly += 18;
+      placed.push([s[0], ly]);
       ctx.beginPath(); ctx.arc(s[0], s[1], 7, 0, Math.PI * 2);
       ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.75)'; ctx.stroke();
       ctx.lineWidth = 2; ctx.strokeStyle = d.unsure ? '#f2b441' : '#3cb06d'; ctx.stroke();
       ctx.font = '700 16px "Barlow Condensed", sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
       const t = (i + 1) + ': ' + d.label;
-      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.85)'; ctx.strokeText(t, s[0] + 11, s[1]);
-      ctx.fillStyle = '#fff'; ctx.fillText(t, s[0] + 11, s[1]);
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.85)'; ctx.strokeText(t, s[0] + 11, ly);
+      ctx.fillStyle = '#fff'; ctx.fillText(t, s[0] + 11, ly);
     });
   }
 }
@@ -2482,6 +2544,7 @@ function openFix(i) {
   const hasSnap = !!(d && d.snap && S.cal);
   $('#fix-photo').hidden = !hasSnap;
   $('#fix-actions').hidden = !d;
+  $('#fix-export').hidden = !(d && d.debug);
   if (hasSnap) drawFix();
   buildPad($('#fix-pad'), (nd) => {
     if (fix.i >= 0) {
@@ -2531,6 +2594,47 @@ $('#fix-save').addEventListener('click', () => {
 });
 $('#fix-del').addEventListener('click', () => { C.removeDart(S.game, fix.i); closeSheet('#sh-fix'); afterChange(); });
 $('#fix-cancel').addEventListener('click', () => closeSheet('#sh-fix'));
+// Picture for remote analysis: reference | current frame | change mask, plus the numbers.
+function exportDebug(d, idx) {
+  const D = d && d.debug;
+  if (!D) { toast('Ten rzut nie ma zapisanego obrazu (wpisany ręcznie?).'); return; }
+  const sc = Math.max(1, Math.min(4, 440 / Math.max(D.w, D.h)));
+  const pw = Math.round(D.w * sc), ph = Math.round(D.h * sc), pad = 10, top = 150;
+  const c = document.createElement('canvas'); c.width = Math.max(pw * 3 + pad * 4, 1240); c.height = ph + top + pad;
+  const x = c.getContext('2d');
+  x.fillStyle = '#111'; x.fillRect(0, 0, c.width, c.height);
+  const panel = (rgba, k, maskOn) => {
+    const t = document.createElement('canvas'); t.width = D.w; t.height = D.h;
+    const im = new ImageData(new Uint8ClampedArray(rgba), D.w, D.h);
+    if (maskOn) for (let i = 0; i < D.mask.length; i++) if (D.mask[i]) { im.data[i * 4] = 255; im.data[i * 4 + 1] = 40; im.data[i * 4 + 2] = 200; }
+    t.getContext('2d').putImageData(im, 0, 0);
+    x.imageSmoothingEnabled = false;
+    x.drawImage(t, pad + k * (pw + pad), top, pw, ph);
+    const tx = pad + k * (pw + pad) + (D.tip[0] - D.x0) * sc, ty = top + (D.tip[1] - D.y0) * sc;
+    const bx = pad + k * (pw + pad) + (D.barrel[0] - D.x0) * sc, by = top + (D.barrel[1] - D.y0) * sc;
+    x.strokeStyle = '#3cb06d'; x.lineWidth = 2; x.beginPath(); x.arc(tx, ty, 6, 0, 7); x.stroke();
+    x.strokeStyle = '#f2b441'; x.beginPath(); x.arc(bx, by, 4, 0, 7); x.stroke();
+    x.beginPath(); x.moveTo(bx - D.axis[0] * 40 * sc, by - D.axis[1] * 40 * sc); x.lineTo(tx + D.axis[0] * 20 * sc, ty + D.axis[1] * 20 * sc); x.stroke();
+  };
+  panel(D.ref, 0, false); panel(D.cur, 1, false); panel(D.cur, 2, true);
+  x.fillStyle = '#f0e8d3'; x.font = '600 14px monospace';
+  const v = S.cal ? S.cal.viewAngle.toFixed(0) : '?';
+  [
+    'Oko Tarczy – rzut ' + (idx + 1) + ': ' + d.label + (d.unsure ? ' (niepewny)' : '') + '   ' + new Date().toLocaleString('pl-PL'),
+    'plansza mm: ' + (d.board ? d.board.map(n => n.toFixed(1)).join(', ') : '?') + '   grot px: ' + D.tip.map(n => n.toFixed(1)).join(', ') + '   korpus px: ' + D.barrel.map(n => n.toFixed(1)).join(', '),
+    'przedłużenie: ' + D.ext + ' px   pole: ' + D.area + ' px   przy starej lotce: ' + D.nearOcc + '   ukryty grot: ' + D.hidden + '   lotek w turze: ' + D.dartsInTurn,
+    'szum: ' + D.noise + '   przesunięcie: ' + D.shift.map(n => n.toFixed(2)).join(', ') + '   kąt kamery: ' + v + '°   obraz: ' + S.vw + 'x' + S.vh + '   kadr: ' + D.x0 + ',' + D.y0 + ' ' + D.w + 'x' + D.h,
+    'Panele: tło (przed rzutem) | po rzucie | różowe = wykryta zmiana. Zielone kółko = grot, żółte = przód korpusu.'
+  ].forEach((l, i) => x.fillText(l, pad, 24 + i * 24));
+  c.toBlob((blob) => {
+    if (!blob) { toast('Nie udało się zapisać obrazu.'); return; }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = 'oko-tarczy-rzut-' + (idx + 1) + '-' + Date.now() + '.png';
+    document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+    toast('Zapisano w Pobranych. Wyślij ten plik w rozmowie.', 3500);
+  }, 'image/png');
+}
+$('#fix-export').addEventListener('click', () => exportDebug(S.game.cur.darts[fix.i], fix.i));
 $$('.slot').forEach(el => el.addEventListener('click', () => {
   const i = +el.dataset.i;
   if (i < S.game.cur.darts.length) openFix(i);
