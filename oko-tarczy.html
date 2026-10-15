@@ -62,7 +62,14 @@ button{cursor:pointer;touch-action:manipulation}
 /* ---------- Stage screen ---------- */
 #scr-stage{height:100%;display:flex;flex-direction:column;padding-block:env(safe-area-inset-top, 0px) env(safe-area-inset-bottom, 0px)}
 #stage{position:relative;flex:1 1 auto;min-height:160px;background:#000;overflow:hidden;touch-action:none}
-#vid{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
+/* The video is placed by script (screenMap): whole picture in calibration, board filling the panel in play. */
+#vid{position:absolute;left:0;top:0;width:100%;height:100%;max-width:none;object-fit:fill;background:#000;transform-origin:0 0}
+.hud{position:absolute;left:8px;right:8px;top:8px;display:flex;align-items:flex-start;gap:6px;pointer-events:none}
+.hud > *{pointer-events:auto}
+.hud .spacer{flex:1}
+.pill{display:inline-flex;align-items:center;padding:5px 10px;border-radius:999px;background:rgba(10,12,11,.66);border:1px solid rgba(255,255,255,.14);font:600 .95rem/1.1 var(--display);letter-spacing:.05em;text-transform:uppercase;color:var(--fg);backdrop-filter:blur(4px)}
+.pill.ai{color:#bfe7cf;border-color:rgba(60,176,109,.45)}
+.icon.glass{background:rgba(10,12,11,.66);border-color:rgba(255,255,255,.14);backdrop-filter:blur(4px)}
 #ov{position:absolute;inset:0;width:100%;height:100%}
 #loupe{position:absolute;top:10px;left:10px;width:150px;height:150px;border-radius:50%;border:2px solid var(--cream);box-shadow:0 4px 18px rgba(0,0,0,.6);pointer-events:none;background:#000}
 #loupe.right{left:auto;right:10px}
@@ -87,32 +94,40 @@ button{cursor:pointer;touch-action:manipulation}
 .btn-row{display:flex;gap:8px}
 .btn-row .btn{flex:1}
 
-/* ---------- Game ---------- */
-.board-panel{padding-left:var(--gutter-l);padding-right:var(--gutter-r);padding-block:8px 10px;background:var(--bg)}
-.topbar{display:flex;align-items:center;gap:8px}
-.topbar .spacer{flex:1}
+/* ---------- Game ----------
+   Portrait (like Dartsmind): thin top bar, big camera panel, compact score card, buttons. */
+.game-top{display:flex;align-items:center;gap:8px;padding:6px var(--gutter-r) 6px var(--gutter-l);background:var(--bg)}
+.game-top .spacer{flex:1}
+.game-top .icon{width:40px;height:40px}
+#scr-stage.mode-game #stage{min-height:45vh}
+.board-panel{flex:0 1 auto;overflow:auto;padding-left:var(--gutter-l);padding-right:var(--gutter-r);padding-block:8px 8px;background:var(--panel);border-top:1px solid var(--line)}
 .chip{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;background:var(--panel-2);border:1px solid var(--line);font-size:.92rem;font-weight:600;max-width:60vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .chip i{width:9px;height:9px;border-radius:50%;background:var(--dim);flex:none}
 .chip[data-s="ready"] i{background:var(--green);box-shadow:0 0 0 4px rgba(60,176,109,.18)}
 .chip[data-s="motion"] i{background:var(--amber)}
 .chip[data-s="pull"] i,.chip[data-s="blocked"] i{background:var(--red)}
-.active{display:grid;gap:2px;margin-top:6px}
-.who{display:flex;align-items:baseline;gap:10px;font:600 1.35rem/1.1 var(--display);text-transform:uppercase;letter-spacing:.04em}
+.active{display:grid;grid-template-columns:1fr auto;grid-template-areas:"who rem" "co rem" "darts darts" "win win";column-gap:12px;align-items:end}
+.active .who{grid-area:who;align-self:start}
+.active .co{grid-area:co}
+.active .rem{grid-area:rem}
+.active .darts{grid-area:darts}
+.active .win{grid-area:win}
+.who{display:flex;align-items:baseline;flex-wrap:wrap;gap:2px 10px;font:600 1.35rem/1.1 var(--display);text-transform:uppercase;letter-spacing:.04em;min-width:0}
 .who .avg{font:500 1rem var(--body);text-transform:none;letter-spacing:0;color:var(--muted)}
-.rem{font:700 clamp(5.5rem, 31vw, 12rem)/0.86 var(--display);letter-spacing:-.01em;font-variant-numeric:tabular-nums;margin:2px 0 6px}
+.rem{font:700 clamp(3.6rem, 19vw, 6rem)/0.86 var(--display);letter-spacing:-.01em;font-variant-numeric:tabular-nums;margin:0 0 8px;text-align:right}
 .rem.bust{color:var(--amber)}
 .rem small{font-size:.28em;letter-spacing:.06em;vertical-align:.9em;margin-left:.2em;color:var(--amber)}
 .darts{display:grid;grid-template-columns:repeat(3,1fr) auto;gap:8px;align-items:stretch}
-.slot{min-height:64px;border-radius:12px;border:1px solid var(--line);background:var(--panel);font:700 2.3rem/1 var(--display);display:grid;place-items:center;position:relative}
+.slot{min-height:56px;border-radius:12px;border:1px solid var(--line);background:var(--panel-2);font:700 2.1rem/1 var(--display);display:grid;place-items:center;position:relative}
 .slot.empty{color:var(--dim);font-weight:500}
 .slot.t{color:var(--red)} .slot.d{color:var(--green)} .slot.m{color:var(--muted)}
 .slot.unsure{border:2px dashed var(--amber)}
 .slot.void{opacity:.4;text-decoration:line-through}
 .slot.bust{border-color:var(--amber)}
 .slot .src{position:absolute;top:4px;right:6px;font:600 .62rem/1 var(--body);letter-spacing:.08em;color:var(--dim);text-transform:uppercase}
-.sum{display:grid;place-items:center;min-width:70px;font:700 2.3rem/1 var(--display);color:var(--cream)}
+.sum{display:grid;place-items:center;min-width:64px;font:700 2.1rem/1 var(--display);color:var(--cream)}
 .sum small{display:block;font:600 .7rem/1 var(--body);letter-spacing:.1em;color:var(--muted);text-transform:uppercase;text-align:center;margin-bottom:4px}
-.co{min-height:28px;margin-top:8px;font:600 1.25rem/1.3 var(--display);letter-spacing:.04em;color:var(--muted)}
+.co{min-height:24px;margin:2px 0 8px;font:600 1.15rem/1.25 var(--display);letter-spacing:.04em;color:var(--muted)}
 .co b{color:var(--cream);font-weight:700}
 .others{display:flex;gap:8px;margin-top:8px;overflow-x:auto}
 .other{flex:1 0 auto;min-width:96px;padding:6px 10px;border-radius:10px;background:var(--panel);border:1px solid var(--line)}
@@ -129,14 +144,23 @@ button{cursor:pointer;touch-action:manipulation}
 #scr-stage.mode-game .cal-only{display:none!important}
 #scr-stage.manual #stage{display:none}
 #scr-stage.manual .pad-inline{flex:1 1 auto}
-#scr-stage.camhidden #stage{flex:0 0 2px;min-height:2px;opacity:.01}
+#scr-stage.camhidden #stage{flex:0 0 2px;min-height:2px!important;opacity:.01}
+#scr-stage.camhidden .board-panel{flex:1 1 auto}
+#scr-stage.camhidden .rem{font-size:clamp(5.5rem, 31vw, 12rem)}
 @media (orientation:landscape) and (min-width:640px){
-  #scr-stage.mode-game{display:grid;grid-template-columns:minmax(320px,46%) 1fr;grid-template-rows:1fr auto}
-  #scr-stage.mode-game .board-panel{grid-column:1;grid-row:1;overflow:auto}
-  #scr-stage.mode-game #stage{grid-column:2;grid-row:1 / span 2}
-  #scr-stage.mode-game .game-bottom{grid-column:1;grid-row:2}
-  #scr-stage.mode-game .pad-inline{grid-column:2;grid-row:1 / span 2}
-  .rem{font-size:clamp(5rem, 18vw, 11rem)}
+  /* Landscape: camera on the left, top bar + score card + buttons on the right. */
+  #scr-stage.mode-game{display:grid;grid-template-columns:1fr minmax(300px,38%);grid-template-rows:auto 1fr auto}
+  #scr-stage.mode-game .game-top{grid-column:2;grid-row:1}
+  #scr-stage.mode-game #stage{grid-column:1;grid-row:1 / span 3;min-height:0}
+  #scr-stage.mode-game .board-panel{grid-column:2;grid-row:2;overflow:auto;border-top:0}
+  #scr-stage.mode-game .game-bottom{grid-column:2;grid-row:3}
+  #scr-stage.mode-game .pad-inline{grid-column:1;grid-row:1 / span 3}
+  .rem{font-size:clamp(3.6rem, 9vw, 6.5rem)}
+}
+@media (max-height:640px) and (orientation:portrait){
+  .rem{font-size:clamp(3rem, 15vw, 4.4rem)}
+  .slot{min-height:48px;font-size:1.8rem}
+  .game-bottom .btn{min-height:44px}
 }
 
 /* ---------- Sheets ---------- */
@@ -170,6 +194,11 @@ button{cursor:pointer;touch-action:manipulation}
 .toggle input{width:22px;height:22px;accent-color:var(--cream)}
 input[type=range]{accent-color:var(--cream)}
 .names{display:grid;gap:6px}
+.ds{border-top:1px solid var(--line);padding-top:12px}
+.ds .lab{font:700 1.15rem/1 var(--display);letter-spacing:.06em;text-transform:uppercase;color:var(--cream)}
+.ds-count{margin:0}
+.ds .toggle{color:var(--fg);font-size:1rem}
+.ds-count b{font-size:1.2rem}
 .toast{position:fixed;left:50%;bottom:max(90px, calc(env(safe-area-inset-bottom, 0px) + 90px));transform:translateX(-50%);background:var(--cream);color:#16130c;font-weight:600;padding:10px 16px;border-radius:999px;z-index:30;max-width:calc(100% - 32px);text-align:center;box-shadow:0 6px 24px rgba(0,0,0,.5)}
 @media (prefers-reduced-motion:no-preference){.toast{animation:pop .18s ease-out}@keyframes pop{from{opacity:0;transform:translate(-50%,8px)}}}
 </style>
@@ -240,19 +269,39 @@ input[type=range]{accent-color:var(--cream)}
     <p id="cal-help">Aplikacja sama szuka tarczy i rysuje na niej siatkę. Telefonem nie ruszaj. Jeśli siatka nie leży na drutach, wybierz punkt przyciskiem na dole i przesuń palcem w dowolnym miejscu obrazu.</p>
   </header>
 
-  <div class="board-panel game-only" id="board-panel">
-    <div class="topbar">
-      <span id="status" class="chip" data-s="idle" role="status"><i></i><b id="status-t">Gotowe</b></span>
+  <header class="game-top game-only">
+    <span id="status" class="chip" data-s="idle" role="status"><i></i><b id="status-t">Gotowe</b></span>
+    <span class="spacer"></span>
+    <button id="btn-voice" class="icon" aria-pressed="true" aria-label="Głos">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path id="voice-wave" d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg>
+    </button>
+    <button id="btn-menu" class="icon" aria-label="Menu">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
+  </header>
+
+  <div id="stage">
+    <video id="vid" playsinline muted autoplay></video>
+    <canvas id="ov"></canvas>
+    <canvas id="loupe" class="cal-only" width="300" height="300"></canvas>
+    <div class="hud game-only">
+      <span id="hud-round" class="pill num">501 · Runda 1</span>
+      <span id="hud-ai" class="pill ai" hidden></span>
       <span class="spacer"></span>
-      <button id="btn-voice" class="icon" aria-pressed="true" aria-label="Głos">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4z"/><path id="voice-wave" d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg>
-      </button>
-      <button id="btn-menu" class="icon" aria-label="Menu">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      <button id="btn-view" class="icon glass" aria-pressed="true" aria-label="Powiększ tarczę" title="Powiększ tarczę / cały obraz">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path id="view-ic" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
       </button>
     </div>
+    <div id="stage-msg" class="stage-msg" hidden>
+      <p id="stage-msg-t">Coś zasłania tarczę albo telefon się poruszył.</p>
+      <div class="row"><button id="btn-newbg" class="btn">Ustaw nowe tło</button><button id="btn-recal" class="btn ghost">Kalibruj</button></div>
+    </div>
+  </div>
+
+  <div class="board-panel game-only" id="board-panel">
     <div class="active">
       <div class="who"><span id="cur-name">Gracz 1</span><span id="cur-avg" class="avg num"></span></div>
+      <div id="checkout" class="co"></div>
       <div id="cur-rem" class="rem">501</div>
       <div class="darts">
         <button class="slot empty" data-i="0" aria-label="Rzut 1">–</button>
@@ -260,23 +309,12 @@ input[type=range]{accent-color:var(--cream)}
         <button class="slot empty" data-i="2" aria-label="Rzut 3">–</button>
         <div class="sum"><div><small>Tura</small><span id="turn-sum" class="num">0</span></div></div>
       </div>
-      <div id="checkout" class="co"></div>
       <div id="win" class="win" hidden>
         <h3 id="win-t">Wygrana</h3>
         <div class="btn-row"><button id="btn-newleg" class="btn primary">Następny leg</button><button id="btn-undo-win" class="btn">Cofnij</button></div>
       </div>
     </div>
     <div id="others" class="others"></div>
-  </div>
-
-  <div id="stage">
-    <video id="vid" playsinline muted autoplay></video>
-    <canvas id="ov"></canvas>
-    <canvas id="loupe" class="cal-only" width="300" height="300"></canvas>
-    <div id="stage-msg" class="stage-msg" hidden>
-      <p id="stage-msg-t">Coś zasłania tarczę albo telefon się poruszył.</p>
-      <div class="row"><button id="btn-newbg" class="btn">Ustaw nowe tło</button><button id="btn-recal" class="btn ghost">Kalibruj</button></div>
-    </div>
   </div>
 
   <div id="pad-inline" class="pad-inline game-only" hidden></div>
@@ -370,6 +408,13 @@ input[type=range]{accent-color:var(--cream)}
     <div class="field">
       <span class="lab">Korekta grota (uczy się z Twoich poprawek): <b id="opt-off" class="num">0 mm</b></span>
       <div class="btn-row"><button id="opt-off-reset" class="btn">Wyzeruj korektę</button><button id="opt-voice-test" class="btn">Test głosu</button></div>
+    </div>
+    <div class="field ds">
+      <span class="lab">Nauka AI</span>
+      <label class="toggle"><span>Zbieraj rzuty do nauki AI</span><input type="checkbox" id="opt-collect" checked></label>
+      <p class="ds-count">Zebrane: <b id="ds-n" class="num">0 rzutów</b> <span id="ds-detail" class="hint"></span></p>
+      <p class="hint">Każdy rzut zapisuje się na telefonie jako mały wycinek obrazu z wynikiem. Źle policzone rzuty popraw stuknięciem w grot na zdjęciu, bo to najlepsza nauka. Po około 300 rzutach wyeksportuj plik i wyślij go w rozmowie.</p>
+      <div class="btn-row"><button id="ds-export" class="btn">Eksportuj (ZIP)</button><button id="ds-clear" class="btn warn">Usuń dane</button></div>
     </div>
     <button id="set-close" class="btn primary">Gotowe</button>
   </div>
@@ -1125,6 +1170,38 @@ input[type=range]{accent-color:var(--cream)}
       }
       return Math.abs(ref[j] - cr) + Math.abs(ref[j + 1] - cg) + Math.abs(ref[j + 2] - cb);
     };
+    // The barrel line can sit a pixel or two beside the real centre (shadow, jitter), and the
+    // thin point then starts outside the narrow tracking window. Find the point's line first:
+    // try parallel lines across the barrel width and start on the clearly strongest one.
+    // Uses the distance to the reference's 3x3 colour range, so slightly misaligned board edges
+    // (camera jitter) do not look like a point; the point must start right at the barrel and
+    // continue parallel to it.
+    const lat = opt.lateral || 0;
+    if (lat > 0) {
+      const nx0 = -u0y, ny0 = u0x, L0 = Math.max(6, Math.min(16, Math.round(maxLen * 0.6)));
+      const envAt = (x, y) => {
+        if (x < 1 || y < 1 || x >= w - 1 || y >= h - 1) return 0;
+        const j = (y * w + x) * 4;
+        return envelopeDist(ref, j, w, cur[j] * gain, cur[j + 1] * gain, cur[j + 2] * gain);
+      };
+      const run = (o) => {
+        let r = 0, miss = 0, sc = 0, first = 0;
+        for (let s = 1; s <= L0; s++) {
+          const d = envAt(Math.round(px + u0x * s + nx0 * o), Math.round(py + u0y * s + ny0 * o));
+          if (d > thrLow) { if (!first) first = s; r = s; sc += Math.min(d, 4 * thrLow); miss = 0; }
+          else if (++miss > 1) break;
+        }
+        return { r: first && first <= 2 ? r : 0, sc };
+      };
+      const r0 = run(0);
+      let bo = 0, best = r0;
+      for (let o = -lat; o <= lat + 1e-6; o += 0.5) {
+        if (o === 0) continue;
+        const c = run(o);
+        if (c.r > best.r || (c.r === best.r && c.sc > best.sc * 1.05 && Math.abs(o) <= Math.abs(bo))) { best = c; bo = o; }
+      }
+      if (bo !== 0 && best.r >= Math.max(5, Math.ceil(0.6 * L0)) && best.r >= r0.r + 3) { px += nx0 * bo; py += ny0 * bo; lastX = px; lastY = py; }
+    }
     // Track the point step by step: look sideways for the strongest change, follow it,
     // and let the direction drift at most 15 degrees from the barrel axis.
     for (let s = 1; s <= maxLen; s++) {
@@ -1196,6 +1273,7 @@ input[type=range]{accent-color:var(--cream)}
     this.diag = { mv: 0, mvThr: 0, moving: false, A: 0, result: 'start', at: 0, frames: 0 };
     this.useBarrel = cfg.barrel !== false;
     this.pointMin = cfg.pointMin != null ? cfg.pointMin : 14;
+    this.pointLateral = cfg.pointLateral;
     this.pointK = cfg.pointK != null ? cfg.pointK : 3.2;
     this.ppm = localScale(this.Hp, 0, 0);
     this.blockB = Math.max(8, Math.round(15 * this.ppm));          // ~30 mm blocks at half resolution
@@ -1337,8 +1415,10 @@ input[type=range]{accent-color:var(--cream)}
     // Follow the thin steel point beyond the barrel.
     const gain = this.lastGain || 1;
     const bt = applyH(this.Hpi, det.tip[0], det.tip[1]);
-    const maxLen = Math.round(30 * localScale(this.Hp, bt[0], bt[1]));
-    const xt = extendTip(refA, frame, this.w, this.h, gain, det.tip, det.axis, maxLen, Math.max(this.pointMin, this.pointK * (this.noise || 0)));
+    const bscale = localScale(this.Hp, bt[0], bt[1]);
+    const maxLen = Math.round(30 * bscale);
+    const lateral = this.pointLateral != null ? this.pointLateral : Math.max(1.5, Math.min(6, Math.round(2 * 3.4 * bscale) / 2));
+    const xt = extendTip(refA, frame, this.w, this.h, gain, det.tip, det.axis, maxLen, Math.max(this.pointMin, this.pointK * (this.noise || 0)), { lateral });
     det.barrelTip = det.tip.slice();
     det.ext = xt.ext;
     det.tip = xt.end;
@@ -1363,14 +1443,17 @@ input[type=range]{accent-color:var(--cream)}
       }
     }
     const dbg = this.debugCrop(refA, frame, th.mask, det);
+    if (this.debugHook) this.debugHook({ refA, frame, det, gain, thr: Math.max(this.pointMin, this.pointK * (this.noise || 0)) });
     return [{ type: 'dart', det, tip, tipRaw, board: b, debug: dbg }];
   };
-  // Small crops (reference, current frame, change mask) around a detection, for the
-  // "save for analysis" button. Taken before the reference is replaced.
+  // Crops (reference, current frame, change mask) around a detection, for the "save for
+  // analysis" button and the AI training samples. Taken before the reference is replaced.
+  // Covers the whole dart plus ~55 mm around the tip, so a wrong tip still has the real one inside.
   Detector.prototype.debugCrop = function (refA, frame, mask, det) {
-    const bb = det.bbox, m = 40;
-    const x0 = Math.max(0, Math.min(bb.minx, Math.floor(det.tip[0])) - m), y0 = Math.max(0, Math.min(bb.miny, Math.floor(det.tip[1])) - m);
-    const x1 = Math.min(this.w - 1, Math.max(bb.maxx, Math.ceil(det.tip[0])) + m), y1 = Math.min(this.h - 1, Math.max(bb.maxy, Math.ceil(det.tip[1])) + m);
+    const bb = det.bbox, m = 40, R = Math.max(m, Math.round(55 * this.ppm));
+    const tx = det.tip[0], ty = det.tip[1];
+    const x0 = Math.max(0, Math.min(bb.minx - m, Math.floor(tx - R))), y0 = Math.max(0, Math.min(bb.miny - m, Math.floor(ty - R)));
+    const x1 = Math.min(this.w - 1, Math.max(bb.maxx + m, Math.ceil(tx + R))), y1 = Math.min(this.h - 1, Math.max(bb.maxy + m, Math.ceil(ty + R)));
     const cw = x1 - x0 + 1, ch = y1 - y0 + 1;
     const ref = new Uint8ClampedArray(cw * ch * 4), cur = new Uint8ClampedArray(cw * ch * 4), mk = new Uint8Array(cw * ch);
     for (let y = 0; y < ch; y++) {
@@ -1864,7 +1947,7 @@ const S = {
   pts: null, cal: null, sel: 0,
   proc: null, det: null, frameData: null, resetPending: false, rebasePending: false,
   mode: 'intro', manual: false, camHidden: false,
-  settings: Object.assign({ thr: 60, shadows: true, autoNext: true, voice: true, mask: false, lock: false, diag: false }, store.get('settings', {})),
+  settings: Object.assign({ thr: 60, shadows: true, autoNext: true, voice: true, mask: false, lock: false, diag: false, view: 'board', collect: true }, store.get('settings', {})),
   offset: Object.assign({ mm: 0, samples: [] }, store.get('offset', {})),
   game: null, status: 'idle', blockedShown: false, lastProc: 0, maskImg: null, maskCanvas: null
 };
@@ -2132,6 +2215,14 @@ $('#cal-done').addEventListener('click', () => {
 let drag = null;
 const ovEl = $('#ov');
 ovEl.addEventListener('pointerdown', (e) => {
+  if (S.mode === 'game') {
+    // In play: tapping a dart marker on the camera picture opens its correction.
+    const m = screenMap();
+    let best = -1, bd = 34;
+    S.game.cur.darts.forEach((d, i) => { if (!d.tip) return; const s = m.v2s(d.tip); const dd = Math.hypot(s[0] - e.offsetX, s[1] - e.offsetY); if (dd < bd) { bd = dd; best = i; } });
+    if (best >= 0) openFix(best);
+    return;
+  }
   if (S.mode !== 'cal') return;
   const m = screenMap();
   const p = [e.offsetX, e.offsetY];
@@ -2245,6 +2336,8 @@ function onDart(e) {
   const wd = C.wireDistance(e.board[0], e.board[1]);
   const unsure = (e.det.tipNearOcc && e.det.ext < 3) || e.det.hidden || wd < 1.5;
   const d = Object.assign({}, sc, { auto: true, unsure, tip: tipV, raw: rawV, axis: e.det.axis.slice(), snap: captureSnap(tipV), debug: e.debug, board: e.board.slice() });
+  d.det0 = { label: sc.label, num: sc.num, mult: sc.mult, tip: tipV.slice(), raw: rawV.slice(), board: e.board.slice(), unsure };
+  d.proc0 = procSnap(); d.cal0 = S.cal;
   const v = C.addDart(S.game, d);
   if (!v) return;
   hideStageMsg();
@@ -2275,7 +2368,9 @@ function captureSnap(tip) {
 
 function nextTurn(manual) {
   if (S.game.winner != null) return;
+  harvestTurn(S.game.cur.darts);
   C.commitTurn(S.game);
+  trimMemory();
   if (manual && S.det) S.resetPending = true;
   afterChange();
   const p = S.game.cur.p, rem = C.remainingOf(S.game, p);
@@ -2299,6 +2394,9 @@ function renderGame() {
   const st = C.playerStats(g, p);
   $('#cur-name').textContent = g.players[p].name;
   $('#cur-avg').textContent = st.darts ? 'śr. ' + st.avg.toFixed(1) : '';
+  const round = g.turns.filter(t => t.p === p).length + 1;
+  const legNo = (g.legs || []).reduce((a, b) => a + b, 0) + 1;
+  $('#hud-round').textContent = g.start + ' · Runda ' + round + (legNo > 1 ? ' · Leg ' + legNo : '');
   const rem = $('#cur-rem');
   rem.classList.toggle('bust', v.state === 'bust');
   rem.innerHTML = v.state === 'bust' ? v.before + '<small>PRZERZUT</small>' : String(v.rem);
@@ -2338,12 +2436,50 @@ function renderGame() {
 }
 
 /* ---------------- Overlay drawing ---------------- */
+// Bounding box (video px) of the board including the number ring.
+function boardBox(H) {
+  const sgn = Math.sign(H[8]);
+  let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+  for (let a = 0; a < 360; a += 5) {
+    const bx = 215 * Math.cos(a * Math.PI / 180), by = 215 * Math.sin(a * Math.PI / 180);
+    if (Math.sign(H[6] * bx + H[7] * by + H[8]) !== sgn) return null;
+    const p = C.applyH(H, bx, by);
+    minx = Math.min(minx, p[0]); maxx = Math.max(maxx, p[0]); miny = Math.min(miny, p[1]); maxy = Math.max(maxy, p[1]);
+  }
+  return { x: minx, y: miny, w: maxx - minx, h: maxy - miny };
+}
+// Video -> screen mapping of the camera panel. Calibration shows the whole picture;
+// play zooms so the board fills the panel (like Dartsmind), unless "cały obraz" is chosen.
+const stageEl = $('#stage');
 function screenMap() {
-  const r = $('#stage').getBoundingClientRect();
+  const r = stageEl.getBoundingClientRect();
+  const W = r.width, Hh = r.height;
   const vw = S.vw || 16, vh = S.vh || 9;
-  const scale = Math.min(r.width / vw, r.height / vh);
-  const ox = (r.width - vw * scale) / 2, oy = (r.height - vh * scale) / 2;
-  return { scale, ox, oy, w: r.width, h: r.height, v2s: (p) => [ox + p[0] * scale, oy + p[1] * scale], s2v: (q) => [(q[0] - ox) / scale, (q[1] - oy) / scale] };
+  let scale = Math.min(W / vw, Hh / vh);
+  let ox = (W - vw * scale) / 2, oy = (Hh - vh * scale) / 2;
+  if (S.mode === 'game' && S.cal && !S.manual && S.settings.view !== 'full') {
+    const bb = boardBox(S.cal.H);
+    if (bb && bb.w > 4 && bb.h > 4) {
+      const s2 = Math.min(W / bb.w, Hh / bb.h);
+      if (s2 > scale) {
+        scale = Math.min(s2, scale * 5);
+        const cx = bb.x + bb.w / 2, cy = bb.y + bb.h / 2, fw = vw * scale, fh = vh * scale;
+        ox = W / 2 - cx * scale; oy = Hh / 2 - cy * scale;
+        ox = fw >= W ? Math.min(0, Math.max(W - fw, ox)) : (W - fw) / 2;
+        oy = fh >= Hh ? Math.min(0, Math.max(Hh - fh, oy)) : (Hh - fh) / 2;
+      }
+    }
+  }
+  return { scale, ox, oy, w: W, h: Hh, v2s: (p) => [ox + p[0] * scale, oy + p[1] * scale], s2v: (q) => [(q[0] - ox) / scale, (q[1] - oy) / scale] };
+}
+let vidLayout = '';
+function layoutVideo(m) {
+  if (!S.vw) return;
+  const key = [m.ox, m.oy, m.scale].map(v => v.toFixed(2)).join();
+  if (key === vidLayout) return;
+  vidLayout = key;
+  const st = S.video.style;
+  st.left = m.ox + 'px'; st.top = m.oy + 'px'; st.width = S.vw * m.scale + 'px'; st.height = S.vh * m.scale + 'px';
 }
 function sizeOverlay() {
   const r = $('#stage').getBoundingClientRect();
@@ -2397,6 +2533,7 @@ function drawBoard(ctx, H, map, opts) {
 function drawOverlay() {
   const ctx = ovEl.getContext('2d');
   const m = screenMap();
+  layoutVideo(m);
   ctx.clearRect(0, 0, m.w, m.h);
   if (!S.vw) return;
   if (S.mode === 'cal' && S.pts) {
@@ -2428,12 +2565,12 @@ function drawOverlay() {
       if (!d.tip) return;
       const s = m.v2s(d.tip);
       let ly = s[1];
-      for (let k = 0; k < 3; k++) if (placed.some(p => Math.abs(p[0] - s[0]) < 70 && Math.abs(p[1] - ly) < 17)) ly += 18;
+      for (let k = 0; k < 3; k++) if (placed.some(p => Math.abs(p[0] - s[0]) < 76 && Math.abs(p[1] - ly) < 19)) ly += 20;
       placed.push([s[0], ly]);
       ctx.beginPath(); ctx.arc(s[0], s[1], 7, 0, Math.PI * 2);
       ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.75)'; ctx.stroke();
       ctx.lineWidth = 2; ctx.strokeStyle = d.unsure ? '#f2b441' : '#3cb06d'; ctx.stroke();
-      ctx.font = '700 16px "Barlow Condensed", sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.font = '700 18px "Barlow Condensed", sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
       const t = (i + 1) + ': ' + d.label;
       ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.85)'; ctx.strokeText(t, s[0] + 11, ly);
       ctx.fillStyle = '#fff'; ctx.fillText(t, s[0] + 11, ly);
@@ -2455,9 +2592,10 @@ function drawDiag(ctx) {
   ctx.save();
   ctx.font = '600 12px ui-monospace, Menlo, Consolas, monospace';
   const wMax = Math.max(...lines.map(l => ctx.measureText(l).width)) + 16;
-  ctx.fillStyle = 'rgba(0,0,0,.72)'; ctx.fillRect(6, 6, wMax, lines.length * 16 + 10);
+  const y0 = 54;
+  ctx.fillStyle = 'rgba(0,0,0,.72)'; ctx.fillRect(6, y0, wMax, lines.length * 16 + 10);
   ctx.fillStyle = '#f0e8d3'; ctx.textBaseline = 'top';
-  lines.forEach((l, i) => ctx.fillText(l, 14, 12 + i * 16));
+  lines.forEach((l, i) => ctx.fillText(l, 14, y0 + 6 + i * 16));
   ctx.restore();
 }
 
@@ -2522,6 +2660,11 @@ function manualDart(d) {
   d = Object.assign({}, d, { auto: false });
   if (S.game.winner != null) return;
   if (!C.turnOpen(S.game)) { toast('Tura jest pełna. Stuknij Dalej.'); return; }
+  if (S.det && S.proc && S.frameData && S.det.turnRef && S.settings.collect) {
+    const P = S.proc, k = Math.min(1, 640 / Math.max(P.pw, P.ph));
+    d.debug = { kind: 'missed', x0: 0, y0: 0, w: P.pw, h: P.ph, k, ref: Uint8ClampedArray.from(S.det.turnRef), cur: Uint8ClampedArray.from(S.frameData), noise: S.det.noise, shift: S.det.diag.shift || [0, 0], dartsInTurn: S.det.dartsInTurn };
+    d.proc0 = procSnap(); d.cal0 = S.cal;
+  }
   const v = C.addDart(S.game, d);
   let say = C.sayDart(d);
   if (v.state === 'bust') say += '. Przerzut'; else if (v.state === 'win') say += '. Wygrana!';
@@ -2549,7 +2692,7 @@ function openFix(i) {
   buildPad($('#fix-pad'), (nd) => {
     if (fix.i >= 0) {
       const old = g.cur.darts[fix.i];
-      C.setDart(g, fix.i, Object.assign({}, nd, { auto: false, tip: null, snap: old && old.snap }));
+      C.setDart(g, fix.i, Object.assign({}, nd, keepMeta(old), { auto: false, tip: null }));
       speak(C.sayDart(nd));
     } else manualDart(nd);
     closeSheet('#sh-fix'); afterChange();
@@ -2589,10 +2732,14 @@ $('#fix-save').addEventListener('click', () => {
   if (!d || !fix.dart) { closeSheet('#sh-fix'); return; }
   const moved = fix.tip && d.tip && (fix.tip[0] !== d.tip[0] || fix.tip[1] !== d.tip[1]);
   if (moved && d.auto && d.raw && d.axis) learnOffset(d, fix.tip);
-  C.setDart(g, fix.i, Object.assign({}, fix.dart, { tip: fix.tip, unsure: false, auto: d.auto, fixed: d.fixed || moved }));
+  C.setDart(g, fix.i, Object.assign({}, fix.dart, { tip: fix.tip, unsure: false, auto: d.auto, fixed: d.fixed || moved, confirmed: true }));
   closeSheet('#sh-fix'); afterChange();
 });
-$('#fix-del').addEventListener('click', () => { C.removeDart(S.game, fix.i); closeSheet('#sh-fix'); afterChange(); });
+$('#fix-del').addEventListener('click', () => {
+  const d = S.game.cur.darts[fix.i];
+  if (d) { d.deleted = 'deleted'; harvestTurn([d]); }
+  C.removeDart(S.game, fix.i); closeSheet('#sh-fix'); afterChange();
+});
 $('#fix-cancel').addEventListener('click', () => closeSheet('#sh-fix'));
 // Picture for remote analysis: reference | current frame | change mask, plus the numbers.
 function exportDebug(d, idx) {
@@ -2628,11 +2775,13 @@ function exportDebug(d, idx) {
   ].forEach((l, i) => x.fillText(l, pad, 24 + i * 24));
   c.toBlob((blob) => {
     if (!blob) { toast('Nie udało się zapisać obrazu.'); return; }
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-    a.download = 'oko-tarczy-rzut-' + (idx + 1) + '-' + Date.now() + '.png';
-    document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+    download(blob, 'oko-tarczy-rzut-' + (idx + 1) + '-' + Date.now() + '.png');
     toast('Zapisano w Pobranych. Wyślij ten plik w rozmowie.', 3500);
   }, 'image/png');
+}
+function download(blob, name) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
 }
 $('#fix-export').addEventListener('click', () => exportDebug(S.game.cur.darts[fix.i], fix.i));
 $$('.slot').forEach(el => el.addEventListener('click', () => {
@@ -2656,6 +2805,199 @@ function learnOffset(d, trueTip) {
   if (S.det) S.det.offsetMm = S.offset.mm;
 }
 
+/* ---------------- Training data for the AI model ----------------
+   Every dart seen by the camera keeps a crop of the picture before and after the throw.
+   When the turn ends, the crop goes to IndexedDB with the final score, the point the player
+   tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
+const APP_VERSION = '2026.10.15';
+const DS = {
+  p: null,
+  open() {
+    if (!this.p) this.p = new Promise((res, rej) => {
+      if (!window.indexedDB) { rej(new Error('brak IndexedDB')); return; }
+      const r = indexedDB.open('okotarczy', 1);
+      r.onupgradeneeded = () => { if (!r.result.objectStoreNames.contains('samples')) r.result.createObjectStore('samples', { keyPath: 'id' }); };
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+    return this.p;
+  },
+  async run(mode, fn) {
+    const db = await this.open();
+    return new Promise((res, rej) => {
+      const t = db.transaction('samples', mode), st = t.objectStore('samples');
+      let out; const rq = fn(st);
+      if (rq) rq.onsuccess = () => { out = rq.result; };
+      t.oncomplete = () => res(out); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error);
+    });
+  },
+  put(rec) { return this.run('readwrite', st => st.put(rec)); },
+  get(id) { return this.run('readonly', st => st.get(id)); },
+  count() { return this.run('readonly', st => st.count()); },
+  all() { return this.run('readonly', st => st.getAll()); },
+  clear() { return this.run('readwrite', st => st.clear()); }
+};
+S.dsCount = 0;
+DS.count().then(n => { S.dsCount = n || 0; syncAiPill(); }).catch(() => {});
+
+function procSnap() { const P = S.proc; return P ? { x: P.x, y: P.y, s: P.s, w: P.pw, h: P.ph, Hp: P.Hp.slice() } : null; }
+function keepMeta(o) { return o ? { snap: o.snap, debug: o.debug, det0: o.det0, proc0: o.proc0, cal0: o.cal0, sid: o.sid, sLabel: o.sLabel, crop0: o.crop0 } : {}; }
+const r2 = (n) => Math.round(n * 100) / 100;
+// Video pixel -> pixel of the saved crop.
+function toCrop(v, P, cr) { return v && P && cr ? [r2(((v[0] - P.x) * P.s - cr.x0) * cr.k), r2(((v[1] - P.y) * P.s - cr.y0) * cr.k)] : null; }
+function labelOf(d) {
+  const det = d.det0;
+  const moved = d.tip && det && (Math.abs(d.tip[0] - det.tip[0]) > 0.01 || Math.abs(d.tip[1] - det.tip[1]) > 0.01);
+  const source = d.deleted ? d.deleted : moved ? 'tap' : (d.tip && det) ? (d.confirmed ? 'confirmed' : 'auto') : 'keypad';
+  const board = d.tip && d.cal0 ? C.applyH(d.cal0.Hi, d.tip[0], d.tip[1]).map(r2) : null;
+  return { num: d.num, mult: d.mult, pts: d.pts, label: d.label, source, tip: d.tip ? toCrop(d.tip, d.proc0, d.crop0) : null, board };
+}
+function rgbaToJpeg(rgba, w, h, k) {
+  return new Promise((res) => {
+    try {
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      c.getContext('2d').putImageData(new ImageData(rgba, w, h), 0, 0);
+      let out = c;
+      if (k && k < 1) {
+        out = document.createElement('canvas'); out.width = Math.round(w * k); out.height = Math.round(h * k);
+        out.getContext('2d').drawImage(c, 0, 0, out.width, out.height);
+      }
+      out.toBlob((b) => res(b ? { blob: b, w: out.width, h: out.height } : null), 'image/jpeg', 0.92);
+    } catch (e) { res(null); }
+  });
+}
+let dsChain = Promise.resolve();
+function harvestTurn(darts) {
+  darts.forEach((d, i) => {
+    if (!d) return;
+    if (d.debug) {
+      const D = d.debug; d.debug = null;
+      if (!S.settings.collect) return;
+      d.sid = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+      d.crop0 = { x0: D.x0, y0: D.y0, k: D.k || 1 };
+      const P = d.proc0, cr = d.crop0, det = d.det0, cal = d.cal0;
+      const pc = (q) => q ? [r2((q[0] - cr.x0) * cr.k), r2((q[1] - cr.y0) * cr.k)] : null;
+      const label = labelOf(d);
+      d.sLabel = JSON.stringify(label);
+      const rec = {
+        id: d.sid, ts: Date.now(), app: APP_VERSION, kind: D.kind || 'dart', label,
+        det: det ? { label: det.label, num: det.num, mult: det.mult, unsure: det.unsure, board: det.board.map(r2), tip: toCrop(det.tip, P, cr), raw: toCrop(det.raw, P, cr),
+          seen: pc(D.tip), barrel: pc(D.barrel), axis: D.axis, ext: D.ext, area: D.area, hidden: D.hidden, nearOcc: D.nearOcc } : null,
+        crop: { x0: D.x0, y0: D.y0, k: cr.k },
+        proc: P, cal: cal ? { H: cal.H, viewAngle: r2(cal.viewAngle), side: cal.side, pxPerMm: r2(cal.pxPerMm) } : null,
+        video: [S.vw, S.vh], noise: D.noise, shift: D.shift, dartsInTurn: D.dartsInTurn, offsetMm: r2(S.offset.mm || 0),
+        turn: { i, labels: darts.map(x => x && x.label) }
+      };
+      dsChain = dsChain.then(() => saveSample(rec, D)).catch(() => {});
+    } else if (d.sid) {
+      const label = labelOf(d), js = JSON.stringify(label);
+      if (js === d.sLabel) return;
+      d.sLabel = js;
+      dsChain = dsChain.then(async () => { const r = await DS.get(d.sid); if (r) { r.label = label; r.relabeled = Date.now(); await DS.put(r); } }).catch(() => {});
+    }
+  });
+}
+let persistAsked = false;
+async function saveSample(rec, D) {
+  const [a, b] = await Promise.all([rgbaToJpeg(D.ref, D.w, D.h, D.k), rgbaToJpeg(D.cur, D.w, D.h, D.k)]);
+  if (!a || !b) return;
+  rec.ref = a.blob; rec.cur = b.blob; rec.crop.w = a.w; rec.crop.h = a.h; rec.bytes = a.blob.size + b.blob.size;
+  await DS.put(rec);
+  S.dsCount++; syncAiPill();
+  if (S.dsCount % 100 === 0) toast('Zebrano ' + rzut(S.dsCount) + ' do nauki AI.', 3500);
+  if (!persistAsked) { persistAsked = true; try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {} }
+}
+// Drop heavy pictures of older turns (only the last turn can still be corrected after Cofnij).
+function trimMemory() {
+  const t = S.game.turns;
+  for (let k = 0; k < t.length - 1; k++) for (const d of t[k].darts) { if (d.snap) d.snap = null; if (d.debug) d.debug = null; }
+}
+function syncAiPill() {
+  const el = $('#hud-ai');
+  el.hidden = !(S.settings.collect && S.dsCount > 0);
+  el.textContent = 'Nauka AI · ' + S.dsCount;
+  el.title = 'Zebrane rzuty do nauki AI';
+}
+const plural = (n, a, b, c) => n === 1 ? a : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14)) ? b : c;
+const rzut = (n) => n + ' ' + plural(n, 'rzut', 'rzuty', 'rzutów');
+const mb = (n) => (n / 1048576).toFixed(n < 10485760 ? 1 : 0).replace('.', ',') + ' MB';
+async function refreshDsInfo() {
+  try {
+    const all = await DS.all();
+    S.dsCount = all.length; syncAiPill();
+    const bytes = all.reduce((a, r) => a + (r.bytes || 0), 0);
+    const tap = all.filter(r => r.label && r.label.source === 'tap').length;
+    $('#ds-n').textContent = rzut(all.length);
+    $('#ds-detail').textContent = all.length ? '(' + mb(bytes) + ', poprawionych stuknięciem: ' + tap + ')' : '';
+  } catch (e) { $('#ds-n').textContent = '–'; $('#ds-detail').textContent = '(pamięć niedostępna)'; }
+}
+
+/* Minimal ZIP writer (stored, no compression: the pictures are JPEG already). */
+const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(u8) { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC_T[(c ^ u8[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function makeZip(files) {
+  const enc = new TextEncoder(), parts = [], central = [];
+  const now = new Date();
+  const dt = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+  const tm = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
+  let off = 0;
+  for (const f of files) {
+    const nm = enc.encode(f.name), n = f.data.length, crc = crc32(f.data);
+    const h = new DataView(new ArrayBuffer(30));
+    h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true); h.setUint16(8, 0, true);
+    h.setUint16(10, tm, true); h.setUint16(12, dt, true); h.setUint32(14, crc, true); h.setUint32(18, n, true); h.setUint32(22, n, true);
+    h.setUint16(26, nm.length, true); h.setUint16(28, 0, true);
+    parts.push(new Uint8Array(h.buffer), nm, f.data);
+    const c = new DataView(new ArrayBuffer(46));
+    c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, 0x0800, true); c.setUint16(10, 0, true);
+    c.setUint16(12, tm, true); c.setUint16(14, dt, true); c.setUint32(16, crc, true); c.setUint32(20, n, true); c.setUint32(24, n, true);
+    c.setUint16(28, nm.length, true); c.setUint32(38, 0, true); c.setUint32(42, off, true);
+    central.push(new Uint8Array(c.buffer), nm);
+    off += 30 + nm.length + n;
+  }
+  const cdSize = central.reduce((a, u) => a + u.length, 0);
+  const e = new DataView(new ArrayBuffer(22));
+  e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true);
+  e.setUint32(12, cdSize, true); e.setUint32(16, off, true);
+  return new Blob([...parts, ...central, new Uint8Array(e.buffer)], { type: 'application/zip' });
+}
+async function exportDataset() {
+  const btn = $('#ds-export'), old = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Pakuję…';
+  try {
+    await dsChain;
+    const recs = await DS.all();
+    if (!recs.length) { toast('Nie ma jeszcze zebranych rzutów.'); return; }
+    recs.sort((a, b) => a.ts - b.ts);
+    const files = [], meta = [];
+    for (let k = 0; k < recs.length; k++) {
+      const r = recs[k], base = 'samples/' + String(k + 1).padStart(5, '0');
+      const m = Object.assign({}, r); delete m.ref; delete m.cur;
+      m.files = { ref: base + '_ref.jpg', cur: base + '_cur.jpg' };
+      files.push({ name: m.files.ref, data: new Uint8Array(await r.ref.arrayBuffer()) });
+      files.push({ name: m.files.cur, data: new Uint8Array(await r.cur.arrayBuffer()) });
+      meta.push(m);
+    }
+    const manifest = { app: APP_VERSION, exported: new Date().toISOString(), ua: navigator.userAgent, count: meta.length,
+      note: 'crop px = (proc px - crop.x0/y0) * crop.k; proc px = (video px - proc.x/y) * proc.s; board mm -> proc px via proc.Hp', samples: meta };
+    files.unshift({ name: 'manifest.json', data: new TextEncoder().encode(JSON.stringify(manifest)) });
+    const blob = makeZip(files);
+    const d = new Date(), pad = (n) => String(n).padStart(2, '0');
+    download(blob, 'oko-tarczy-dane-' + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '-' + pad(d.getHours()) + pad(d.getMinutes()) + '.zip');
+    toast('Zapisano ' + rzut(meta.length) + ' w Pobranych (' + mb(blob.size) + '). Wyślij ten plik w rozmowie.', 5000);
+  } catch (e) { toast('Nie udało się wyeksportować danych.'); }
+  finally { btn.disabled = false; btn.textContent = old; }
+}
+$('#ds-export').addEventListener('click', exportDataset);
+let clearArmed = 0;
+$('#ds-clear').addEventListener('click', async (e) => {
+  const b = e.currentTarget;
+  if (Date.now() - clearArmed > 4000) { clearArmed = Date.now(); b.textContent = 'Na pewno usunąć?'; setTimeout(() => { b.textContent = 'Usuń dane'; }, 4000); return; }
+  clearArmed = 0; b.textContent = 'Usuń dane';
+  try { await DS.clear(); S.dsCount = 0; syncAiPill(); refreshDsInfo(); toast('Dane usunięte.'); } catch (err) { toast('Nie udało się usunąć danych.'); }
+});
+$('#opt-collect').addEventListener('change', (e) => { S.settings.collect = e.target.checked; saveSettings(); syncAiPill(); });
+
 /* ---------------- Buttons ---------------- */
 $('#btn-start').addEventListener('click', async () => {
   speak(''); // unlock speech on Android after a user gesture
@@ -2672,7 +3014,9 @@ $('#btn-manual').addEventListener('click', () => {
   showScreen('game'); setStatus('manual'); renderGame();
 });
 $('#btn-undo').addEventListener('click', () => {
+  const last = S.game.cur.darts[S.game.cur.darts.length - 1];
   const r = C.undo(S.game);
+  if (r === 'dart' && last) { last.deleted = 'undone'; harvestTurn([last]); }
   if (!r) { toast('Nie ma czego cofnąć.'); return; }
   if (S.det) S.resetPending = true;
   afterChange(); setStatus(S.manual ? 'manual' : (C.turnOpen(S.game) ? 'ready' : 'pull'));
@@ -2682,6 +3026,7 @@ $('#btn-key').addEventListener('click', () => { if (C.turnOpen(S.game)) openFix(
 $('#btn-next').addEventListener('click', () => { nextTurn(true); if (!S.manual) setStatus('ready'); });
 $('#btn-newleg').addEventListener('click', () => {
   const g = S.game;
+  harvestTurn(g.cur.darts);
   const legs = (g.legs || g.players.map(() => 0)).slice();
   if (g.winner != null) legs[g.winner]++;
   const starter = ((g.starter || 0) + 1) % g.players.length;
@@ -2695,6 +3040,16 @@ const voiceBtn = $('#btn-voice');
 function syncVoice() { voiceBtn.setAttribute('aria-pressed', String(!!S.settings.voice)); }
 voiceBtn.addEventListener('click', () => { S.settings.voice = !S.settings.voice; store.set('settings', S.settings); syncVoice(); if (S.settings.voice) speak('Głos włączony'); });
 syncVoice();
+// Camera panel: board filling the panel (default) or the whole picture.
+const viewBtn = $('#btn-view');
+function syncView() {
+  const zoomed = S.settings.view !== 'full';
+  viewBtn.setAttribute('aria-pressed', String(zoomed));
+  viewBtn.setAttribute('aria-label', zoomed ? 'Pokaż cały obraz' : 'Powiększ tarczę');
+  $('#view-ic').setAttribute('d', zoomed ? 'M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5' : 'M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5');
+}
+viewBtn.addEventListener('click', () => { S.settings.view = S.settings.view === 'full' ? 'board' : 'full'; store.set('settings', S.settings); syncView(); });
+syncView();
 
 // Menu
 $('#btn-menu').addEventListener('click', () => {
@@ -2743,6 +3098,7 @@ $('#seg-players').addEventListener('click', (e) => { const v = e.target.dataset.
 $('#new-cancel').addEventListener('click', () => closeSheet('#sh-new'));
 $('#new-go').addEventListener('click', () => {
   const names = $$('#names input').map((i, k) => i.value.trim() || 'Gracz ' + (k + 1));
+  harvestTurn(S.game.cur.darts);
   S.game = C.createGame({ start: ng.start, players: names, doubleOut: $('#opt-dout').checked });
   closeSheet('#sh-new');
   if (S.det) S.resetPending = true;
@@ -2756,6 +3112,8 @@ function openSettings() {
   $('#opt-shadow').checked = S.settings.shadows; $('#opt-auto').checked = S.settings.autoNext;
   $('#opt-lock').checked = S.settings.lock; $('#opt-mask').checked = S.settings.mask; $('#opt-diag').checked = S.settings.diag;
   $('#opt-off').textContent = (S.offset.mm >= 0 ? '+' : '') + S.offset.mm.toFixed(1) + ' mm';
+  $('#opt-collect').checked = !!S.settings.collect;
+  refreshDsInfo();
   openSheet('#sh-set');
 }
 const saveSettings = () => store.set('settings', S.settings);
@@ -2779,7 +3137,7 @@ renderGame();
 showScreen('intro');
 
 // Hooks for automated testing.
-window.OkoTarczy = { S, C, setPoints(p) { S.pts = p.map(q => q.slice()); updateReadout(); }, finishCalibration() { $('#cal-done').click(); }, startCamera };
+window.OkoTarczy = { S, C, DS, setPoints(p) { S.pts = p.map(q => q.slice()); updateReadout(); }, finishCalibration() { $('#cal-done').click(); }, startCamera, screenMap, exportDataset, dsIdle: () => dsChain, version: APP_VERSION };
 })();
 </script>
 </body>
