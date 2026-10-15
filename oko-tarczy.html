@@ -402,6 +402,7 @@ input[type=range]{accent-color:var(--cream)}
     </div>
     <label class="toggle"><span>Ignoruj cienie lotek</span><input type="checkbox" id="opt-shadow" checked></label>
     <label class="toggle"><span>Następna tura po wyjęciu lotek</span><input type="checkbox" id="opt-auto" checked></label>
+    <label class="toggle"><span>Śledź tarczę (chwiejący się statyw)</span><input type="checkbox" id="opt-track" checked></label>
     <label class="toggle"><span>Blokuj ekspozycję i ostrość aparatu</span><input type="checkbox" id="opt-lock"></label>
     <label class="toggle"><span>Pokaż, co widzi wykrywanie (różowe)</span><input type="checkbox" id="opt-mask"></label>
     <label class="toggle"><span>Pokaż diagnostykę (liczby na obrazie)</span><input type="checkbox" id="opt-diag"></label>
@@ -1446,6 +1447,37 @@ input[type=range]{accent-color:var(--cream)}
     if (this.debugHook) this.debugHook({ refA, frame, det, gain, thr: Math.max(this.pointMin, this.pointK * (this.noise || 0)) });
     return [{ type: 'dart', det, tip, tipRaw, board: b, debug: dbg }];
   };
+  // Board tracking: frame pixels whose source lies outside the camera picture (the board moved
+  // towards the edge) show the reference instead, and pixels that come into view for the first
+  // time are taken into the references, so picture edges never look like a new dart.
+  // P maps frame pixel -> video pixel (affine), vw x vh is the video size.
+  Detector.prototype.stabPatch = function (frame, P, vw, vh, inset) {
+    const w = this.w, h = this.h, ref = this.ref;
+    if (!this.vLo || this.vLo.length !== h) { this.vLo = new Int32Array(h).fill(w); this.vHi = new Int32Array(h).fill(-1); }
+    const lo = inset, hiX = vw - 1 - inset, hiY = vh - 1 - inset;
+    const refs = ref ? [ref, this.turnRef, this.prev].filter(Boolean) : [];
+    for (let y = 0; y < h; y++) {
+      let x0 = 0, x1 = w - 1;
+      const cu = P[1] * y + P[2], cv = P[4] * y + P[5];
+      const clip = (a, c, l2, h2) => {
+        if (Math.abs(a) < 1e-12) { if (c < l2 || c > h2) { x0 = 1; x1 = 0; } return; }
+        let p = (l2 - c) / a, q = (h2 - c) / a; if (p > q) { const t = p; p = q; q = t; }
+        x0 = Math.max(x0, Math.ceil(p)); x1 = Math.min(x1, Math.floor(q));
+      };
+      clip(P[0], cu, lo, hiX); clip(P[3], cv, lo, hiY);
+      const row = y * w * 4;
+      if (!ref) { this.vLo[y] = x1 >= x0 ? x0 : w; this.vHi[y] = x1 >= x0 ? x1 : -1; continue; }
+      if (x1 >= x0) {
+        const a = this.vLo[y], b = this.vHi[y];
+        const adopt = (xa, xb) => { if (xb < xa) return; for (const r of refs) r.set(frame.subarray(row + xa * 4, row + (xb + 1) * 4), row + xa * 4); };
+        if (b < a) adopt(x0, x1);
+        else { if (x0 < a) adopt(x0, Math.min(x1, a - 1)); if (x1 > b) adopt(Math.max(x0, b + 1), x1); }
+        this.vLo[y] = Math.min(a, x0); this.vHi[y] = Math.max(b, x1);
+        if (x0 > 0) frame.set(ref.subarray(row, row + x0 * 4), row);
+        if (x1 < w - 1) frame.set(ref.subarray(row + (x1 + 1) * 4, row + w * 4), row + (x1 + 1) * 4);
+      } else frame.set(ref.subarray(row, row + w * 4), row);
+    }
+  };
   // Crops (reference, current frame, change mask) around a detection, for the "save for
   // analysis" button and the AI training samples. Taken before the reference is replaced.
   // Covers the whole dart plus ~55 mm around the tip, so a wrong tip still has the real one inside.
@@ -1910,6 +1942,248 @@ input[type=range]{accent-color:var(--cream)}
     return best;
   }
 
+  /* ---------- Board tracking (shaky tripod) ----------
+     Follows the whole board with a robust Lucas–Kanade affine fit (inverse compositional,
+     coarse to fine, Tukey weights so darts, hands and shadows do not pull it). The app draws
+     every frame through the found transform, so detection always sees a still board, and the
+     grid on screen follows the board. Affine = 2x3 array [a, b, c, d, e, f]:
+     x' = a x + b y + c, y' = d x + e y + f. */
+  const A_ID = [1, 0, 0, 0, 1, 0];
+  function affMul(P, Q) { // P ∘ Q
+    return [P[0] * Q[0] + P[1] * Q[3], P[0] * Q[1] + P[1] * Q[4], P[0] * Q[2] + P[1] * Q[5] + P[2],
+            P[3] * Q[0] + P[4] * Q[3], P[3] * Q[1] + P[4] * Q[4], P[3] * Q[2] + P[4] * Q[5] + P[5]];
+  }
+  function affInv(P) {
+    const det = P[0] * P[4] - P[1] * P[3];
+    const a = P[4] / det, b = -P[1] / det, d = -P[3] / det, e = P[0] / det;
+    return [a, b, -(a * P[2] + b * P[5]), d, e, -(d * P[2] + e * P[5])];
+  }
+  function affApply(P, x, y) { return [P[0] * x + P[1] * y + P[2], P[3] * x + P[4] * y + P[5]]; }
+  function grayOf(rgba, n, out) {
+    out = out && out.length === n ? out : new Float32Array(n);
+    for (let i = 0, j = 0; i < n; i++, j += 4) out[i] = 0.299 * rgba[j] + 0.587 * rgba[j + 1] + 0.114 * rgba[j + 2];
+    return out;
+  }
+  function blur121(src, w, h) {
+    const tmp = new Float32Array(w * h), out = new Float32Array(w * h);
+    for (let y = 0; y < h; y++) {
+      const o = y * w;
+      for (let x = 0; x < w; x++) tmp[o + x] = (src[o + (x > 0 ? x - 1 : 0)] + 2 * src[o + x] + src[o + (x < w - 1 ? x + 1 : x)]) * 0.25;
+    }
+    for (let y = 0; y < h; y++) {
+      const a = (y > 0 ? y - 1 : 0) * w, b = y * w, c = (y < h - 1 ? y + 1 : y) * w;
+      for (let x = 0; x < w; x++) out[b + x] = (tmp[a + x] + 2 * tmp[b + x] + tmp[c + x]) * 0.25;
+    }
+    return out;
+  }
+  function down2(src, w, h) {
+    const W2 = w >> 1, H2 = h >> 1, out = new Float32Array(W2 * H2);
+    for (let y = 0; y < H2; y++) for (let x = 0; x < W2; x++) {
+      const p = 2 * y * w + 2 * x;
+      out[y * W2 + x] = (src[p] + src[p + 1] + src[p + w] + src[p + w + 1]) * 0.25;
+    }
+    return out;
+  }
+  function pyramid(gray, w, h, levels) {
+    const out = [{ img: blur121(gray, w, h), w, h }];
+    for (let L = 1; L < levels; L++) {
+      const p = out[L - 1];
+      out.push({ img: down2(p.img, p.w, p.h), w: p.w >> 1, h: p.h >> 1 });
+    }
+    return out;
+  }
+  // Level-(L+1) pixel coords -> level-L pixel coords (2x2 averaging: x_L = 2 x + 0.5).
+  const UP = [2, 0, 0.5, 0, 2, 0.5], UPI = affInv(UP);
+
+  function Tracker(gray, w, h, mask, opts) {
+    opts = opts || {};
+    const nLev = opts.levels || 3;
+    const pyr = pyramid(gray, w, h, nLev);
+    let m = mask, mw = w, mh = h;
+    const nMax = opts.points || [3000, 1800, 1000];
+    this.levels = [];
+    for (let L = 0; L < pyr.length; L++) {
+      const P = pyr[L];
+      if (L > 0) { // mask at this level: all four parents inside
+        const m2 = new Uint8Array(P.w * P.h);
+        for (let y = 0; y < P.h; y++) for (let x = 0; x < P.w; x++) {
+          const p = 2 * y * mw + 2 * x;
+          m2[y * P.w + x] = m[p] && m[p + 1] && m[p + mw] && m[p + mw + 1] ? 1 : 0;
+        }
+        m = m2; mw = P.w; mh = P.h;
+      }
+      if (Math.min(P.w, P.h) < 24) break;
+      const W = P.w, H = P.h, I = P.img;
+      const mag = [], cand = [];
+      for (let y = 2; y < H - 2; y++) for (let x = 2; x < W - 2; x++) {
+        const i = y * W + x;
+        if (!m[i] || !m[i - 2] || !m[i + 2] || !m[i - 2 * W] || !m[i + 2 * W]) continue;
+        const gx = (I[i + 1] - I[i - 1]) * 0.5, gy = (I[i + W] - I[i - W]) * 0.5;
+        const g = gx * gx + gy * gy;
+        mag.push(g); cand.push(i);
+      }
+      if (cand.length < 60) break;
+      const sorted = Float32Array.from(mag).sort();
+      const thr = Math.max(4, sorted[Math.floor(sorted.length * 0.55)]);
+      let sel = [];
+      for (let k = 0; k < cand.length; k++) if (mag[k] >= thr) sel.push(cand[k]);
+      const cap = nMax[Math.min(L, nMax.length - 1)];
+      if (sel.length > cap) { const st = sel.length / cap; const s2 = []; for (let q = 0; q < sel.length; q += st) s2.push(sel[Math.floor(q)]); sel = s2; }
+      const n = sel.length;
+      const xs = new Float32Array(n), ys = new Float32Array(n), T = new Float32Array(n), SD = new Float32Array(n * 6);
+      let cx = 0, cy = 0;
+      for (let k = 0; k < n; k++) { const i = sel[k]; xs[k] = i % W; ys[k] = (i / W) | 0; cx += xs[k]; cy += ys[k]; }
+      cx /= n; cy /= n;
+      let kap = 0;
+      for (let k = 0; k < n; k++) kap += (xs[k] - cx) * (xs[k] - cx) + (ys[k] - cy) * (ys[k] - cy);
+      kap = Math.sqrt(kap / n) || 1;
+      let mu = 0, s2 = 0;
+      for (let k = 0; k < n; k++) {
+        const i = sel[k];
+        T[k] = I[i]; mu += I[i]; s2 += I[i] * I[i];
+        const gx = (I[i + 1] - I[i - 1]) * 0.5, gy = (I[i + W] - I[i - W]) * 0.5;
+        const xh = (xs[k] - cx) / kap, yh = (ys[k] - cy) / kap, o = k * 6;
+        SD[o] = gx * xh; SD[o + 1] = gy * xh; SD[o + 2] = gx * yh; SD[o + 3] = gy * yh; SD[o + 4] = gx; SD[o + 5] = gy;
+      }
+      mu /= n;
+      const sdT = Math.sqrt(Math.max(1, s2 / n - mu * mu));
+      this.levels.push({ w: W, h: H, n, xs, ys, T, SD, cx, cy, kap, mu, sdT, e: new Float32Array(n), v: new Float32Array(n) });
+    }
+    this.ok = this.levels.length > 0;
+    this.iters = opts.iters || [6, 8, 12];
+  }
+  // Find the affine A (template pixel -> current pixel, level 0) for a new gray image of
+  // the same size, starting from init (default identity).
+  Tracker.prototype.track = function (gray, init) {
+    const nL = this.levels.length;
+    if (!nL) return { ok: false, A: A_ID.slice() };
+    const L0 = this.levels[0];
+    const pyr = pyramid(gray, L0.w, L0.h, nL);
+    // initial guess at the coarsest level
+    let A = init ? init.slice() : A_ID.slice();
+    for (let L = 0; L < nL - 1; L++) A = affMul(UPI, affMul(A, UP));
+    let last = null;
+    const hist = new Uint32Array(256);
+    const pg0 = this.pg, pb0 = this.pb;
+    for (let L = nL - 1; L >= 0; L--) {
+      const lv = this.levels[L], I = pyr[L].img, W = pyr[L].w, H = pyr[L].h;
+      const { n, xs, ys, T, SD, cx, cy, kap, e, v } = lv;
+      const maxIt = this.iters[Math.min(L, this.iters.length - 1)];
+      for (let it = 0; it < maxIt; it++) {
+        let nv = 0, sv = 0, sv2 = 0;
+        for (let k = 0; k < n; k++) {
+          const x = xs[k], y = ys[k];
+          const u = A[0] * x + A[1] * y + A[2], vv = A[3] * x + A[4] * y + A[5];
+          if (u < 0 || vv < 0 || u >= W - 1 || vv >= H - 1) { v[k] = NaN; continue; }
+          const x0 = u | 0, y0 = vv | 0, fx = u - x0, fy = vv - y0, o = y0 * W + x0;
+          const val = I[o] * (1 - fx) * (1 - fy) + I[o + 1] * fx * (1 - fy) + I[o + W] * (1 - fx) * fy + I[o + W + 1] * fx * fy;
+          v[k] = val; sv += val; sv2 += val * val; nv++;
+        }
+        if (nv < 0.3 * n) return { ok: false, A, reason: 'out', valid: nv / n };
+        // Brightness: gain + offset carried between frames and refitted on the inliers only,
+        // so a hand or a shadow does not change how the rest of the board is compared.
+        if (this.pg == null) {
+          const muI = sv / nv, sdI = Math.sqrt(Math.max(1, sv2 / nv - muI * muI));
+          this.pg = lv.sdT / sdI; this.pb = lv.mu - this.pg * muI;
+        }
+        const pg = this.pg, pb = this.pb;
+        hist.fill(0);
+        for (let k = 0; k < n; k++) {
+          if (v[k] !== v[k]) continue;
+          const r = pg * v[k] + pb - T[k];
+          e[k] = r;
+          hist[Math.min(255, Math.round(Math.abs(r) * 2))]++;
+        }
+        let acc = 0, med = 0;
+        for (let b = 0; b < 256; b++) { acc += hist[b]; if (acc * 2 >= nv) { med = b / 2; break; } }
+        const sc = Math.max(1.5, 1.4826 * med), c = 4.685 * sc, c2 = c * c;
+        const Hm = new Float64Array(21), bv = new Float64Array(6);
+        let inl = 0, good = 0, w0 = 0, w1 = 0, w2 = 0, w3 = 0, w4 = 0;
+        for (let k = 0; k < n; k++) {
+          if (v[k] !== v[k]) continue;
+          const r = e[k];
+          if (r * r < 144) good++;
+          if (r * r >= c2) continue;
+          const q = 1 - r * r / c2, wt = q * q;
+          if (wt > 0.5) inl++;
+          const vk = v[k];
+          w0 += wt; w1 += wt * vk; w2 += wt * vk * vk; w3 += wt * T[k]; w4 += wt * vk * T[k];
+          const o = k * 6, s0 = SD[o], s1 = SD[o + 1], s2 = SD[o + 2], s3 = SD[o + 3], s4 = SD[o + 4], s5 = SD[o + 5];
+          const ws0 = wt * s0, ws1 = wt * s1, ws2 = wt * s2, ws3 = wt * s3, ws4 = wt * s4, ws5 = wt * s5;
+          Hm[0] += ws0 * s0; Hm[1] += ws0 * s1; Hm[2] += ws0 * s2; Hm[3] += ws0 * s3; Hm[4] += ws0 * s4; Hm[5] += ws0 * s5;
+          Hm[6] += ws1 * s1; Hm[7] += ws1 * s2; Hm[8] += ws1 * s3; Hm[9] += ws1 * s4; Hm[10] += ws1 * s5;
+          Hm[11] += ws2 * s2; Hm[12] += ws2 * s3; Hm[13] += ws2 * s4; Hm[14] += ws2 * s5;
+          Hm[15] += ws3 * s3; Hm[16] += ws3 * s4; Hm[17] += ws3 * s5;
+          Hm[18] += ws4 * s4; Hm[19] += ws4 * s5; Hm[20] += ws5 * s5;
+          bv[0] += ws0 * r; bv[1] += ws1 * r; bv[2] += ws2 * r; bv[3] += ws3 * r; bv[4] += ws4 * r; bv[5] += ws5 * r;
+        }
+        const M6 = [
+          [Hm[0], Hm[1], Hm[2], Hm[3], Hm[4], Hm[5]], [Hm[1], Hm[6], Hm[7], Hm[8], Hm[9], Hm[10]],
+          [Hm[2], Hm[7], Hm[11], Hm[12], Hm[13], Hm[14]], [Hm[3], Hm[8], Hm[12], Hm[15], Hm[16], Hm[17]],
+          [Hm[4], Hm[9], Hm[13], Hm[16], Hm[18], Hm[19]], [Hm[5], Hm[10], Hm[14], Hm[17], Hm[19], Hm[20]]];
+        const dp = solveN(M6, Array.from(bv));
+        last = { inl: inl / nv, good: good / nv, scale: sc, valid: nv / n, level: L, it };
+        // refit brightness on the inliers
+        const dt = w0 * w2 - w1 * w1;
+        if (w0 > 50 && dt > 1e-6) {
+          const g2 = (w0 * w4 - w1 * w3) / dt;
+          if (g2 > 0.4 && g2 < 2.5) { this.pg = g2; this.pb = (w3 - g2 * w1) / w0; }
+        }
+        if (!dp) { this.pg = pg0; this.pb = pb0; return { ok: false, A, reason: 'singular' }; }
+        // incremental warp in pixel coords, then inverse-compositional update A <- A ∘ D^-1
+        const D = [1 + dp[0] / kap, dp[2] / kap, dp[4] - (dp[0] * cx + dp[2] * cy) / kap,
+                   dp[1] / kap, 1 + dp[3] / kap, dp[5] - (dp[1] * cx + dp[3] * cy) / kap];
+        A = affMul(A, affInv(D));
+        if (Math.abs(dp[4]) < 0.008 && Math.abs(dp[5]) < 0.008 && Math.abs(dp[0]) < 0.008 && Math.abs(dp[1]) < 0.008 && Math.abs(dp[2]) < 0.008 && Math.abs(dp[3]) < 0.008) break;
+      }
+      if (L > 0) A = affMul(UP, affMul(A, UPI));
+    }
+    const det = A[0] * A[4] - A[1] * A[3];
+    const ok = !!last && last.good > (this.minGood || 0.45) && det > 0.85 && det < 1.15;
+    if (!ok && pg0 != null) { this.pg = pg0; this.pb = pb0; }
+    return { ok, A, inl: last ? last.inl : 0, good: last ? last.good : 0, scale: last ? last.scale : 0, reason: ok ? '' : 'quality' };
+  };
+  // Gaussian elimination with partial pivoting (small dense systems).
+  function solveN(M, b) {
+    const n = b.length, A = M.map((r, i) => r.concat([b[i]]));
+    for (let c = 0; c < n; c++) {
+      let p = c;
+      for (let r = c + 1; r < n; r++) if (Math.abs(A[r][c]) > Math.abs(A[p][c])) p = r;
+      if (Math.abs(A[p][c]) < 1e-9) return null;
+      [A[c], A[p]] = [A[p], A[c]];
+      for (let r = c + 1; r < n; r++) { const f = A[r][c] / A[c][c]; for (let k = c; k <= n; k++) A[r][k] -= f * A[c][k]; }
+    }
+    const x = new Array(n).fill(0);
+    for (let r = n - 1; r >= 0; r--) { let s = A[r][n]; for (let k = r + 1; k < n; k++) s -= A[r][k] * x[k]; x[r] = s / A[r][r]; }
+    return x;
+  }
+  // Bilinear RGBA warp: out(p) = src(P(p)), black outside (used by tests; the app uses canvas).
+  function warpAffineRGBA(src, sw, sh, P, out, dw, dh, ss, keepOutside) {
+    out = out && out.length === dw * dh * 4 ? out : new Uint8ClampedArray(dw * dh * 4);
+    ss = ss || 1;
+    const offs = [];
+    for (let a = 0; a < ss; a++) for (let b = 0; b < ss; b++) offs.push([(a + 0.5) / ss - 0.5, (b + 0.5) / ss - 0.5]);
+    for (let y = 0; y < dh; y++) for (let x = 0; x < dw; x++) {
+      let r = 0, g = 0, bl = 0, cnt = 0;
+      for (const [ox, oy] of offs) {
+        const X = x + ox, Y = y + oy;
+        const u = P[0] * X + P[1] * Y + P[2], v = P[3] * X + P[4] * Y + P[5];
+        if (u < -0.5 || v < -0.5 || u > sw - 0.5 || v > sh - 0.5) { if (!keepOutside) cnt++; continue; }
+        const uc = Math.min(sw - 1.001, Math.max(0, u)), vc = Math.min(sh - 1.001, Math.max(0, v));
+        const x0 = uc | 0, y0 = vc | 0, fx = uc - x0, fy = vc - y0, o = (y0 * sw + x0) * 4, o2 = o + sw * 4;
+        const w00 = (1 - fx) * (1 - fy), w10 = fx * (1 - fy), w01 = (1 - fx) * fy, w11 = fx * fy;
+        r += src[o] * w00 + src[o + 4] * w10 + src[o2] * w01 + src[o2 + 4] * w11;
+        g += src[o + 1] * w00 + src[o + 5] * w10 + src[o2 + 1] * w01 + src[o2 + 5] * w11;
+        bl += src[o + 2] * w00 + src[o + 6] * w10 + src[o2 + 2] * w01 + src[o2 + 6] * w11;
+        cnt++;
+      }
+      const j = (y * dw + x) * 4;
+      if (!cnt) continue; // keepOutside: leave what was there (like a canvas that is not cleared)
+      out[j] = r / cnt; out[j + 1] = g / cnt; out[j + 2] = bl / cnt; out[j + 3] = 255;
+    }
+    return out;
+  }
+
   /* ---------- Speech text (Polish) ---------- */
   function sayDart(d) {
     if (!d || d.pts === 0) return 'pudło';
@@ -1925,6 +2199,7 @@ input[type=range]{accent-color:var(--cream)}
     homography, applyH, invertH, mulH, localScale, makeCalibration, boardOutline,
     buildRoi, meanLum, diffMap, thresholdMap, quickChange, motionMeasure, motionMeasureHalf, halfRes, estimateShift, shiftRGBA, components, findDart, extendTip, regionDiff, markOcclusion, Detector,
     autoCalibrate, classifyColors,
+    Tracker, affMul, affInv, affApply, grayOf, warpAffineRGBA,
     evalTurn, createGame, remainingOf, currentView, turnOpen, addDart, setDart, removeDart, commitTurn, undo, playerStats,
     checkout, sayDart
   };
@@ -1947,7 +2222,7 @@ const S = {
   pts: null, cal: null, sel: 0,
   proc: null, det: null, frameData: null, resetPending: false, rebasePending: false,
   mode: 'intro', manual: false, camHidden: false,
-  settings: Object.assign({ thr: 60, shadows: true, autoNext: true, voice: true, mask: false, lock: false, diag: false, view: 'board', collect: true }, store.get('settings', {})),
+  settings: Object.assign({ thr: 60, shadows: true, autoNext: true, voice: true, mask: false, lock: false, diag: false, view: 'board', collect: true, track: true }, store.get('settings', {})),
   offset: Object.assign({ mm: 0, samples: [] }, store.get('offset', {})),
   game: null, status: 'idle', blockedShown: false, lastProc: 0, maskImg: null, maskCanvas: null
 };
@@ -2095,7 +2370,7 @@ S.video.addEventListener('resize', () => {
   if (!S.video.videoWidth) return;
   if (S.vw && (S.video.videoWidth !== S.vw || S.video.videoHeight !== S.vh)) {
     S.vw = S.video.videoWidth; S.vh = S.video.videoHeight;
-    S.pts = defaultPoints(); S.cal = C.makeCalibration(S.pts); S.proc = null; S.det = null;
+    S.pts = defaultPoints(); S.cal = C.makeCalibration(S.pts); S.proc = null; S.det = null; S.stab = null; S.calShot = null;
     if (S.mode === 'game' && !S.manual) { toast('Obraz się obrócił. Szukam tarczy od nowa.'); showScreen('cal'); autoCalSoon(); }
   }
   sizeOverlay();
@@ -2161,7 +2436,7 @@ function grabFrame(maxD) {
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const ctx = c.getContext('2d', { willReadFrequently: true });
   ctx.drawImage(S.video, 0, 0, w, h);
-  return { data: ctx.getImageData(0, 0, w, h).data, w, h, s };
+  return { data: ctx.getImageData(0, 0, w, h).data, w, h, s, canvas: c };
 }
 const AUTO_FAIL = {
   nocolor: 'Nie widzę czerwono-zielonych pierścieni. Sprawdź, czy cała tarcza jest w kadrze i czy jest dość światła.',
@@ -2178,12 +2453,15 @@ async function runAutoCal(quiet) {
   $('#readout').innerHTML = '<span class="busy">Szukam tarczy…</span>';
   $('#cal-auto').disabled = true;
   await new Promise(r => setTimeout(r, 40));
-  let res;
-  try { const f = grabFrame(800); res = C.autoCalibrate(f.data, f.w, f.h, { up: upVector() }); if (res.pts) res.pts = res.pts.map(p => [p[0] / f.s, p[1] / f.s]); }
+  let res, shot = null;
+  try { const f = grabFrame(800); shot = { canvas: f.canvas, s: f.s }; res = C.autoCalibrate(f.data, f.w, f.h, { up: upVector() }); if (res.pts) res.pts = res.pts.map(p => [p[0] / f.s, p[1] / f.s]); }
   catch (e) { res = { ok: false, reason: 'error' }; }
   autoBusy = false; $('#cal-auto').disabled = false;
   if (res.ok || (res.reason === 'quality' && res.pts)) {
     S.pts = res.pts; selectPoint(0); updateReadout();
+    // The picture the grid was fitted on: with a shaky tripod the board is found again on it
+    // when play starts, so the grid lands on the board and not where it was a moment ago.
+    S.calShot = shot;
     if (res.ok) toast('Znalazłem tarczę. Sprawdź, czy siatka leży na drutach.', 3200);
     else toast(AUTO_FAIL.quality, 4000);
     return res.ok;
@@ -2219,7 +2497,8 @@ ovEl.addEventListener('pointerdown', (e) => {
     // In play: tapping a dart marker on the camera picture opens its correction.
     const m = screenMap();
     let best = -1, bd = 34;
-    S.game.cur.darts.forEach((d, i) => { if (!d.tip) return; const s = m.v2s(d.tip); const dd = Math.hypot(s[0] - e.offsetX, s[1] - e.offsetY); if (dd < bd) { bd = dd; best = i; } });
+    const D = stabD();
+    S.game.cur.darts.forEach((d, i) => { if (!d.tip) return; const s = m.v2s(C.affApply(D, d.tip[0], d.tip[1])); const dd = Math.hypot(s[0] - e.offsetX, s[1] - e.offsetY); if (dd < bd) { bd = dd; best = i; } });
     if (best >= 0) openFix(best);
     return;
   }
@@ -2273,14 +2552,98 @@ function setupProc() {
   S.det = new C.Detector({ w: pw, h: ph, Hp, nearDir: S.cal.nearDir, thr: S.settings.thr, shadows: S.settings.shadows, offsetMm: S.offset.mm });
   S.maskCanvas = document.createElement('canvas'); S.maskCanvas.width = pw; S.maskCanvas.height = ph;
   S.maskImg = null;
+  setupStab();
 }
 const toVideo = (p) => [S.proc.x + p[0] / S.proc.s, S.proc.y + p[1] / S.proc.s];
+
+/* ---------------- Board tracking (shaky tripod) ----------------
+   M maps a pixel of the still "processing" picture to the live video; M0 is the position at
+   the start. Each video frame a small grey copy is matched against the board as it looked at
+   the start (C.Tracker), M is updated, and the processing picture is drawn through M, so
+   detection sees a still board while the phone moves. The grid on screen follows the board. */
+function setupStab() {
+  const P = S.proc;
+  S.stab = null;
+  if (!P || !S.settings.track) return;
+  const M0 = [1 / P.s, 0, P.x, 0, 1 / P.s, P.y];
+  const f = Math.min(1, 320 / Math.max(P.pw, P.ph)), lw = Math.round(P.pw * f), lh = Math.round(P.ph * f);
+  const canvas = document.createElement('canvas'); canvas.width = lw; canvas.height = lh;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+  const Hpi = C.invertH(P.Hp), mask = new Uint8Array(lw * lh);
+  for (let y = 0; y < lh; y++) for (let x = 0; x < lw; x++) { const b = C.applyH(Hpi, x / f, y / f); mask[y * lw + x] = Math.hypot(b[0], b[1]) <= 230 ? 1 : 0; }
+  S.stab = { M0, M: M0.slice(), f, lw, lh, canvas, ctx, mask, tracker: null, g: null, lost: 0, good: 1, lastOk: performance.now(), readyAt: performance.now() + 600, fixed: null };
+}
+const affS = (f) => [f, 0, 0, 0, f, 0];
+const setT = (ctx, A) => ctx.setTransform(A[0], A[3], A[1], A[4], A[2], A[5]);
+// Draw a source (video or canvas in video pixels * k) into the small tracking canvas through M.
+function stabGray(src, k) {
+  const T = S.stab;
+  const A = C.affMul(affS(T.f), C.affMul(C.affInv(T.M), affS(1 / (k || 1))));
+  setT(T.ctx, A); T.ctx.drawImage(src, 0, 0); T.ctx.setTransform(1, 0, 0, 1, 0, 0);
+  return C.grayOf(T.ctx.getImageData(0, 0, T.lw, T.lh).data, T.lw * T.lh);
+}
+// One tracking step on the current video frame. Returns false while not ready.
+function trackBoard(now) {
+  const T = S.stab;
+  if (!T || S.video.readyState < 2) return false;
+  S.lastTrack = now;
+  if (!T.tracker) {
+    if (now < T.readyAt) return false;
+    const g = stabGray(S.video);
+    T.tracker = new C.Tracker(g, T.lw, T.lh, T.mask);
+    if (!T.tracker.ok) { S.stab = null; return false; }
+    alignCalibration();
+    return true;
+  }
+  const r = T.tracker.track(stabGray(S.video));
+  if (r.ok) {
+    T.M = C.affMul(T.M, C.affMul(affS(1 / T.f), C.affMul(r.A, affS(T.f))));
+    T.lost = 0; T.good = r.good; T.lastOk = now;
+  } else { T.lost++; T.good = r.good || 0; }
+  return true;
+}
+// The grid was fitted on the auto-calibration picture; with a shaky tripod the board has
+// moved since. Find the board of that picture in the start picture and move the grid there.
+function alignCalibration() {
+  const T = S.stab, shot = S.calShot;
+  if (!shot || !T) return;
+  try {
+    const g = stabGray(shot.canvas, shot.s);
+    const r = T.tracker.track(g);
+    T.tracker.pg = null;
+    if (!r.ok) return;
+    const A = C.affMul(affS(1 / T.f), C.affMul(r.A, affS(T.f)));          // start pic -> calibration pic (processing px)
+    const D = C.affMul(T.M0, C.affMul(C.affInv(A), C.affInv(T.M0)));       // calibration video px -> start video px
+    const move = Math.max(...S.pts.map(p => { const q = C.affApply(D, p[0], p[1]); return Math.hypot(q[0] - p[0], q[1] - p[1]); }));
+    T.fixed = move;
+    if (move < 0.3 || move > 60) return;
+    S.pts = S.pts.map(p => C.affApply(D, p[0], p[1]));
+    S.cal = C.makeCalibration(S.pts); savePoints();
+    const P = S.proc;
+    P.Hp = C.mulH([P.s, 0, -P.x * P.s, 0, P.s, -P.y * P.s, 0, 0, 1], S.cal.H);
+    S.det = new C.Detector({ w: P.pw, h: P.ph, Hp: P.Hp, nearDir: S.cal.nearDir, thr: S.settings.thr, shadows: S.settings.shadows, offsetMm: S.offset.mm });
+    S.resetPending = true;
+  } catch (e) {}
+}
+// Live video px <-> start video px (identity without tracking).
+function stabD() { const T = S.stab; return T && T.tracker ? C.affMul(T.M, C.affInv(T.M0)) : [1, 0, 0, 0, 1, 0]; }
 
 function processFrame(now) {
   const P = S.proc;
   if (!P || !S.det || S.video.readyState < 2) return;
-  P.ctx.drawImage(S.video, P.x, P.y, P.w, P.h, 0, 0, P.pw, P.ph);
+  const T = S.stab;
+  if (T) {
+    if (!trackBoard(now) || !S.stab) return;
+    const Mi = C.affInv(T.M);
+    setT(P.ctx, Mi); P.ctx.drawImage(S.video, 0, 0); P.ctx.setTransform(1, 0, 0, 1, 0, 0);
+  } else P.ctx.drawImage(S.video, P.x, P.y, P.w, P.h, 0, 0, P.pw, P.ph);
   const data = P.ctx.getImageData(0, 0, P.pw, P.ph).data;
+  if (T) S.det.stabPatch(data, T.M, S.vw, S.vh, 2);
+  if (T && T.lost && now - T.lastOk > 8000 && !S.blockedShown && S.status !== 'blocked') {
+    $('#stage-msg-t').textContent = 'Nie mogę złapać tarczy. Jeśli telefon się przesunął, stuknij Kalibruj.';
+    showStageMsg(); S.stabMsg = true;
+  } else if (T && !T.lost && S.stabMsg) { S.stabMsg = false; hideStageMsg(); }
   S.frameData = data;
   if (S.rebasePending && !S.resetPending) { S.det.rebase(data); S.rebasePending = false; }
   if (S.resetPending) {
@@ -2359,9 +2722,9 @@ function captureSnap(tip) {
     const sx = tip[0] - half, sy = tip[1] - half, size = half * 2;
     const ctx = c.getContext('2d');
     ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 480, 480);
-    // clip source to the frame
-    const x0 = Math.max(0, sx), y0 = Math.max(0, sy), x1 = Math.min(S.vw, sx + size), y1 = Math.min(S.vh, sy + size);
-    if (x1 > x0 && y1 > y0) ctx.drawImage(S.video, x0, y0, x1 - x0, y1 - y0, (x0 - sx) / size * 480, (y0 - sy) / size * 480, (x1 - x0) / size * 480, (y1 - y0) / size * 480);
+    // live video -> still (start) picture -> this square; tip is in still-picture px
+    const k = 480 / size, A = C.affMul([k, 0, -sx * k, 0, k, -sy * k], C.affInv(stabD()));
+    ctx.setTransform(A[0], A[3], A[1], A[4], A[2], A[5]); ctx.drawImage(S.video, 0, 0); ctx.setTransform(1, 0, 0, 1, 0, 0);
     return { canvas: c, sx, sy, size };
   } catch (err) { return null; }
 }
@@ -2554,16 +2917,19 @@ function drawOverlay() {
     return;
   }
   if (S.mode === 'game' && S.cal && !S.manual) {
+    // With board tracking the grid, the mask and the markers follow the moving picture.
+    const D = stabD(), live = (q) => m.v2s(C.affApply(D, q[0], q[1]));
     if (S.settings.mask && S.maskImg && S.proc) {
-      const P = S.proc, a = m.v2s([P.x, P.y]);
-      ctx.globalAlpha = 0.85; ctx.drawImage(S.maskCanvas, a[0], a[1], P.w * m.scale, P.h * m.scale); ctx.globalAlpha = 1;
+      const P = S.proc, Mp = S.stab && S.stab.tracker ? S.stab.M : [1 / P.s, 0, P.x, 0, 1 / P.s, P.y];
+      const A = C.affMul([m.scale, 0, m.ox, 0, m.scale, m.oy], Mp);
+      ctx.save(); ctx.globalAlpha = 0.85; ctx.transform(A[0], A[3], A[1], A[4], A[2], A[5]); ctx.drawImage(S.maskCanvas, 0, 0); ctx.restore();
     }
-    drawBoard(ctx, S.cal.H, m.v2s, { color: 'rgba(255,240,200,.28)', width: 1 });
+    drawBoard(ctx, C.mulH([D[0], D[1], D[2], D[3], D[4], D[5], 0, 0, 1], S.cal.H), m.v2s, { color: 'rgba(255,240,200,.28)', width: 1 });
     if (S.settings.diag && S.det) drawDiag(ctx);
     const placed = [];
     S.game.cur.darts.forEach((d, i) => {
       if (!d.tip) return;
-      const s = m.v2s(d.tip);
+      const s = live(d.tip);
       let ly = s[1];
       for (let k = 0; k < 3; k++) if (placed.some(p => Math.abs(p[0] - s[0]) < 76 && Math.abs(p[1] - ly) < 19)) ly += 20;
       placed.push([s[0], ly]);
@@ -2589,6 +2955,12 @@ function drawDiag(ctx) {
     'Wynik: ' + (RESULT_PL[d.result] || d.result) + '   lotek w turze: ' + S.det.dartsInTurn,
     'Obraz: ' + S.vw + '×' + S.vh + ' → ' + P.pw + '×' + P.ph + '   ' + (S.fps || 0).toFixed(1) + ' kl/s   ' + S.det.ppm.toFixed(2) + ' px/mm'
   ];
+  const T = S.stab;
+  if (T && T.tracker) {
+    const D = stabD(), c = C.applyH(S.cal.H, 0, 0), q = C.affApply(D, c[0], c[1]);
+    lines.push('Śledzenie: ' + (q[0] - c[0]).toFixed(1) + ', ' + (q[1] - c[1]).toFixed(1) + ' px  obrót ' + (Math.atan2(D[3], D[0]) * 180 / Math.PI).toFixed(2) + '°  zgodność ' + Math.round(T.good * 100) + '%' + (T.lost ? '  ZGUBIONA' : ''));
+    if (T.fixed != null) lines.push('Siatka dopasowana do startu: ' + T.fixed.toFixed(1) + ' px');
+  } else lines.push('Śledzenie tarczy: ' + (S.settings.track ? 'start…' : 'wyłączone'));
   ctx.save();
   ctx.font = '600 12px ui-monospace, Menlo, Consolas, monospace';
   const wMax = Math.max(...lines.map(l => ctx.measureText(l).width)) + 16;
@@ -2616,7 +2988,10 @@ function drawLoupe(cal, m) {
 
 /* ---------------- Main loop ---------------- */
 function loop(now) {
-  if (S.mode === 'game' && !S.manual && now - S.lastProc >= 95) { S.lastProc = now; processFrame(now); }
+  if (S.mode === 'game' && !S.manual) {
+    if (now - S.lastProc >= 95) { S.lastProc = now; processFrame(now); }
+    else if (S.stab && now - (S.lastTrack || 0) >= 45) trackBoard(now); // keeps the grid on the board between detections
+  }
   if (S.mode !== 'intro' && !S.manual) drawOverlay();
   requestAnimationFrame(loop);
 }
@@ -2996,6 +3371,10 @@ $('#ds-clear').addEventListener('click', async (e) => {
   clearArmed = 0; b.textContent = 'Usuń dane';
   try { await DS.clear(); S.dsCount = 0; syncAiPill(); refreshDsInfo(); toast('Dane usunięte.'); } catch (err) { toast('Nie udało się usunąć danych.'); }
 });
+$('#opt-track').addEventListener('change', (e) => {
+  S.settings.track = e.target.checked; saveSettings();
+  if (S.proc) { setupStab(); S.resetPending = true; }
+});
 $('#opt-collect').addEventListener('change', (e) => { S.settings.collect = e.target.checked; saveSettings(); syncAiPill(); });
 
 /* ---------------- Buttons ---------------- */
@@ -3113,6 +3492,7 @@ function openSettings() {
   $('#opt-lock').checked = S.settings.lock; $('#opt-mask').checked = S.settings.mask; $('#opt-diag').checked = S.settings.diag;
   $('#opt-off').textContent = (S.offset.mm >= 0 ? '+' : '') + S.offset.mm.toFixed(1) + ' mm';
   $('#opt-collect').checked = !!S.settings.collect;
+  $('#opt-track').checked = !!S.settings.track;
   refreshDsInfo();
   openSheet('#sh-set');
 }
@@ -3137,7 +3517,7 @@ renderGame();
 showScreen('intro');
 
 // Hooks for automated testing.
-window.OkoTarczy = { S, C, DS, setPoints(p) { S.pts = p.map(q => q.slice()); updateReadout(); }, finishCalibration() { $('#cal-done').click(); }, startCamera, screenMap, exportDataset, dsIdle: () => dsChain, version: APP_VERSION };
+window.OkoTarczy = { S, C, DS, stabD, setPoints(p) { S.pts = p.map(q => q.slice()); updateReadout(); }, finishCalibration() { $('#cal-done').click(); }, startCamera, screenMap, exportDataset, dsIdle: () => dsChain, version: APP_VERSION };
 })();
 </script>
 </body>
