@@ -407,8 +407,8 @@ input[type=range]{accent-color:var(--cream)}
     <label class="toggle"><span>Pokaż, co widzi wykrywanie (różowe)</span><input type="checkbox" id="opt-mask"></label>
     <label class="toggle"><span>Pokaż diagnostykę (liczby na obrazie)</span><input type="checkbox" id="opt-diag"></label>
     <div class="field">
-      <span class="lab">Korekta grota (uczy się z Twoich poprawek): <b id="opt-off" class="num">0 mm</b></span>
-      <div class="btn-row"><button id="opt-off-reset" class="btn">Wyzeruj korektę</button><button id="opt-voice-test" class="btn">Test głosu</button></div>
+      <span class="lab">Długość grota nad tarczą (uczy się z Twoich poprawek): <b id="opt-off" class="num">14 mm</b></span>
+      <div class="btn-row"><button id="opt-off-reset" class="btn">Przywróć 14 mm</button><button id="opt-voice-test" class="btn">Test głosu</button></div>
     </div>
     <div class="field ds">
       <span class="lab">Nauka AI</span>
@@ -1230,6 +1230,143 @@ input[type=range]{accent-color:var(--cream)}
     return { ext: lastLen, end: [lastX, lastY] };
   }
 
+  /* ---------- Camera from the board homography ----------
+     H maps board mm (z = 0) to image px. With square pixels and the principal point (cx, cy)
+     known (picture centre), H = K [r1 r2 t] gives the focal length and the camera pose.
+     Used to know how a point raised above the board (the dart) projects into the picture. */
+  function cameraFromH(H, cx, cy) {
+    const a0 = H[0] - cx * H[6], a1 = H[3] - cy * H[6], b0 = H[1] - cx * H[7], b1 = H[4] - cy * H[7];
+    const den = H[7] * H[7] - H[6] * H[6];
+    const f2 = (a0 * a0 + a1 * a1 - b0 * b0 - b1 * b1) / den;
+    if (!(f2 > 0) || !isFinite(f2)) return null;
+    const f = Math.sqrt(f2);
+    const c1 = [a0 / f, a1 / f, H[6]], c2 = [b0 / f, b1 / f, H[7]], c3 = [(H[2] - cx * H[8]) / f, (H[5] - cy * H[8]) / f, H[8]];
+    const nrm = (v) => Math.hypot(v[0], v[1], v[2]);
+    const l = (nrm(c1) + nrm(c2)) / 2;
+    let r1 = c1.map(v => v / nrm(c1));
+    const d12 = r1[0] * c2[0] + r1[1] * c2[1] + r1[2] * c2[2];
+    let r2 = [c2[0] - d12 * r1[0], c2[1] - d12 * r1[1], c2[2] - d12 * r1[2]];
+    const n2 = nrm(r2); r2 = r2.map(v => v / n2);
+    let t = c3.map(v => v / l);
+    if (t[2] < 0) { r1 = r1.map(v => -v); r2 = r2.map(v => -v); t = t.map(v => -v); }
+    const r3 = [r1[1] * r2[2] - r1[2] * r2[1], r1[2] * r2[0] - r1[0] * r2[2], r1[0] * r2[1] - r1[1] * r2[0]];
+    // camera centre in board mm: C = -R^T t
+    const C = [-(r1[0] * t[0] + r1[1] * t[1] + r1[2] * t[2]), -(r2[0] * t[0] + r2[1] * t[1] + r2[2] * t[2]), -(r3[0] * t[0] + r3[1] * t[1] + r3[2] * t[2])];
+    if (!(C[2] > 50)) return null;
+    return { f, cx, cy, r1, r2, r3, t, C };
+  }
+  function camProject(cam, X, Y, Z) {
+    const x = cam.r1[0] * X + cam.r2[0] * Y + cam.r3[0] * Z + cam.t[0];
+    const y = cam.r1[1] * X + cam.r2[1] * Y + cam.r3[1] * Z + cam.t[1];
+    const z = cam.r1[2] * X + cam.r2[2] * Y + cam.r3[2] * Z + cam.t[2];
+    return [cam.cx + cam.f * x / z, cam.cy + cam.f * y / z];
+  }
+  // Picture shift per mm of height above the board point under image point (x, y).
+  function heightStep(cam, Hi, x, y) {
+    const b = applyH(Hi, x, y);
+    const p0 = camProject(cam, b[0], b[1], 0), p1 = camProject(cam, b[0], b[1], 10);
+    return [(p1[0] - p0[0]) / 10, (p1[1] - p0[1]) / 10];
+  }
+
+  /* ---------- Where the point enters the board ----------
+     The barrel is easy to see; the point (often black) is not. Look across the dart at every
+     step along its axis to find where the thick barrel ends (the nose), then decide how long
+     the point is: pixels that clearly changed say "point here", a bright background that did
+     not change says "no point here", and a black background says nothing. Where the picture
+     says nothing, the usual point length (learned from corrections, in mm of height above the
+     board, turned into pixels with the camera geometry) decides.
+     det: { tip (front of the barrel line), axis (towards the point) }. */
+  function locateTip(ref, cur, w, h, gain, det, opt) {
+    opt = opt || {};
+    const tau = opt.thrLow || 18;
+    const ux = det.axis[0], uy = det.axis[1], nx = -uy, ny = ux;
+    const px = opt.pxPerMm || 1.2;                       // picture px per mm of point height
+    const Lp = Math.max(4, (opt.pointMm || 14) * px);    // usual visible point length (px)
+    const back = Math.round(opt.back || 30), fwd = Math.round(opt.fwd || Math.max(50, 3 * Lp));
+    const W = opt.halfWidth || 6;
+    const ox = det.tip[0], oy = det.tip[1];
+    const brightMin = opt.brightMin || 70, darkK = opt.darkK || 0.62;
+    const ns = back + fwd + 1, no = 2 * W + 1;
+    // Per sample: changed (jitter-tolerant, not a shadow), luminance before/after.
+    const CH = new Float32Array(ns * no), LR = new Float32Array(ns * no), LC = new Float32Array(ns * no);
+    let kEnd = ns;
+    for (let k = 0; k < ns; k++) {
+      const s = k - back;
+      let outside = 0;
+      for (let q = 0; q < no; q++) {
+        const o = q - W;
+        const xi = Math.round(ox + ux * s + nx * o), yi = Math.round(oy + uy * s + ny * o), at = k * no + q;
+        if (xi < 1 || yi < 1 || xi >= w - 1 || yi >= h - 1) { outside++; CH[at] = 0; LR[at] = LC[at] = -1; continue; }
+        const j = (yi * w + xi) * 4;
+        const cr = cur[j] * gain, cg = cur[j + 1] * gain, cb = cur[j + 2] * gain;
+        LR[at] = ref[j] * 0.299 + ref[j + 1] * 0.587 + ref[j + 2] * 0.114;
+        LC[at] = cr * 0.299 + cg * 0.587 + cb * 0.114;
+        let e = envelopeDist(ref, j, w, cr, cg, cb);
+        if (e > 0 && cr < ref[j] && cg < ref[j + 1] && cb < ref[j + 2]) {
+          const kr = (cr + 2) / (ref[j] + 2), kg = (cg + 2) / (ref[j + 1] + 2), kb = (cb + 2) / (ref[j + 2] + 2);
+          const kmax = Math.max(kr, kg, kb), kmin = Math.min(kr, kg, kb);
+          if (kmin > 0.3 && kmax < 0.96 && (kmax - kmin) < 0.13 * (kmax + kmin) * 0.5) e = 0; // shadow
+        }
+        CH[at] = e;
+      }
+      if (outside > W && k > back) { kEnd = k; break; }
+    }
+    // Centre line: weighted centre of the change just behind the barrel front.
+    let sw = 0, so = 0;
+    for (let k = Math.max(0, back - 20); k <= Math.min(kEnd - 1, back); k++) for (let q = 0; q < no; q++) { const e = CH[k * no + q]; if (e > tau) { sw += e; so += e * (q - W); } }
+    const c = sw ? Math.max(-3, Math.min(3, so / sw)) : 0;
+    const near = (k, half, fn) => { for (let q = 0; q < no; q++) { const o = q - W; if (Math.abs(o - c) <= half) fn(k * no + q); } };
+    // Width of the change across the axis at each step: the barrel is wide, the point thin.
+    const width = new Uint8Array(ns);
+    for (let k = 0; k < kEnd; k++) { let m = 0; near(k, opt.widthHalf || 5, (at) => { if (CH[at] > tau) m++; }); width[k] = m; }
+    const wb = Array.from(width.subarray(Math.max(0, back - 25), Math.min(kEnd, back + 3))).filter(v => v > 2).sort((a, b) => a - b);
+    const Wb = wb.length ? wb[Math.floor(wb.length * 0.7)] : 0;
+    const thick = Math.max(opt.minThick || 5, (opt.thickK || 0.6) * Wb);
+    // Nose: end of the thick run through the barrel front (short gaps allowed; the barrel line
+    // may stop early, e.g. behind an earlier dart, so the run may continue past it).
+    let k = Math.min(kEnd - 1, back + 2);
+    while (k > back - 20 && width[k] < thick) k--;
+    let nose = k - back;
+    if (width[k] >= thick) { let gap = 0; for (let kk = k; kk < kEnd; kk++) { if (width[kk] >= thick) { nose = kk - back; gap = 0; } else if (++gap > (opt.gap || 1)) break; } }
+    else nose = 0;
+    const k0 = back + nose;
+    // Evidence along the centre line beyond the nose.
+    const S = Math.max(0, Math.min(kEnd - 1 - k0, Math.round(2.4 * Lp)));
+    const lv = [];
+    let seen = 0;
+    for (let s2 = 1; s2 <= S; s2++) {
+      const kk = k0 + s2;
+      let dark = 0, bright = 0, cnt = 0;
+      near(kk, 1.5, (at) => {
+        if (LR[at] < 0) return; cnt++;
+        const lr = LR[at], lc = LC[at];
+        if (CH[at] > tau && lc < darkK * lr) dark++;                 // point over a brighter background
+        else if (lr > brightMin && CH[at] <= tau) bright++;           // bright background, untouched
+      });
+      let l = 0;
+      if (dark) { l = 1; seen++; }
+      else if (cnt && bright === cnt) l = -1;
+      else if (bright) l = -0.5;
+      lv.push(l);
+    }
+    const sig = Math.max(3, (opt.sigma || 0.4) * Lp);
+    const lam = opt.lambda != null ? opt.lambda : 1;
+    let bestL = 0, bestSc = -Infinity, acc = 0;
+    for (let L = 0; L <= S; L++) {
+      if (L > 0) acc += lv[L - 1];
+      const d = (L - Lp) / sig;
+      const sc = acc - lam * 0.5 * d * d;
+      if (sc > bestSc) { bestSc = sc; bestL = L; }
+    }
+    const tl = nose + bestL;
+    const tip = [ox + ux * tl + nx * c, oy + uy * tl + ny * c];
+    // Was the end decided by the picture, or only by the usual point length (black on black)?
+    const byPrior = (bestL >= S || lv[bestL] === 0) && (bestL === 0 || lv[bestL - 1] === 0);
+    return { tip, ext: tl, nose, nosePt: [ox + ux * nose + nx * c, oy + uy * nose + ny * c], pointPx: bestL, byPrior,
+      info: { nose, L: bestL, Lp: +Lp.toFixed(1), Wb, c: +c.toFixed(1), seen },
+      profile: opt.debug ? { back, lv, width: Array.from(width.subarray(0, kEnd)) } : null };
+  }
+
   // Mean colour difference between two frames over given pixel indices.
   function regionDiff(a, b, pix) {
     let s = 0;
@@ -1265,6 +1402,11 @@ input[type=range]{accent-color:var(--cream)}
     this.thr = cfg.thr || 60;
     this.settleMs = cfg.settleMs || 600;
     this.offsetMm = cfg.offsetMm || 0;
+    // Camera pose from the calibration (principal point = picture centre in processing px):
+    // tells how long the point of a dart looks at each place of the board.
+    this.cam = cfg.pp ? cameraFromH(cfg.Hp, cfg.pp[0], cfg.pp[1]) : null;
+    this.pointMm = cfg.pointMm || 14;
+    this.tipModel = cfg.tipModel || 'nose';
     this.shadows = cfg.shadows !== false;
     this.jitter = cfg.jitter !== false;
     this.align = cfg.align !== false;
@@ -1413,21 +1555,38 @@ input[type=range]{accent-color:var(--cream)}
       const toRef = regionDiff(frame, refA, det.pixels);
       if (toStart < 0.45 * toRef) { this.ref.set(frame); return [{ type: 'removed' }]; }
     }
-    // Follow the thin steel point beyond the barrel.
+    // Find where the point enters the board, beyond the barrel.
     const gain = this.lastGain || 1;
     const bt = applyH(this.Hpi, det.tip[0], det.tip[1]);
     const bscale = localScale(this.Hp, bt[0], bt[1]);
-    const maxLen = Math.round(30 * bscale);
-    const lateral = this.pointLateral != null ? this.pointLateral : Math.max(1.5, Math.min(6, Math.round(2 * 3.4 * bscale) / 2));
-    const xt = extendTip(refA, frame, this.w, this.h, gain, det.tip, det.axis, maxLen, Math.max(this.pointMin, this.pointK * (this.noise || 0)), { lateral });
+    const thrLow = Math.max(this.pointMin, this.pointK * (this.noise || 0));
     det.barrelTip = det.tip.slice();
-    det.ext = xt.ext;
-    det.tip = xt.end;
+    let R = null;
+    if (this.tipModel !== 'walk') {
+      try {
+        let ppm = 0;
+        if (this.cam) { const J = heightStep(this.cam, this.Hpi, det.tip[0], det.tip[1]); ppm = Math.hypot(J[0], J[1]); }
+        if (!(ppm > 0.2 && ppm < 20)) ppm = 0.95 * bscale;
+        R = locateTip(refA, frame, this.w, this.h, gain, det, { thrLow, pxPerMm: ppm, pointMm: this.pointMm });
+        det.ext = R.ext; det.tip = R.tip; det.nose = R.nosePt; det.pointPx = R.pointPx; det.pxPerMm = ppm; det.tipBy = R.byPrior ? 'prior' : 'seen';
+      } catch (err) { R = null; }
+    }
+    if (!R) {
+      // Older method: follow the thin steel point step by step.
+      const maxLen = Math.round(30 * bscale);
+      const lateral = this.pointLateral != null ? this.pointLateral : Math.max(1.5, Math.min(6, Math.round(2 * 3.4 * bscale) / 2));
+      const xt = extendTip(refA, frame, this.w, this.h, gain, det.tip, det.axis, maxLen, thrLow, { lateral });
+      det.ext = xt.ext;
+      det.tip = xt.end;
+      det.tipBy = 'walk';
+    }
     if (!this.occPrev || this.occPrev.length !== this.occ.length) this.occPrev = new Uint8Array(this.occ.length);
     this.occPrev.set(this.occ);
     markOcclusion(this.occ, det.pixels, this.w, this.h, 2);
     if (!this.occWide || this.occWide.length !== this.occ.length) this.occWide = new Uint8Array(this.occ.length);
     markOcclusion(this.occWide, det.pixels, this.w, this.h, Math.max(3, Math.round(4 * this.ppm)));
+    // refA may be this.ref itself (no alignment needed): keep the picture before the throw for the crops.
+    const refBefore = refA === this.ref ? Uint8ClampedArray.from(refA) : refA;
     this.ref.set(frame);
     this.dartsInTurn++;
     const tipRaw = det.tip.slice();
@@ -1443,8 +1602,8 @@ input[type=range]{accent-color:var(--cream)}
         if (this.occPrev && this.occPrev[y * this.w + x]) det.hidden = true;
       }
     }
-    const dbg = this.debugCrop(refA, frame, th.mask, det);
-    if (this.debugHook) this.debugHook({ refA, frame, det, gain, thr: Math.max(this.pointMin, this.pointK * (this.noise || 0)) });
+    const dbg = this.debugCrop(refBefore, frame, th.mask, det);
+    if (this.debugHook) this.debugHook({ refA: refBefore, frame, det, gain, thr: thrLow });
     return [{ type: 'dart', det, tip, tipRaw, board: b, debug: dbg }];
   };
   // Board tracking: frame pixels whose source lies outside the camera picture (the board moved
@@ -1494,7 +1653,8 @@ input[type=range]{accent-color:var(--cream)}
       for (let x = 0; x < cw; x++) mk[y * cw + x] = mask[(y + y0) * this.w + x0 + x];
     }
     return { x0, y0, w: cw, h: ch, ref, cur, mask: mk, tip: det.tip.slice(), barrel: (det.barrelTip || det.tip).slice(), axis: det.axis.slice(),
-      ext: det.ext, area: det.area, hidden: det.hidden, nearOcc: det.tipNearOcc, noise: this.noise, shift: this.diag.shift || [0, 0], dartsInTurn: this.dartsInTurn };
+      ext: det.ext, area: det.area, hidden: det.hidden, nearOcc: det.tipNearOcc, noise: this.noise, shift: this.diag.shift || [0, 0], dartsInTurn: this.dartsInTurn,
+      nose: det.nose ? det.nose.slice() : null, pointPx: det.pointPx, pxPerMm: det.pxPerMm, tipBy: det.tipBy, pointMm: this.pointMm };
   };
 
   // Move the tip along the dart axis by the learned correction (board mm).
@@ -2197,7 +2357,7 @@ input[type=range]{accent-color:var(--cream)}
     SECTORS, RING, CAL_ANGLES, CAL_LABELS, calBoardPoints,
     makeDart, scoreAt, wireDistance,
     homography, applyH, invertH, mulH, localScale, makeCalibration, boardOutline,
-    buildRoi, meanLum, diffMap, thresholdMap, quickChange, motionMeasure, motionMeasureHalf, halfRes, estimateShift, shiftRGBA, components, findDart, extendTip, regionDiff, markOcclusion, Detector,
+    buildRoi, meanLum, diffMap, cameraFromH, camProject, heightStep, locateTip, envelopeDist, thresholdMap, quickChange, motionMeasure, motionMeasureHalf, halfRes, estimateShift, shiftRGBA, components, findDart, extendTip, regionDiff, markOcclusion, Detector,
     autoCalibrate, classifyColors,
     Tracker, affMul, affInv, affApply, grayOf, warpAffineRGBA,
     evalTurn, createGame, remainingOf, currentView, turnOpen, addDart, setDart, removeDart, commitTurn, undo, playerStats,
@@ -2223,7 +2383,8 @@ const S = {
   proc: null, det: null, frameData: null, resetPending: false, rebasePending: false,
   mode: 'intro', manual: false, camHidden: false,
   settings: Object.assign({ thr: 60, shadows: true, autoNext: true, voice: true, mask: false, lock: false, diag: false, view: 'board', collect: true, track: true }, store.get('settings', {})),
-  offset: Object.assign({ mm: 0, samples: [] }, store.get('offset', {})),
+  offset: { mm: 0, samples: [] },
+  point: Object.assign({ mm: 14, samples: [] }, store.get('point', {})),
   game: null, status: 'idle', blockedShown: false, lastProc: 0, maskImg: null, maskCanvas: null
 };
 
@@ -2549,7 +2710,7 @@ function setupProc() {
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   const Hp = C.mulH([s, 0, -x * s, 0, s, -y * s, 0, 0, 1], H);
   S.proc = { x, y, w, h, s, pw, ph, canvas, ctx, Hp };
-  S.det = new C.Detector({ w: pw, h: ph, Hp, nearDir: S.cal.nearDir, thr: S.settings.thr, shadows: S.settings.shadows, offsetMm: S.offset.mm });
+  S.det = new C.Detector({ w: pw, h: ph, Hp, nearDir: S.cal.nearDir, thr: S.settings.thr, shadows: S.settings.shadows, pp: [(S.vw / 2 - x) * s, (S.vh / 2 - y) * s], pointMm: S.point.mm });
   S.maskCanvas = document.createElement('canvas'); S.maskCanvas.width = pw; S.maskCanvas.height = ph;
   S.maskImg = null;
   setupStab();
@@ -2622,7 +2783,7 @@ function alignCalibration() {
     S.cal = C.makeCalibration(S.pts); savePoints();
     const P = S.proc;
     P.Hp = C.mulH([P.s, 0, -P.x * P.s, 0, P.s, -P.y * P.s, 0, 0, 1], S.cal.H);
-    S.det = new C.Detector({ w: P.pw, h: P.ph, Hp: P.Hp, nearDir: S.cal.nearDir, thr: S.settings.thr, shadows: S.settings.shadows, offsetMm: S.offset.mm });
+    S.det = new C.Detector({ w: P.pw, h: P.ph, Hp: P.Hp, nearDir: S.cal.nearDir, thr: S.settings.thr, shadows: S.settings.shadows, pp: [(S.vw / 2 - P.x) * P.s, (S.vh / 2 - P.y) * P.s], pointMm: S.point.mm });
     S.resetPending = true;
   } catch (e) {}
 }
@@ -2697,8 +2858,11 @@ function onDart(e) {
   const sc = C.scoreAt(e.board[0], e.board[1]);
   const tipV = toVideo(e.tip), rawV = toVideo(e.tipRaw);
   const wd = C.wireDistance(e.board[0], e.board[1]);
-  const unsure = (e.det.tipNearOcc && e.det.ext < 3) || e.det.hidden || wd < 1.5;
+  // The point could not be seen (black on black) and the tip lies close to a wire: ask for a look.
+  const guessed = e.det.tipBy === 'prior';
+  const unsure = (e.det.tipNearOcc && (guessed || e.det.ext < 3)) || e.det.hidden || wd < 1.5 || (guessed && wd < 2.5);
   const d = Object.assign({}, sc, { auto: true, unsure, tip: tipV, raw: rawV, axis: e.det.axis.slice(), snap: captureSnap(tipV), debug: e.debug, board: e.board.slice() });
+  if (e.det.nose && e.det.pxPerMm) { d.nose = toVideo(e.det.nose); d.ppmV = e.det.pxPerMm / S.proc.s; }
   d.det0 = { label: sc.label, num: sc.num, mult: sc.mult, tip: tipV.slice(), raw: rawV.slice(), board: e.board.slice(), unsure };
   d.proc0 = procSnap(); d.cal0 = S.cal;
   const v = C.addDart(S.game, d);
@@ -3106,7 +3270,7 @@ $('#fix-save').addEventListener('click', () => {
   const g = S.game, d = g.cur.darts[fix.i];
   if (!d || !fix.dart) { closeSheet('#sh-fix'); return; }
   const moved = fix.tip && d.tip && (fix.tip[0] !== d.tip[0] || fix.tip[1] !== d.tip[1]);
-  if (moved && d.auto && d.raw && d.axis) learnOffset(d, fix.tip);
+  if (moved && d.auto && d.axis) learnPoint(d, fix.tip);
   C.setDart(g, fix.i, Object.assign({}, fix.dart, { tip: fix.tip, unsure: false, auto: d.auto, fixed: d.fixed || moved, confirmed: true }));
   closeSheet('#sh-fix'); afterChange();
 });
@@ -3165,26 +3329,28 @@ $$('.slot').forEach(el => el.addEventListener('click', () => {
   else if (C.turnOpen(S.game)) openFix(-1);
 }));
 
-// Learn how far the real point sits beyond what the camera saw, along the dart axis.
-function learnOffset(d, trueTip) {
-  const dx = trueTip[0] - d.raw[0], dy = trueTip[1] - d.raw[1];
+// Learn how long the point of the player's darts usually looks (mm of height above the board,
+// measured from the front of the barrel) from the taps that correct a throw.
+function learnPoint(d, trueTip) {
+  if (!d.nose || !d.ppmV) return;
+  const dx = trueTip[0] - d.nose[0], dy = trueTip[1] - d.nose[1];
   const along = dx * d.axis[0] + dy * d.axis[1], perp = Math.abs(-dx * d.axis[1] + dy * d.axis[0]);
-  const b = C.applyH(S.cal.Hi, d.raw[0], d.raw[1]);
-  const sc = C.localScale(S.cal.H, b[0], b[1]);
-  const mm = along / sc, perpMm = perp / sc;
-  if (Math.abs(mm) > 35 || perpMm > 12) return;
-  const s = S.offset.samples; s.push(mm); while (s.length > 15) s.shift();
+  const mm = along / d.ppmV, perpMm = perp / d.ppmV;
+  if (!(mm > 4 && mm < 32) || perpMm > 8) return;
+  const s = S.point.samples; s.push(Math.round(mm * 10) / 10); while (s.length > 15) s.shift();
   const sorted = s.slice().sort((a, b) => a - b);
-  S.offset.mm = Math.max(-15, Math.min(25, sorted[Math.floor(sorted.length / 2)]));
-  store.set('offset', S.offset);
-  if (S.det) S.det.offsetMm = S.offset.mm;
+  // a few taps move it only part of the way; the default stays in the middle until there are enough
+  const med = sorted[Math.floor(sorted.length / 2)], k = Math.min(1, s.length / 5);
+  S.point.mm = Math.max(8, Math.min(24, 14 * (1 - k) + med * k));
+  store.set('point', S.point);
+  if (S.det) S.det.pointMm = S.point.mm;
 }
 
 /* ---------------- Training data for the AI model ----------------
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.15';
+const APP_VERSION = '2026.10.17';
 const DS = {
   p: null,
   open() {
@@ -3257,10 +3423,11 @@ function harvestTurn(darts) {
       const rec = {
         id: d.sid, ts: Date.now(), app: APP_VERSION, kind: D.kind || 'dart', label,
         det: det ? { label: det.label, num: det.num, mult: det.mult, unsure: det.unsure, board: det.board.map(r2), tip: toCrop(det.tip, P, cr), raw: toCrop(det.raw, P, cr),
-          seen: pc(D.tip), barrel: pc(D.barrel), axis: D.axis, ext: D.ext, area: D.area, hidden: D.hidden, nearOcc: D.nearOcc } : null,
+          seen: pc(D.tip), barrel: pc(D.barrel), axis: D.axis, ext: D.ext, area: D.area, hidden: D.hidden, nearOcc: D.nearOcc,
+          nose: pc(D.nose), pointPx: D.pointPx, pxPerMm: D.pxPerMm != null ? r2(D.pxPerMm) : null, tipBy: D.tipBy } : null,
         crop: { x0: D.x0, y0: D.y0, k: cr.k },
         proc: P, cal: cal ? { H: cal.H, viewAngle: r2(cal.viewAngle), side: cal.side, pxPerMm: r2(cal.pxPerMm) } : null,
-        video: [S.vw, S.vh], noise: D.noise, shift: D.shift, dartsInTurn: D.dartsInTurn, offsetMm: r2(S.offset.mm || 0),
+        video: [S.vw, S.vh], noise: D.noise, shift: D.shift, dartsInTurn: D.dartsInTurn, pointMm: r2(D.pointMm || S.point.mm),
         turn: { i, labels: darts.map(x => x && x.label) }
       };
       dsChain = dsChain.then(() => saveSample(rec, D)).catch(() => {});
@@ -3490,7 +3657,7 @@ function openSettings() {
   $('#opt-thr').value = S.settings.thr; $('#opt-thr-v').textContent = S.settings.thr;
   $('#opt-shadow').checked = S.settings.shadows; $('#opt-auto').checked = S.settings.autoNext;
   $('#opt-lock').checked = S.settings.lock; $('#opt-mask').checked = S.settings.mask; $('#opt-diag').checked = S.settings.diag;
-  $('#opt-off').textContent = (S.offset.mm >= 0 ? '+' : '') + S.offset.mm.toFixed(1) + ' mm';
+  $('#opt-off').textContent = S.point.mm.toFixed(1) + ' mm' + (S.point.samples.length ? ' (' + S.point.samples.length + ' popr.)' : '');
   $('#opt-collect').checked = !!S.settings.collect;
   $('#opt-track').checked = !!S.settings.track;
   refreshDsInfo();
@@ -3507,7 +3674,7 @@ $('#opt-lock').addEventListener('change', async (e) => {
   const res = await applyLocks(S.settings.lock);
   toast(S.settings.lock ? 'Zablokowano: ' + res : 'Automatyka aparatu włączona');
 });
-$('#opt-off-reset').addEventListener('click', () => { S.offset = { mm: 0, samples: [] }; store.set('offset', S.offset); if (S.det) S.det.offsetMm = 0; $('#opt-off').textContent = '+0.0 mm'; });
+$('#opt-off-reset').addEventListener('click', () => { S.point = { mm: 14, samples: [] }; store.set('point', S.point); if (S.det) S.det.pointMm = 14; $('#opt-off').textContent = '14.0 mm'; });
 $('#opt-voice-test').addEventListener('click', () => { const was = S.settings.voice; S.settings.voice = true; speak('potrójne 20. Razem 180'); S.settings.voice = was; });
 $('#set-close').addEventListener('click', () => closeSheet('#sh-set'));
 
