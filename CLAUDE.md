@@ -57,6 +57,17 @@ Wynik na eksporcie z 2026-10-17 (77 rzutów, 59 da się odtworzyć):
 
 Zawsze porównuj z wersją przed zmianą i sprawdzaj z `NOISE`.
 
+## Druk 3D: pierścień LED + uchwyty na 2 telefony (`druk3d/`)
+- Generator bez bibliotek CAD (numpy + scikit-image): `sdf.py` (prymitywy SDF, marching cubes, STL),
+  `ring.py` (8 segmentów po 45°, rowek na taśmę COB 10 mm, daszek, wypust/gniazdo + wkręty 3,5×25,
+  4 dociski M5 do boku tarczy, nóżki oparte o przód tarczy), `uchwyty.py` (zacisk na pierścień + rurka Ø20,
+  przegub GoPro, uchwyt telefonu 62–88 mm, gałki M5), `build.py` (STL w orientacji do druku, test szczelności),
+  `podglad.py` (rendery). Szczegóły i lista zakupów w `druk3d/README.md`. STL nie są w repo (`python3 druk3d/build.py katalog`).
+- Ustawienie: z = 0 to przód tarczy (Blade 6, Ø451), pierścień r 231–258, z −12..19, daszek do r 220.
+  Telefon na rurce ok. 30 cm przed tarczą, r ≈ 283 mm, kąt ok. 43°. Drugi telefon ok. 90° dalej po obwodzie (np. 12).
+- W tym środowisku duże tablice numpy są wolne: liczyć warstwami (`S.evaluate`) i ustawić
+  `MALLOC_MMAP_THRESHOLD_=33554432 MALLOC_TRIM_THRESHOLD_=4000000000`.
+
 ## Otwarte problemy (kolejność wg wpływu)
 1. **Zła rzutka przy grupach** (5 z 26 poprawek): przy 2. i 3. rzutce blisko poprzednich
    `findDart` łapie środek korpusu albo inną rzutkę. Do zbadania w `findDart` (wybór `main`, łączenie składowych, okluzja).
@@ -66,3 +77,5 @@ Zawsze porównuj z wersją przed zmianą i sprawdzaj z `NOISE`.
 3. **Czarne na czarnym**: tylko zgadywanie z długości (±5 px). Baryłka 40 mm mogłaby dać skalę rzutki,
    ale przy obecnej rozdzielczości nie widać granicy baryłka/shaft.
 4. **Model AI** na wycinkach: po zebraniu ok. 300 rzutów z nową wersją (pełne zdjęcia „przed”).
+5. **Tryb dwóch telefonów** (zaplanowany po zamontowaniu pierścienia): parowanie przez kod QR i WebRTC w tej samej sieci Wi-Fi,
+   punkt wbicia z przecięcia osi rzutki z obu kamer (każda oś zrzutowana na tarczę przez swoją homografię), więc bez zgadywania długości grota.
