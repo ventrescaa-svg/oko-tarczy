@@ -1331,7 +1331,9 @@ input[type=range]{accent-color:var(--cream)}
     else nose = 0;
     const k0 = back + nose;
     // Evidence along the centre line beyond the nose.
-    const S = Math.max(0, Math.min(kEnd - 1 - k0, Math.round(2.4 * Lp)));
+    // The point cannot look longer than the whole point standing straight out of the board.
+    const Lmax = Math.round(Math.max(Lp + 2, (opt.pointMaxMm || 25) * px * 1.1));
+    const S = Math.max(0, Math.min(kEnd - 1 - k0, Math.round(2.4 * Lp), Lmax));
     const lv = [];
     let seen = 0;
     for (let s2 = 1; s2 <= S; s2++) {
@@ -1406,6 +1408,7 @@ input[type=range]{accent-color:var(--cream)}
     // tells how long the point of a dart looks at each place of the board.
     this.cam = cfg.pp ? cameraFromH(cfg.Hp, cfg.pp[0], cfg.pp[1]) : null;
     this.pointMm = cfg.pointMm || 14;
+    this.pointMaxMm = cfg.pointMaxMm || 25;   // measured point length of the player's darts (mm)
     this.tipModel = cfg.tipModel || 'nose';
     this.shadows = cfg.shadows !== false;
     this.jitter = cfg.jitter !== false;
@@ -1567,7 +1570,7 @@ input[type=range]{accent-color:var(--cream)}
         let ppm = 0;
         if (this.cam) { const J = heightStep(this.cam, this.Hpi, det.tip[0], det.tip[1]); ppm = Math.hypot(J[0], J[1]); }
         if (!(ppm > 0.2 && ppm < 20)) ppm = 0.95 * bscale;
-        R = locateTip(refA, frame, this.w, this.h, gain, det, { thrLow, pxPerMm: ppm, pointMm: this.pointMm });
+        R = locateTip(refA, frame, this.w, this.h, gain, det, { thrLow, pxPerMm: ppm, pointMm: this.pointMm, pointMaxMm: this.pointMaxMm });
         det.ext = R.ext; det.tip = R.tip; det.nose = R.nosePt; det.pointPx = R.pointPx; det.pxPerMm = ppm; det.tipBy = R.byPrior ? 'prior' : 'seen';
       } catch (err) { R = null; }
     }
@@ -2384,7 +2387,7 @@ const S = {
   mode: 'intro', manual: false, camHidden: false,
   settings: Object.assign({ thr: 60, shadows: true, autoNext: true, voice: true, mask: false, lock: false, diag: false, view: 'board', collect: true, track: true }, store.get('settings', {})),
   offset: { mm: 0, samples: [] },
-  point: Object.assign({ mm: 14, samples: [] }, store.get('point', {})),
+  point: Object.assign({ mm: 14, samples: [], max: 25 }, store.get('point', {})),   // max = measured point (25 mm), barrel 40 mm
   game: null, status: 'idle', blockedShown: false, lastProc: 0, maskImg: null, maskCanvas: null
 };
 
@@ -2710,7 +2713,7 @@ function setupProc() {
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   const Hp = C.mulH([s, 0, -x * s, 0, s, -y * s, 0, 0, 1], H);
   S.proc = { x, y, w, h, s, pw, ph, canvas, ctx, Hp };
-  S.det = new C.Detector({ w: pw, h: ph, Hp, nearDir: S.cal.nearDir, thr: S.settings.thr, shadows: S.settings.shadows, pp: [(S.vw / 2 - x) * s, (S.vh / 2 - y) * s], pointMm: S.point.mm });
+  S.det = new C.Detector({ w: pw, h: ph, Hp, nearDir: S.cal.nearDir, thr: S.settings.thr, shadows: S.settings.shadows, pp: [(S.vw / 2 - x) * s, (S.vh / 2 - y) * s], pointMm: S.point.mm, pointMaxMm: S.point.max || 25 });
   S.maskCanvas = document.createElement('canvas'); S.maskCanvas.width = pw; S.maskCanvas.height = ph;
   S.maskImg = null;
   setupStab();
@@ -2783,7 +2786,7 @@ function alignCalibration() {
     S.cal = C.makeCalibration(S.pts); savePoints();
     const P = S.proc;
     P.Hp = C.mulH([P.s, 0, -P.x * P.s, 0, P.s, -P.y * P.s, 0, 0, 1], S.cal.H);
-    S.det = new C.Detector({ w: P.pw, h: P.ph, Hp: P.Hp, nearDir: S.cal.nearDir, thr: S.settings.thr, shadows: S.settings.shadows, pp: [(S.vw / 2 - P.x) * P.s, (S.vh / 2 - P.y) * P.s], pointMm: S.point.mm });
+    S.det = new C.Detector({ w: P.pw, h: P.ph, Hp: P.Hp, nearDir: S.cal.nearDir, thr: S.settings.thr, shadows: S.settings.shadows, pp: [(S.vw / 2 - P.x) * P.s, (S.vh / 2 - P.y) * P.s], pointMm: S.point.mm, pointMaxMm: S.point.max || 25 });
     S.resetPending = true;
   } catch (e) {}
 }
@@ -3341,7 +3344,7 @@ function learnPoint(d, trueTip) {
   const sorted = s.slice().sort((a, b) => a - b);
   // a few taps move it only part of the way; the default stays in the middle until there are enough
   const med = sorted[Math.floor(sorted.length / 2)], k = Math.min(1, s.length / 5);
-  S.point.mm = Math.max(8, Math.min(24, 14 * (1 - k) + med * k));
+  S.point.mm = Math.max(8, Math.min((S.point.max || 25) - 2, 14 * (1 - k) + med * k));
   store.set('point', S.point);
   if (S.det) S.det.pointMm = S.point.mm;
 }
@@ -3674,7 +3677,7 @@ $('#opt-lock').addEventListener('change', async (e) => {
   const res = await applyLocks(S.settings.lock);
   toast(S.settings.lock ? 'Zablokowano: ' + res : 'Automatyka aparatu włączona');
 });
-$('#opt-off-reset').addEventListener('click', () => { S.point = { mm: 14, samples: [] }; store.set('point', S.point); if (S.det) S.det.pointMm = 14; $('#opt-off').textContent = '14.0 mm'; });
+$('#opt-off-reset').addEventListener('click', () => { S.point = { mm: 14, samples: [], max: S.point.max || 25 }; store.set('point', S.point); if (S.det) S.det.pointMm = 14; $('#opt-off').textContent = '14.0 mm'; });
 $('#opt-voice-test').addEventListener('click', () => { const was = S.settings.voice; S.settings.voice = true; speak('potrójne 20. Razem 180'); S.settings.voice = was; });
 $('#set-close').addEventListener('click', () => closeSheet('#sh-set'));
 
