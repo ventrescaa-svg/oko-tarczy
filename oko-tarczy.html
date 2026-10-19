@@ -404,6 +404,8 @@ input[type=range]{accent-color:var(--cream)}
     <label class="toggle"><span>Ignoruj cienie lotek</span><input type="checkbox" id="opt-shadow" checked></label>
     <label class="toggle"><span>Następna tura po wyjęciu lotek</span><input type="checkbox" id="opt-auto" checked></label>
     <label class="toggle"><span>Śledź tarczę (chwiejący się statyw)</span><input type="checkbox" id="opt-track" checked></label>
+    <label class="toggle"><span>Kamera 4K (więcej szczegółów, większe obciążenie)</span><input type="checkbox" id="opt-4k"></label>
+    <p class="hint" id="cam-info"></p>
     <label class="toggle"><span>Blokuj ekspozycję i ostrość aparatu</span><input type="checkbox" id="opt-lock"></label>
     <label class="toggle"><span>Pokaż, co widzi wykrywanie (różowe)</span><input type="checkbox" id="opt-mask"></label>
     <label class="toggle"><span>Pokaż diagnostykę (liczby na obrazie)</span><input type="checkbox" id="opt-diag"></label>
@@ -2614,7 +2616,9 @@ async function startCamera() {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: false,
-      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }
+      video: S.settings.cam4k
+        ? { facingMode: { ideal: 'environment' }, width: { ideal: 3840 }, height: { ideal: 2160 }, frameRate: { ideal: 30 } }
+        : { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }
     });
     S.stream = stream; S.track = stream.getVideoTracks()[0];
     S.video.srcObject = stream;
@@ -2681,9 +2685,13 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 S.video.addEventListener('resize', () => {
   if (!S.video.videoWidth) return;
   if (S.vw && (S.video.videoWidth !== S.vw || S.video.videoHeight !== S.vh)) {
+    const ow = S.vw, oh = S.vh;
     S.vw = S.video.videoWidth; S.vh = S.video.videoHeight;
-    S.pts = defaultPoints(); S.cal = C.makeCalibration(S.pts); S.proc = null; S.det = null; S.stab = null; S.calShot = null;
-    if (S.mode === 'game' && !S.manual) { toast('Obraz się obrócił. Szukam tarczy od nowa.'); showScreen('cal'); autoCalSoon(); }
+    const same = Math.abs(ow / oh - S.vw / S.vh) < 0.01;   // only the resolution changed (4K switch), not the orientation
+    S.pts = same && S.pts ? S.pts.map(p => [p[0] * S.vw / ow, p[1] * S.vh / oh]) : defaultPoints();
+    S.cal = C.makeCalibration(S.pts); S.proc = null; S.det = null; S.stab = null; S.calShot = null;
+    if (S.mode === 'cal' && same) autoCalSoon();
+    if (S.mode === 'game' && !S.manual) { toast(same ? 'Zmieniła się rozdzielczość kamery. Szukam tarczy od nowa.' : 'Obraz się obrócił. Szukam tarczy od nowa.'); showScreen('cal'); autoCalSoon(); }
   }
   sizeOverlay();
 });
@@ -2696,6 +2704,9 @@ function defaultPoints() {
 function loadPoints() {
   const saved = store.get('cal', null);
   if (saved && saved.vw === S.vw && saved.vh === S.vh && saved.pts && saved.pts.length === 4) return saved.pts;
+  // same picture shape at another resolution (4K switch): scale the points
+  if (saved && saved.pts && saved.pts.length === 4 && saved.vw && Math.abs(saved.vw / saved.vh - S.vw / S.vh) < 0.01)
+    return saved.pts.map(p => [p[0] * S.vw / saved.vw, p[1] * S.vh / saved.vh]);
   return defaultPoints();
 }
 /* Ring widths of this board: each good calibration measures them, the mean of the last 5 is used.
@@ -2788,7 +2799,7 @@ async function runAutoCal(quiet) {
     res = C.autoCalibrate(f.data, f.w, f.h, { up: upVector() });
     if (res.pts) res.pts = res.pts.map(p => [p[0] / f.s, p[1] / f.s]);
     if (res.H) {
-      const k = full.s / f.s, wires = C.refineGrid(full.data, full.w, full.h, C.mulH([k, 0, 0, 0, k, 0, 0, 0, 1], res.H), { rings: true });
+      const k = full.s / f.s, wires = C.refineGrid(full.data, full.w, full.h, C.mulH([k, 0, 0, 0, k, 0, 0, 0, 1], res.H), { rings: true, rounds: [12, 6, 4].map(r => r * Math.max(1, Math.min(full.w, full.h) / 1080)) });
       res.wires = wires;
       if (wires.ok && wires.move < 40) {
         res.pts = C.calBoardPoints().map(p => { const q = C.applyH(wires.H, p[0], p[1]); return [q[0] / full.s, q[1] / full.s]; });
@@ -3586,7 +3597,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.19f';
+const APP_VERSION = '2026.10.19g';
 const DS = {
   p: null,
   open() {
@@ -3779,6 +3790,25 @@ $('#opt-track').addEventListener('change', (e) => {
   if (S.proc) { setupStab(); S.resetPending = true; }
 });
 $('#opt-collect').addEventListener('change', (e) => { S.settings.collect = e.target.checked; saveSettings(); syncAiPill(); });
+// What the camera really gives (the browser may give less than asked) and how fast play runs.
+function camInfo() {
+  const el = $('#cam-info'); if (!el) return;
+  const st = S.track && S.track.getSettings ? S.track.getSettings() : null;
+  if (!st || !S.vw) { el.textContent = 'Kamera wyłączona.'; return; }
+  el.textContent = 'Obraz: ' + S.vw + '×' + S.vh + (st.frameRate ? ', kamera ' + Math.round(st.frameRate) + ' kl/s' : '') +
+    (S.fps && S.proc ? ', wykrywanie ' + S.fps.toFixed(1) + ' kl/s' : '') + '.';
+}
+$('#opt-4k').addEventListener('change', async (e) => {
+  S.settings.cam4k = e.target.checked; saveSettings();
+  if (!S.stream || S.manual) { camInfo(); return; }
+  $('#cam-info').textContent = 'Przełączam kamerę…';
+  S.stream.getTracks().forEach(t => t.stop());
+  S.fps = 0;
+  const ok = await startCamera();   // a new size fires the video 'resize' handler: points scaled, board found again
+  camInfo();
+  if (ok && S.settings.lock) applyLocks(true);
+  if (ok && S.settings.cam4k && Math.max(S.vw, S.vh) < 3000) toast('Ten telefon nie daje 4K w przeglądarce (' + S.vw + '×' + S.vh + ').', 4000);
+});
 
 /* ---------------- Buttons ---------------- */
 $('#btn-start').addEventListener('click', async () => {
@@ -3897,6 +3927,7 @@ function openSettings() {
   $('#opt-off').textContent = S.point.mm.toFixed(1) + ' mm' + (S.point.samples.length ? ' (' + S.point.samples.length + ' popr.)' : '');
   $('#opt-collect').checked = !!S.settings.collect;
   $('#opt-track').checked = !!S.settings.track;
+  $('#opt-4k').checked = !!S.settings.cam4k; camInfo();
   refreshDsInfo();
   openSheet('#sh-set');
 }

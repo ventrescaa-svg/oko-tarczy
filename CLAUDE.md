@@ -60,6 +60,11 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
   Na zrzutach Piotra: 96,6/107,7/158,9 i 97,6/107,4/159,7. Wynik widać w górnym pasku zrzutu z kalibracji („pierścienie …”).
 - Jeszcze nie: dociąganie w trakcie gry (śledzenie tarczy jest tylko afiniczne).
 
+## Kamera 4K (od 2026.10.19g)
+- Ustawienia wykrywania, „Kamera 4K”: `S.settings.cam4k`, prosi o 3840×2160 zamiast 1920×1080; pod przełącznikiem `camInfo()` pokazuje, co kamera naprawdę daje i ile kl/s ma wykrywanie.
+- Przełączenie restartuje kamerę; punkty kalibracji są skalowane (ten sam kształt obrazu), potem automatyczna kalibracja od nowa. `refineGrid` dostaje okna × (krótszy bok / 1080).
+- Wykrywanie dalej zmniejsza wycinek tarczy do 960 px (`setupProc`), więc 4K pomaga na razie tylko kalibracji i zrzutom. Następny krok: dopracowanie grota na pełnej rozdzielczości (otwarty problem 2).
+
 ## Test na prawdziwych rzutach
 ```
 python3 narzedzia/rozpakuj.py eksport.zip /tmp/rzuty
