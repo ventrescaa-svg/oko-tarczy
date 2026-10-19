@@ -9,9 +9,10 @@ os.makedirs(out, exist_ok=True)
 with zipfile.ZipFile(zp) as z:
     man = json.loads(z.read('manifest.json'))
     for i, s in enumerate(man['samples'], 1):
-        for k in ('ref', 'cur'):
+        for k in ('ref', 'cur', 'hiRef', 'hiCur'):
+            if k not in s['files']: continue
             im = Image.open(io.BytesIO(z.read(s['files'][k]))).convert('RGBA')
-            np.asarray(im, dtype=np.uint8).tofile(os.path.join(out, f'{i:03d}_{k}.rgba'))
+            np.asarray(im, dtype=np.uint8).tofile(os.path.join(out, f'{i:03d}_{k.lower()}.rgba'))
     with open(os.path.join(out, 'manifest.json'), 'w') as f:
         json.dump(man, f)
 print(len(man['samples']), 'rzutów ->', out)

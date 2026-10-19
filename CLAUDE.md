@@ -92,6 +92,14 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
   (wymaga `img/plain2.rgba` i `Hnew2.json` w `SP`, nie ma ich w repo). 240 rzutów: dobre pole 214 → 224, mediana błędu 1,6 → 1,3 mm.
   Na prawdziwych rzutach jeszcze nie sprawdzone.
 
+## Cienie i składowe (od 2026.10.19m, na eksporcie Piotra z 2026-10-19, 19 rzutów)
+- Cień rzutki na kremowych polach tracił więcej niebieskiego niż czerwonego (cieplejsze światło w cieniu) i `diffMap`/`locateTip`/`findDart` brały go za rzutkę.
+  `isShadow(kr,kg,kb)`: obok starego warunku (równe zaciemnienie, rozrzut < 0,13) dopuszcza rozrzut < 0,34, gdy niebieski i zielony spadły co najmniej tak jak czerwony
+  (srebrna baryłka na kremie robi odwrotnie). Wspólne dla `diffMap`, `locateTip` i filtra w `findDart`.
+- `findDart`: odrzucanie składowych poza osią po jednej (najdalszą od osi), a nie wszystkich naraz. Cień obok rzutki przechylał oś i wyrzucał baryłkę zamiast siebie (rzut 18: pole 5 zamiast 20).
+- `test_rzutow.js` z `HI=1` stosuje też ostry grot (`refineTipHi` na `hiCrop`, `rozpakuj.py` rozpakowuje `hiref`/`hicur`). Wynik: 13 → 15 → 16 dobrych pól z 19 (zwykły → po cieniach i składowych → z ostrym grotem),
+  poprawiane stuknięciem 4/7 → 7/7 (bez szumu; z szumem 4: 15/19, 5–6/7). Nadal źle: rzut 17 (12 → 5, grot za drutem) i 7 (3 → 17).
+
 ## Test na prawdziwych rzutach
 ```
 python3 narzedzia/rozpakuj.py eksport.zip /tmp/rzuty

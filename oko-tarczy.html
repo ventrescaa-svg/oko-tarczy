@@ -647,6 +647,18 @@ input[type=range]{accent-color:var(--cream)}
     return sample.length ? s / sample.length : 0;
   }
 
+  // Darkening factors kr, kg, kb (after / before) of a cast shadow: darker by a similar factor in
+  // R, G and B. A shadow on the cream fields loses more blue than red (the light in the shadow is
+  // warmer), so a larger spread is allowed when blue fell at least as much as red; a grey or
+  // silver dart on cream does the opposite (blue rises relative to red).
+  const SHADOW_EVEN = 0.13, SHADOW_WARM = 0.34;
+  function isShadow(kr, kg, kb) {
+    const kmax = Math.max(kr, kg, kb), kmin = Math.min(kr, kg, kb);
+    if (!(kmin > 0.3 && kmax < 0.96)) return false;
+    const spread = (kmax - kmin) / ((kmax + kmin) * 0.5);
+    return spread < SHADOW_EVEN || (spread < SHADOW_WARM && kb <= kr + 0.03 && kg <= kr + 0.03);
+  }
+
   // Blurred colour difference between two frames inside the ROI. Returns Uint16Array.
   // With `shadows` on, pixels that only got darker by the same factor in R, G and B
   // (a cast shadow keeps the surface colour) are ignored.
@@ -665,8 +677,7 @@ input[type=range]{accent-color:var(--cream)}
       const dr = ref[j] - cr, dg = ref[j + 1] - cg, db = ref[j + 2] - cb;
       if (shadows && dr > 0 && dg > 0 && db > 0) {
         const kr = (cr + 2) / (ref[j] + 2), kg = (cg + 2) / (ref[j + 1] + 2), kb = (cb + 2) / (ref[j + 2] + 2);
-        const kmax = Math.max(kr, kg, kb), kmin = Math.min(kr, kg, kb);
-        if (kmin > 0.3 && kmax < 0.96 && (kmax - kmin) < 0.13 * (kmax + kmin) * 0.5) { tmp[i] = 0; if (J) J[i] = 0; continue; }
+        if (isShadow(kr, kg, kb)) { tmp[i] = 0; if (J) J[i] = 0; continue; }
       }
       const exact = (dr < 0 ? -dr : dr) + (dg < 0 ? -dg : dg) + (db < 0 ? -db : db);
       let best = exact;
@@ -1035,10 +1046,12 @@ input[type=range]{accent-color:var(--cream)}
         if (s !== undefined) { xsA[m] = x; ysA[m] = y; pixA[m] = i; compA[m] = s; m++; }
       }
     }
-    // Keep only pieces that line up with the dart axis (two passes of PCA + rejection).
+    // Keep only pieces that line up with the dart axis: PCA, drop the piece furthest off the axis,
+    // repeat. One piece at a time, so a shadow beside the dart cannot tilt the axis and get the
+    // barrel thrown out instead of itself.
     const keep = new Uint8Array(cand.length).fill(1);
     const perpTol = opts.perpTol || opts.gap * 0.45;
-    for (let pass = 0; pass < 2 && cand.length > 1; pass++) {
+    for (let pass = 0; pass < cand.length && cand.length > 1; pass++) {
       const idx = [];
       for (let k = 0; k < m; k++) if (keep[compA[k]]) idx.push(k);
       const Q = pca(xsA, ysA, idx);
@@ -1047,12 +1060,13 @@ input[type=range]{accent-color:var(--cream)}
         const d = Math.abs(-(xsA[k] - Q.cx) * Q.ay + (ysA[k] - Q.cy) * Q.ax);
         sum[compA[k]] += d; cnt[compA[k]]++;
       }
-      let changed = false;
+      let worst = -1, wd = perpTol;
       for (let c = 0; c < cand.length; c++) {
         if (cand[c] === main || !keep[c]) continue;
-        if (sum[c] / cnt[c] > perpTol) { keep[c] = 0; changed = true; }
+        if (sum[c] / cnt[c] > wd) { wd = sum[c] / cnt[c]; worst = c; }
       }
-      if (!changed) break;
+      if (worst < 0) break;
+      keep[worst] = 0;
     }
     let n = 0;
     for (let k = 0; k < m; k++) if (keep[compA[k]]) n++;
@@ -1182,8 +1196,7 @@ input[type=range]{accent-color:var(--cream)}
       const cr = cur[j] * gain, cg = cur[j + 1] * gain, cb = cur[j + 2] * gain;
       if (cr < ref[j] && cg < ref[j + 1] && cb < ref[j + 2]) {
         const kr = (cr + 2) / (ref[j] + 2), kg = (cg + 2) / (ref[j + 1] + 2), kb = (cb + 2) / (ref[j + 2] + 2);
-        const kmax = Math.max(kr, kg, kb), kmin = Math.min(kr, kg, kb);
-        if (ref[j] + ref[j + 1] + ref[j + 2] > 150 && kmin > 0.3 && kmax < 0.96 && (kmax - kmin) < 0.13 * (kmax + kmin) * 0.5) return 0;
+        if (ref[j] + ref[j + 1] + ref[j + 2] > 150 && isShadow(kr, kg, kb)) return 0;
       }
       return Math.abs(ref[j] - cr) + Math.abs(ref[j + 1] - cg) + Math.abs(ref[j + 2] - cb);
     };
@@ -1321,8 +1334,7 @@ input[type=range]{accent-color:var(--cream)}
         let e = envelopeDist(ref, j, w, cr, cg, cb);
         if (e > 0 && cr < ref[j] && cg < ref[j + 1] && cb < ref[j + 2]) {
           const kr = (cr + 2) / (ref[j] + 2), kg = (cg + 2) / (ref[j + 1] + 2), kb = (cb + 2) / (ref[j + 2] + 2);
-          const kmax = Math.max(kr, kg, kb), kmin = Math.min(kr, kg, kb);
-          if (kmin > 0.3 && kmax < 0.96 && (kmax - kmin) < 0.13 * (kmax + kmin) * 0.5) e = 0; // shadow
+          if (isShadow(kr, kg, kb)) e = 0; // shadow
         }
         CH[at] = e;
       }
@@ -3735,7 +3747,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.19l';
+const APP_VERSION = '2026.10.19m';
 const DS = {
   p: null,
   open() {

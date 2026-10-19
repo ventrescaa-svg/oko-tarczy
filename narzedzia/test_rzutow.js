@@ -39,6 +39,16 @@ M.samples.forEach((s, k) => {
   const d = ev.find(e => e.type === 'dart');
   n++; const tap = s.label.source === 'tap'; if (tap) tapN++;
   if (!d) { rows.push(`${id} ${s.label.source} ${s.label.label} -> brak rzutki`); return; }
+  // HI=1: grot jeszcze raz na ostrym wycinku (od 2026.10.19l), tak jak hiRefine w aplikacji
+  if (process.env.HI && s.hiCrop && fs.existsSync(path.join(dir, `${String(id).padStart(3, '0')}_hiref.rgba`))) {
+    const hc = s.hiCrop, z = hc.z, ox = (s.crop.x0 / s.crop.k) * z - hc.x0, oy = (s.crop.y0 / s.crop.k) * z - hc.y0;   // crop px -> hi px
+    const hr = rd('hiref'), hcur = rd('hicur'), bt = d.det.barrelTip;
+    const thrLow = Math.max(det.pointMin, det.pointK * (det.noise || 0));
+    const r = C.refineTipHi(hr, hcur, hc.w, hc.h, det.lastGain || 1, { tip: [bt[0] * z + ox, bt[1] * z + oy], axis: d.det.axis }, z,
+      { thrLow, pxPerMm: d.det.pxPerMm * z, pointMm: det.pointMm, pointMaxMm: det.pointMaxMm });
+    const tip = [(r.tip[0] - ox) / z, (r.tip[1] - oy) / z], b = C.applyH(det.Hpi, tip[0], tip[1]);
+    if (Math.hypot(b[0] - d.board[0], b[1] - d.board[1]) <= +(process.env.HIMAX || 15)) { d.board = b; d.det.tipBy = r.byPrior ? 'prior' : 'seen'; }
+  }
   const lab = C.scoreAt(d.board[0], d.board[1]).label, good = lab === s.label.label;
   ok += good; if (tap) tapOk += good; if (d.det.tipBy === 'prior') prior++;
   rows.push(`${String(id).padStart(3)} ${s.label.source.padEnd(9)} gracz=${s.label.label.padEnd(4)} app=${lab.padEnd(4)} ${good ? 'OK ' : 'ŹLE'} grot:${d.det.tipBy}`);
