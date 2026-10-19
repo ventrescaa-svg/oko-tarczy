@@ -371,6 +371,7 @@ input[type=range]{accent-color:var(--cream)}
       <button class="btn" data-act="calib">Kalibracja kamery</button>
       <button class="btn" data-act="settings">Ustawienia wykrywania</button>
       <button class="btn" data-act="shots">Wyślij zrzuty i dziennik</button>
+      <button class="btn" data-act="ghlog">Wyślij dziennik na GitHub</button>
       <button class="btn" data-act="cam">Ukryj obraz z kamery</button>
       <button class="btn" data-act="full">Pełny ekran</button>
       <button class="btn" data-act="intro">Instrukcja ustawienia</button>
@@ -2901,14 +2902,26 @@ function gridShot(tag, info) {
     }).catch(() => {});
   } catch (e) {}
 }
+function logHead() {
+  const st = S.track && S.track.getSettings ? S.track.getSettings() : {};
+  return ['Oko Tarczy ' + APP_VERSION + '  ' + new Date().toLocaleString('pl-PL'), navigator.userAgent,
+    'Kamera: ' + S.vw + '×' + S.vh + ' ' + (st.frameRate || '?') + ' kl/s, 4K ' + (S.settings.cam4k ? 'tak' : 'nie') + ', śledzenie ' + (S.settings.track ? 'tak' : 'nie') + (S.proc ? ', przetwarzanie ' + S.proc.pw + '×' + S.proc.ph : ''),
+    'Każda linia: średnio/najdłużej w ms, ile razy na sekundę.', ''];
+}
+// Opens a prefilled GitHub issue with the log (text only; the person taps Submit). No token in the page.
+function sendLogGithub() {
+  if (!S.perf.log.length) { toast('Dziennik jest pusty. Zapisuje się w trakcie gry, co 10 s.', 4000); return; }
+  const head = logHead(), lines = S.perf.log.slice();
+  const url = (body) => 'https://github.com/ventrescaa-svg/oko-tarczy/issues/new?title=' + encodeURIComponent('Dziennik ' + APP_VERSION + ' ' + new Date().toLocaleString('pl-PL')) + '&labels=dziennik&body=' + encodeURIComponent(body);
+  const body = (ls, cut) => '```\n' + head.concat(cut ? ['(starsze linie pominięte: ' + cut + ')'] : [], ls).join('\n') + '\n```\n';
+  let cut = 0, u = url(body(lines, 0));
+  while (u.length > 7500 && lines.length > 1) { lines.shift(); cut++; u = url(body(lines, cut)); }
+  window.open(u, '_blank');
+}
 async function shareGridShots() {
   const files = [].concat(...S.gridShots.map(g => g.files));
   if (S.perf.log.length) {
-    const st = S.track && S.track.getSettings ? S.track.getSettings() : {};
-    const head = ['Oko Tarczy ' + APP_VERSION + '  ' + new Date().toLocaleString('pl-PL'), navigator.userAgent,
-      'Kamera: ' + S.vw + '×' + S.vh + ' ' + (st.frameRate || '?') + ' kl/s, 4K ' + (S.settings.cam4k ? 'tak' : 'nie') + ', śledzenie ' + (S.settings.track ? 'tak' : 'nie') + (S.proc ? ', przetwarzanie ' + S.proc.pw + '×' + S.proc.ph : ''),
-      'Każda linia: średnio/najdłużej w ms, ile razy na sekundę.', ''];
-    files.push(new File([head.concat(S.perf.log).join('\n')], 'oko-dziennik-' + Date.now() + '.txt', { type: 'text/plain' }));
+    files.push(new File([logHead().concat(S.perf.log).join('\n')], 'oko-dziennik-' + Date.now() + '.txt', { type: 'text/plain' }));
   }
   if (!files.length) { toast('Nie ma jeszcze zrzutów ani dziennika. Zrobią się same po kalibracji i w trakcie gry.', 4000); return; }
   try {
@@ -3645,7 +3658,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.19j';
+const APP_VERSION = '2026.10.19k';
 const DS = {
   p: null,
   open() {
@@ -3929,6 +3942,7 @@ $('#sh-menu').addEventListener('click', async (e) => {
   }
   else if (act === 'settings') openSettings();
   else if (act === 'shots') shareGridShots();
+  else if (act === 'ghlog') sendLogGithub();
   else if (act === 'cam') { S.camHidden = !S.camHidden; showScreen('game'); }
   else if (act === 'full') { try { await document.documentElement.requestFullscreen(); if (screen.orientation && screen.orientation.lock) screen.orientation.lock(screen.orientation.type).catch(() => {}); } catch (err) { toast('Pełny ekran niedostępny.'); } }
   else if (act === 'intro') showScreen('intro');
