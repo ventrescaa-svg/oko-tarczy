@@ -55,6 +55,9 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - Od 2026.10.19d `RING.trebleIn` = 97, `RING.doubleIn` = 160 (było 99/162). 170 i 107 to wymiar do zewnętrznej strony drutu, a 8 mm to szerokość między drutami, więc kolorowe pole z drutami ma ok. 10 mm.
   Piotr zmierzył linijką ok. 10 mm (Winmau Blade 6); dopasowanie promieni z obrazu (`refineGrid` z `rings: true`) dało 96,6–97,6 i 158,9–159,8. Zmienia też liczenie punktów (pas 160–162 to teraz podwójna).
   Wynik `test_rzutow.js` po tej zmianie nie był sprawdzony (brak eksportu w tej sesji).
+- Od 2026.10.19e każda udana automatyczna kalibracja mierzy pierścienie (`refineGrid` z `rings: true`), `learnRings` trzyma 5 ostatnich pomiarów
+  w `localStorage` `rings`, `C.setRings` ustawia średnią w `RING` (tylko trebleIn/trebleOut/doubleIn, maks. ±3 mm od 97/107/160; 170 = skala).
+  Na zrzutach Piotra: 96,6/107,7/158,9 i 97,6/107,4/159,7. Wynik widać w górnym pasku zrzutu z kalibracji („pierścienie …”).
 - Jeszcze nie: dociąganie w trakcie gry (śledzenie tarczy jest tylko afiniczne).
 
 ## Test na prawdziwych rzutach

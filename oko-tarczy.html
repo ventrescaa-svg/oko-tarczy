@@ -439,6 +439,15 @@ input[type=range]{accent-color:var(--cream)}
   // so the coloured ring with its wires is ~10 mm wide (measured on Piotr's Winmau Blade 6).
   const RING = { bull: 6.35, outerBull: 15.9, trebleIn: 97, trebleOut: 107, doubleIn: 160, doubleOut: 170 };
   const RING_LIST = [RING.bull, RING.outerBull, RING.trebleIn, RING.trebleOut, RING.doubleIn, RING.doubleOut];
+  const RING_NOM = RING_LIST.slice();
+  // Rings measured on this board (refineGrid with rings: true); null restores the regulation sizes.
+  // Only the treble and the inner double move, within 3 mm; the outer double (170) is the scale.
+  function setRings(r) {
+    const v = r ? [RING_NOM[0], RING_NOM[1], r[0], r[1], r[2], RING_NOM[5]] : RING_NOM;
+    for (let i = 2; i < 5; i++) RING_LIST[i] = Math.max(RING_NOM[i] - 3, Math.min(RING_NOM[i] + 3, +v[i] || RING_NOM[i]));
+    RING.trebleIn = RING_LIST[2]; RING.trebleOut = RING_LIST[3]; RING.doubleIn = RING_LIST[4];
+    return RING_LIST.slice(2, 5);
+  }
 
   // Calibration targets: where the radial wire meets the outer wire of the double ring.
   const CAL_ANGLES = [81, -9, 261, 171];
@@ -2022,8 +2031,8 @@ input[type=range]{accent-color:var(--cream)}
     // G[9..14]: the ring radii. The printed sizes (170/162/107/99) are to the outside of the
     // wires; what the camera sees as a ring edge differs by the wire, and boards differ, so
     // with opts.rings the treble and the inner double edge are fitted too (outer double = scale).
-    const NOM = RING_LIST.slice();
-    G.push(...(opts.radii || NOM));
+    const NOM = RING_NOM;
+    G.push(...(opts.radii || RING_LIST));
     const PI = [0, 1, 2, 3, 4, 5, 6, 7].concat(opts.rings ? [11, 12, 13] : []), NP = PI.length;
     const toBoard = (g, u, v) => { const W = g[6] * u + g[7] * v + 1; return [(g[0] * u + g[1] * v + g[2]) / W, (g[3] * u + g[4] * v + g[5]) / W]; };
     const resid = (g, m) => {
@@ -2500,7 +2509,7 @@ input[type=range]{accent-color:var(--cream)}
     makeDart, scoreAt, wireDistance,
     homography, applyH, invertH, mulH, localScale, makeCalibration, boardOutline,
     buildRoi, meanLum, diffMap, cameraFromH, camProject, heightStep, locateTip, envelopeDist, thresholdMap, quickChange, motionMeasure, motionMeasureHalf, halfRes, estimateShift, shiftRGBA, components, findDart, extendTip, regionDiff, markOcclusion, Detector,
-    autoCalibrate, refineGrid, classifyColors,
+    autoCalibrate, refineGrid, setRings, classifyColors,
     Tracker, affMul, affInv, affApply, grayOf, warpAffineRGBA,
     evalTurn, createGame, remainingOf, currentView, turnOpen, addDart, setDart, removeDart, commitTurn, undo, playerStats,
     checkout, sayDart
@@ -2689,6 +2698,21 @@ function loadPoints() {
   if (saved && saved.vw === S.vw && saved.vh === S.vh && saved.pts && saved.pts.length === 4) return saved.pts;
   return defaultPoints();
 }
+/* Ring widths of this board: each good calibration measures them, the mean of the last 5 is used.
+   Wires and makers differ by about a millimetre; setRings keeps them within 3 mm of the regulation sizes. */
+S.rings = store.get('rings', { samples: [] });
+function applyRings() {
+  const sm = S.rings.samples || [];
+  if (!sm.length) { C.setRings(null); return; }
+  const mean = [0, 1, 2].map(i => sm.reduce((a, s) => a + s[i], 0) / sm.length);
+  S.rings.cur = C.setRings(mean);
+}
+function learnRings(r) {
+  if (!r || r.some(v => !isFinite(v))) return;
+  S.rings.samples = (S.rings.samples || []).concat([r.map(v => Math.round(v * 100) / 100)]).slice(-5);
+  applyRings(); store.set('rings', S.rings);
+}
+applyRings();
 function savePoints() { store.set('cal', { vw: S.vw, vh: S.vh, pts: S.pts }); }
 
 function selectPoint(i) {
@@ -2764,9 +2788,12 @@ async function runAutoCal(quiet) {
     res = C.autoCalibrate(f.data, f.w, f.h, { up: upVector() });
     if (res.pts) res.pts = res.pts.map(p => [p[0] / f.s, p[1] / f.s]);
     if (res.H) {
-      const k = full.s / f.s, wires = C.refineGrid(full.data, full.w, full.h, C.mulH([k, 0, 0, 0, k, 0, 0, 0, 1], res.H));
+      const k = full.s / f.s, wires = C.refineGrid(full.data, full.w, full.h, C.mulH([k, 0, 0, 0, k, 0, 0, 0, 1], res.H), { rings: true });
       res.wires = wires;
-      if (wires.ok && wires.move < 40) res.pts = C.calBoardPoints().map(p => { const q = C.applyH(wires.H, p[0], p[1]); return [q[0] / full.s, q[1] / full.s]; });
+      if (wires.ok && wires.move < 40) {
+        res.pts = C.calBoardPoints().map(p => { const q = C.applyH(wires.H, p[0], p[1]); return [q[0] / full.s, q[1] / full.s]; });
+        if (res.ok) learnRings(wires.radii.slice(2, 5));
+      }
     }
   }
   catch (e) { res = { ok: false, reason: 'error' }; }
@@ -2778,7 +2805,8 @@ async function runAutoCal(quiet) {
     S.calShot = shot;
     const wr = res.wires;
     gridShot('kalibracja', 'rms ' + (res.rms || 0).toFixed(2) + '  wzór ' + (res.pattern || 0).toFixed(2) + (res.ok ? '' : '  (niepewne)') +
-      (wr ? '  druty: ' + (wr.ok && wr.move < 40 ? 'dociągnięte o ' + wr.move.toFixed(1) + ' px, błąd ' + wr.rms.toFixed(2) + ' mm' : 'nie (' + (wr.reason || '') + (wr.rms ? ' ' + wr.rms.toFixed(2) + ' mm' : '') + ')') : ''));
+      (wr ? '  druty: ' + (wr.ok && wr.move < 40 ? 'dociągnięte o ' + wr.move.toFixed(1) + ' px, błąd ' + wr.rms.toFixed(2) + ' mm' : 'nie (' + (wr.reason || '') + (wr.rms ? ' ' + wr.rms.toFixed(2) + ' mm' : '') + ')') : '') +
+      '  pierścienie ' + C.RING.trebleIn.toFixed(1) + '/' + C.RING.trebleOut.toFixed(1) + '/' + C.RING.doubleIn.toFixed(1));
     if (res.ok) toast('Znalazłem tarczę. Sprawdź, czy siatka leży na drutach.', 3200);
     else toast(AUTO_FAIL.quality, 4000);
     return res.ok;
@@ -3552,7 +3580,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.19d';
+const APP_VERSION = '2026.10.19e';
 const DS = {
   p: null,
   open() {
