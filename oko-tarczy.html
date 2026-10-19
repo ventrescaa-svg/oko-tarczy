@@ -171,6 +171,8 @@ button{cursor:pointer;touch-action:manipulation}
 .sheet .hint{color:var(--muted);font-size:.92rem}
 .fixwrap{position:relative;width:100%;max-width:360px;margin:0 auto;aspect-ratio:1;border-radius:12px;overflow:hidden;border:1px solid var(--line);touch-action:none}
 .fixwrap canvas{width:100%;height:100%;display:block}
+#fix-tools{margin:8px 0}
+#fix-tools .btn{padding:0 4px;font-size:14px;white-space:nowrap}
 .fixres{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
 .fixres b{font:700 2.4rem/1 var(--display)}
 .pad{display:grid;gap:8px}
@@ -348,7 +350,12 @@ input[type=range]{accent-color:var(--cream)}
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="fix-title">
     <h3 id="fix-title">Popraw rzut</h3>
     <div id="fix-photo">
-      <p class="hint">Stuknij dokładnie tam, gdzie grot wchodzi w tarczę. Nie widzisz rzutki? Stuknij „Pokaż całą tarczę”.</p>
+      <p class="hint">Stuknij dokładnie tam, gdzie grot wchodzi w tarczę. Czarny grot na czarnym polu: „Jasność” rozjaśnia ciemne miejsca, „Lupa” przybliża wokół zielonego kółka, „Siatka” chowa żółte linie. Nie widzisz rzutki? „Pokaż całą tarczę”.</p>
+      <div class="btn-row" id="fix-tools">
+        <button id="fix-boost" class="btn ghost" type="button">Jasność 0</button>
+        <button id="fix-zoom" class="btn ghost" type="button">Lupa ×1</button>
+        <button id="fix-grid" class="btn ghost" type="button">Siatka wł.</button>
+      </div>
       <div class="fixwrap" id="fix-wrap"><canvas id="fix-cv" width="480" height="480"></canvas></div>
       <button id="fix-wide" class="btn ghost" type="button">Pokaż całą tarczę</button>
     </div>
@@ -3374,7 +3381,7 @@ function captureSnap(tip) {
     return { canvas: c, sx, sy, sw: size, sh: size, cw: 480, ch: 480, wide: captureWide() };
   } catch (err) { return { canvas: null, wide: null }; }
 }
-// The whole board in one picture, for when the detected spot is far from the real one
+// The whole board in one picture (about the video's own resolution, so the magnifier still shows detail), for when the detected spot is far from the real one
 // (a shadow taken for the dart): the correction must always be able to reach the real tip.
 function captureWide() {
   try {
@@ -3385,7 +3392,7 @@ function captureWide() {
     }
     const sw = x1 - x0, sh = y1 - y0;
     if (!(sw > 50 && sh > 50 && sh / sw > 0.3 && sh / sw < 3)) return null;   // not a believable calibration
-    const cw = 600, ch = Math.round(cw * sh / sw);
+    const cw = 800, ch = Math.round(cw * sh / sw);
     const c = document.createElement('canvas'); c.width = cw; c.height = ch;
     const ctx = c.getContext('2d');
     ctx.fillStyle = '#000'; ctx.fillRect(0, 0, cw, ch);
@@ -3725,7 +3732,7 @@ function manualDart(d) {
 }
 
 /* ---------------- Fix sheet ---------------- */
-const fix = { i: -1, dart: null, tip: null, wide: false };
+const fix = { i: -1, dart: null, tip: null, wide: false, zoom: 1, vx: 0, vy: 0, boost: 0, grid: true };
 function openFix(i) {
   const g = S.game;
   fix.i = i;
@@ -3736,6 +3743,7 @@ function openFix(i) {
   $('#fix-val').textContent = d ? d.label : '–';
   const hasSnap = !!(d && d.snap && (d.snap.canvas || d.snap.wide) && S.cal);
   fix.wide = !!(d && d.snap && !d.snap.canvas);
+  fix.zoom = 1; fix.vx = fix.vy = 0;
   $('#fix-photo').hidden = !hasSnap;
   $('#fix-wide').hidden = !(d && d.snap && d.snap.canvas && d.snap.wide);
   $('#fix-actions').hidden = !d;
@@ -3751,22 +3759,58 @@ function openFix(i) {
   });
   openSheet('#sh-fix');
 }
+// The part of the picture on show: the whole of it, or a magnified window (fix.vx/vy = its corner).
+function fixView(sn) {
+  const w = sn.cw / fix.zoom, h = sn.ch / fix.zoom;
+  return { x: Math.max(0, Math.min(sn.cw - w, fix.vx)), y: Math.max(0, Math.min(sn.ch - h, fix.vy)), w, h };
+}
 function fixMap(snap) {
+  const vw = fixView(snap), z = fix.zoom;
   return {
-    v2c: (q) => [(q[0] - snap.sx) / snap.sw * snap.cw, (q[1] - snap.sy) / snap.sh * snap.ch],
-    c2v: (c) => [snap.sx + c[0] / snap.cw * snap.sw, snap.sy + c[1] / snap.ch * snap.sh]
+    v2c: (q) => [((q[0] - snap.sx) / snap.sw * snap.cw - vw.x) * z, ((q[1] - snap.sy) / snap.sh * snap.ch - vw.y) * z],
+    c2v: (c) => [snap.sx + (c[0] / z + vw.x) / snap.cw * snap.sw, snap.sy + (c[1] / z + vw.y) / snap.ch * snap.sh]
   };
+}
+// Put the magnifier window around the chosen spot (the green circle, else where the app found the dart).
+function fixCenter(sn, d) {
+  const q = fix.tip || (d && d.tip);
+  const c = q ? [(q[0] - sn.sx) / sn.sw * sn.cw, (q[1] - sn.sy) / sn.sh * sn.ch] : [sn.cw / 2, sn.ch / 2];
+  fix.vx = c[0] - sn.cw / fix.zoom / 2; fix.vy = c[1] - sn.ch / fix.zoom / 2;
+}
+// Stretch the dark end of the picture to the full range, so a black point on a black field shows.
+// level 1: dark pixels up to their 92nd percentile; level 2: up to the 70th (harder, noisier).
+function brightenDark(ctx, w, h, level) {
+  try {
+    const im = ctx.getImageData(0, 0, w, h), a = im.data, hist = new Uint32Array(90);
+    let n = 0;
+    for (let i = 0; i < a.length; i += 4) { const l = (a[i] * 77 + a[i + 1] * 150 + a[i + 2] * 29) >> 8; if (l < 90) { hist[l]++; n++; } }
+    if (n < 200) return;
+    const pct = (p) => { let acc = 0; for (let v = 0; v < 90; v++) { acc += hist[v]; if (acc >= n * p) return v; } return 89; };
+    const lo = pct(0.02), hi = Math.max(lo + 20, pct(level === 2 ? 0.7 : 0.92));
+    const lut = new Uint8ClampedArray(256);
+    for (let v = 0; v < 256; v++) lut[v] = 255 * (v - lo) / (hi - lo);
+    for (let i = 0; i < a.length; i += 4) { a[i] = lut[a[i]]; a[i + 1] = lut[a[i + 1]]; a[i + 2] = lut[a[i + 2]]; }
+    ctx.putImageData(im, 0, 0);
+  } catch (err) { /* tainted or unsupported canvas: leave the picture as it is */ }
 }
 // The picture on show: the close-up around the detected tip, or the whole board.
 function fixSnap(d) { return d && d.snap ? (fix.wide && d.snap.wide ? d.snap.wide : (d.snap.canvas ? d.snap : d.snap.wide)) : null; }
+function fixToolLabels() {
+  $('#fix-boost').textContent = 'Jasność ' + fix.boost;
+  $('#fix-zoom').textContent = 'Lupa ×' + fix.zoom;
+  $('#fix-grid').textContent = 'Siatka ' + (fix.grid ? 'wł.' : 'wył.');
+}
 function drawFix() {
   const d = S.game.cur.darts[fix.i], sn = fixSnap(d); if (!sn) return;
-  const cv = $('#fix-cv'), ctx = cv.getContext('2d'), mp = fixMap(sn);
+  const cv = $('#fix-cv'), ctx = cv.getContext('2d'), mp = fixMap(sn), vw = fixView(sn);
   if (cv.width !== sn.cw || cv.height !== sn.ch) { cv.width = sn.cw; cv.height = sn.ch; }
   $('#fix-wrap').style.aspectRatio = sn.cw + ' / ' + sn.ch;
   $('#fix-wide').textContent = fix.wide ? 'Pokaż zbliżenie' : 'Pokaż całą tarczę';
-  ctx.drawImage(sn.canvas, 0, 0);
-  drawBoard(ctx, S.cal.H, mp.v2c, { color: 'rgba(242,180,65,.6)', width: fix.wide ? 1 : 1.4 });
+  fixToolLabels();
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(sn.canvas, vw.x, vw.y, vw.w, vw.h, 0, 0, sn.cw, sn.ch);
+  if (fix.boost) brightenDark(ctx, sn.cw, sn.ch, fix.boost);
+  if (fix.grid) drawBoard(ctx, S.cal.H, mp.v2c, { color: 'rgba(242,180,65,.6)', width: fix.wide ? 1 : 1.4 });
   if (d.tip && fix.wide) {   // where the app thinks the dart is
     const c0 = mp.v2c(d.tip);
     ctx.beginPath(); ctx.arc(c0[0], c0[1], 12, 0, Math.PI * 2); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,80,80,.9)'; ctx.setLineDash([5, 4]); ctx.stroke(); ctx.setLineDash([]);
@@ -3778,7 +3822,19 @@ function drawFix() {
     ctx.lineWidth = 2.5; ctx.strokeStyle = '#3cb06d'; ctx.stroke();
   }
 }
-$('#fix-wide').addEventListener('click', () => { fix.wide = !fix.wide; drawFix(); });
+$('#fix-boost').addEventListener('click', () => { fix.boost = (fix.boost + 1) % 3; drawFix(); });
+$('#fix-zoom').addEventListener('click', () => {
+  const d = S.game.cur.darts[fix.i], sn = fixSnap(d); if (!sn) return;
+  fix.zoom = fix.zoom >= 3 ? 1 : fix.zoom + 1;
+  fixCenter(sn, d); drawFix();
+});
+$('#fix-grid').addEventListener('click', () => { fix.grid = !fix.grid; drawFix(); });
+$('#fix-wide').addEventListener('click', () => {
+  fix.wide = !fix.wide;
+  const d = S.game.cur.darts[fix.i], sn = fixSnap(d);
+  if (sn && fix.zoom > 1) fixCenter(sn, d);
+  drawFix();
+});
 $('#fix-cv').addEventListener('pointerdown', (e) => {
   const d = S.game.cur.darts[fix.i], sn = fixSnap(d); if (!d || !sn) return;
   const cv = e.currentTarget, r = cv.getBoundingClientRect();
@@ -3873,7 +3929,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.19t';
+const APP_VERSION = '2026.10.19u';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
@@ -4261,7 +4317,7 @@ renderGame();
 showScreen('intro');
 
 // Hooks for automated testing.
-window.OkoTarczy = { S, C, DS, stabD, gridShot, bitsToPng, captureSnap, openFix, hiRefine, hiCaptureRef, setPoints(p) { S.pts = p.map(q => q.slice()); updateReadout(); }, finishCalibration() { $('#cal-done').click(); }, startCamera, screenMap, exportDataset, dsIdle: () => dsChain, version: APP_VERSION };
+window.OkoTarczy = { S, C, DS, stabD, gridShot, bitsToPng, captureSnap, openFix, fix, fixSnap, fixMap, hiRefine, hiCaptureRef, setPoints(p) { S.pts = p.map(q => q.slice()); updateReadout(); }, finishCalibration() { $('#cal-done').click(); }, startCamera, screenMap, exportDataset, dsIdle: () => dsChain, version: APP_VERSION };
 })();
 </script>
 </body>

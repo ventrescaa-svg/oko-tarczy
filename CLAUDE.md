@@ -124,6 +124,12 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - Wynik na 60 rzutach z `HI=1`: dobre pole 38 → 40, poprawiane stuknięciem 14/23 → 18/23, z szumem 40–41. Część etykiet `auto` w eksporcie jest błędna (cień zaakceptowany po cichu), więc prawdziwa poprawa jest większa niż w liczbach.
 - Nadal nie obsługiwane: rzutka, której główna składowa to sam cień (większy od rzutki), oraz dwie rzutki, gdy lotka drugiej zasłania baryłkę pierwszej (próbka 30).
 
+## Okno „Popraw rzut”: jasność, lupa, siatka (od 2026.10.19u)
+- Piotr: czarny grot na czarnym polu jest prawie niewidoczny, a on sam ma ocenić miejsce wbicia na powiększeniu.
+- Nad obrazem trzy przyciski: „Jasność 0/1/2” (`brightenDark`: ciemne piksele < 90 jasności rozciągane na pełny zakres, od 2. do 92. lub 70. percentyla, więc czarne pole pokazuje fakturę), „Lupa ×1/×2/×3” (okno `fixView` wokół zielonego kółka, a bez niego wokół wykrytego grota; stuknięcie przelicza `fixMap` z uwzględnieniem lupy) i „Siatka wł./wył.” (żółte druty zasłaniały grot).
+- Jasność i siatka zostają między rzutami, lupa wraca do ×1. Obraz całej tarczy ma teraz 800 px szerokości (było 600, tyle co natywne wideo), żeby lupa miała z czego powiększać.
+- Test Playwright (scratchpad `t18.js`/`t19.js`): stuknięcie w środku okna lupy ×1/×2/×3 trafia w to samo miejsce, jasność podnosi średnią jasność obrazu. Na prawdziwym zdjęciu grota (`hicur` rzutu 57) czarne pole po „Jasność 1” pokazuje fakturę, ale grot nadal bywa tak samo ciemny jak pole.
+
 ## Poprawka rzutu: cała tarczą (od 2026.10.19s)
 - Okno „Popraw rzut” pokazywało tylko wycinek ±70 mm wokół wykrytego grota. Gdy wykrycie trafiło w cień daleko od rzutki, prawdziwego miejsca nie było na obrazie i nie dało się go zaznaczyć (Piotr, 2026-10-19).
 - `captureSnap` robi teraz też `snap.wide` (`captureWide`: cała tarcza r = 185 mm w prostokącie 600 px szerokości, proporcje z homografii; `null` przy nieprawdopodobnej kalibracji). Przycisk „Pokaż całą tarczę” / „Pokaż zbliżenie” przełącza widok; w widoku całej tarczy kreskowane czerwone kółko = miejsce wykryte przez aplikację.
