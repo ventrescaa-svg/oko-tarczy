@@ -63,6 +63,7 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 ## Kamera 4K (od 2026.10.19g)
 - Ustawienia wykrywania, „Kamera 4K”: `S.settings.cam4k`, prosi o 3840×2160 zamiast 1920×1080; pod przełącznikiem `camInfo()` pokazuje, co kamera naprawdę daje i ile kl/s ma wykrywanie.
 - Przełączenie restartuje kamerę; punkty kalibracji są skalowane (ten sam kształt obrazu), potem automatyczna kalibracja od nowa. `refineGrid` dostaje okna × (krótszy bok / 1080).
+- Na S26 w przeglądarce działa: 2160×3840, kadr szerszy niż przy Full HD (tarcza ok. 56% szerokości zamiast 68%), ale na tarczy ok. 1,6× więcej pikseli. Kalibracja w 4K: błąd 0,55 mm, pierścienie 97,3/107,6/159,9.
 - Wykrywanie dalej zmniejsza wycinek tarczy do 960 px (`setupProc`), więc 4K pomaga na razie tylko kalibracji i zrzutom. Następny krok: dopracowanie grota na pełnej rozdzielczości (otwarty problem 2).
 
 ## Test na prawdziwych rzutach

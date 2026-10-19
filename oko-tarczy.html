@@ -2867,15 +2867,17 @@ function gridShot(tag, info) {
     const plain = new Promise(r => c.toBlob(r, 'image/jpeg', 0.95));
     plain.then(() => {
       drawBoard(x, H, (q) => q, { color: 'rgba(0,255,255,.8)', width: 1.4, halo: false });
-      x.font = '600 28px sans-serif'; x.textBaseline = 'top';
+      const fz = Math.round(28 * Math.max(1, Math.min(c.width, c.height) / 1080)); // same look in 4K
+      x.font = '600 ' + fz + 'px sans-serif'; x.textBaseline = 'top';
       // wrap the info into as many lines as the picture width needs
       const lines = [''];
       for (const word of head.split('  ')) {
         const t = lines[lines.length - 1] ? lines[lines.length - 1] + '  ' + word : word;
-        if (x.measureText(t).width > c.width - 24 && lines[lines.length - 1]) lines.push(word); else lines[lines.length - 1] = t;
+        if (x.measureText(t).width > c.width - fz && lines[lines.length - 1]) lines.push(word); else lines[lines.length - 1] = t;
       }
-      x.fillStyle = 'rgba(0,0,0,.6)'; x.fillRect(0, 0, c.width, 10 + 36 * lines.length);
-      x.fillStyle = '#fff'; lines.forEach((l, i) => x.fillText(l, 12, 8 + 36 * i));
+      const lh = Math.round(fz * 1.3);
+      x.fillStyle = 'rgba(0,0,0,.6)'; x.fillRect(0, 0, c.width, lh * lines.length + fz * 0.4);
+      x.fillStyle = '#fff'; lines.forEach((l, i) => x.fillText(l, fz * 0.45, fz * 0.3 + lh * i));
       return Promise.all([plain, new Promise(r => c.toBlob(r, 'image/jpeg', 0.92))]);
     }).then(([a, b]) => {
       if (!a || !b) return;
@@ -3597,7 +3599,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.19g';
+const APP_VERSION = '2026.10.19h';
 const DS = {
   p: null,
   open() {
