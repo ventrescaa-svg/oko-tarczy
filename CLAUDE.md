@@ -8,7 +8,7 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
   - 1. `<script>`: rdzeń `DartCore` (UMD, działa też w Node przez `module.exports`): geometria tarczy,
     kalibracja, wykrywanie, śledzenie tarczy, gra.
   - 2. `<script>`: aplikacja (UI, kamera, `processFrame`, `onDart`, poprawki, Nauka AI, ustawienia).
-  - Przy każdej zmianie podbij `APP_VERSION`.
+  - Przy każdej zmianie podbij `APP_VERSION` (widać ją w nagłówku Menu: „Menu · wersja …”, też w dzienniku i w manifeście eksportu).
 - Wdrożenie: push na `main` w `ventrescaa-svg/oko-tarczy`, GitHub Pages:
   https://ventrescaa-svg.github.io/oko-tarczy/oko-tarczy.html (ok. 1–2 min). Użytkownik oczekuje,
   że gotowa poprawka zostanie od razu wypchnięta. Pracuj w jednym czacie naraz (dwa czaty nadpisywały sobie zmiany).
