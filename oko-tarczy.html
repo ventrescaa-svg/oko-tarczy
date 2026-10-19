@@ -2941,15 +2941,23 @@ function logHead() {
     'Kamera: ' + S.vw + '×' + S.vh + ' ' + (st.frameRate || '?') + ' kl/s, 4K ' + (S.settings.cam4k ? 'tak' : 'nie') + ', śledzenie ' + (S.settings.track ? 'tak' : 'nie') + (S.proc ? ', przetwarzanie ' + S.proc.pw + '×' + S.proc.ph : ''),
     'Każda linia: średnio/najdłużej w ms, ile razy na sekundę.', ''];
 }
-// Opens a prefilled GitHub issue with the log (text only; the person taps Submit). No token in the page.
+// Opens a prefilled GitHub issue. A long log does not fit in a link (GitHub answers with an error),
+// so the link carries the head and the newest lines and the whole log is copied to the clipboard.
+// Text only; the person taps Submit. No token in the page.
 function sendLogGithub() {
   if (!S.perf.log.length) { toast('Dziennik jest pusty. Zapisuje się w trakcie gry, co 10 s.', 4000); return; }
-  const head = logHead(), lines = S.perf.log.slice();
-  const url = (body) => 'https://github.com/ventrescaa-svg/oko-tarczy/issues/new?title=' + encodeURIComponent('Dziennik ' + APP_VERSION + ' ' + new Date().toLocaleString('pl-PL')) + '&labels=dziennik&body=' + encodeURIComponent(body);
-  const body = (ls, cut) => '```\n' + head.concat(cut ? ['(starsze linie pominięte: ' + cut + ')'] : [], ls).join('\n') + '\n```\n';
-  let cut = 0, u = url(body(lines, 0));
-  while (u.length > 7500 && lines.length > 1) { lines.shift(); cut++; u = url(body(lines, cut)); }
-  window.open(u, '_blank');
+  try {
+    const head = logHead(), all = head.concat(S.perf.log).join('\n'), lines = S.perf.log.slice();
+    const url = (body) => 'https://github.com/ventrescaa-svg/oko-tarczy/issues/new?title=' + encodeURIComponent('Dziennik ' + APP_VERSION) + '&body=' + encodeURIComponent(body);
+    const mk = (ls, cut) => 'Dziennik z aplikacji (najnowsze linie' + (cut ? ', starszych pominięto: ' + cut : '') + '). Pełny jest skopiowany do schowka: wklej go pod tym tekstem.\n\n```\n' + head.slice(0, 3).join('\n') + '\n' + ls.join('\n') + '\n```\n';
+    let cut = 0, u = url(mk(lines, 0));
+    while (u.length > 3500 && lines.length > 1) { lines.shift(); cut++; u = url(mk(lines, cut)); }
+    let copied = false;
+    try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(all).catch(() => {}); copied = true; } } catch (e) {}
+    const w = window.open(u, '_blank');
+    if (!w) toast('Przeglądarka zablokowała nowe okno. Stuknij jeszcze raz.', 4000);
+    else toast(copied ? 'Otwieram GitHub. Pełny dziennik jest w schowku (wklej pod tekstem), potem „Submit new issue”.' : 'Otwieram GitHub. Stuknij „Submit new issue”.', 5000);
+  } catch (e) { toast('Nie udało się otworzyć zgłoszenia: ' + (e && e.message ? e.message : e), 5000); }
 }
 async function shareGridShots() {
   const files = [].concat(...S.gridShots.map(g => g.files));
@@ -3800,7 +3808,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.19n';
+const APP_VERSION = '2026.10.19o';
 const DS = {
   p: null,
   open() {

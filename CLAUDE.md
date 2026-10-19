@@ -70,7 +70,7 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - W grze `perfAdd`/`perfFlush` co 10 s zapisują linię: średni/najdłuższy czas (ms) i ile razy na sekundę dla kroków
   `śledzenie`, `śledzenie między`, `kopiowanie klatki`, `wyrównanie`, `wykrywanie`, `obsługa rzutu`, `rysowanie`, `odstęp klatek` (ostatnie 90 linii).
 - Wysyłany jako .txt razem ze zrzutami (Menu, „Wyślij zrzuty i dziennik”).
-- Od 2026.10.19k Menu, „Wyślij dziennik na GitHub” (`sendLogGithub`): otwiera gotowe zgłoszenie (issue) w repo z dziennikiem w treści i etykietą `dziennik`, Piotr stuka „Submit”. Tylko tekst, URL do 7500 znaków (najstarsze linie są ucinane). Bez tokenu w stronie (świadomie).
+- Od 2026.10.19k Menu, „Wyślij dziennik na GitHub” (`sendLogGithub`): otwiera gotowe zgłoszenie (issue). Od 19o link ma ≤ 3500 znaków (nagłówek + najnowsze linie; dłuższy dawał Piotrowi błąd), a pełny dziennik idzie do schowka (wkleić pod tekstem). Bez etykiety, bez tokenu w stronie (świadomie).
 - `processFrame` jest celowo ograniczone do ok. 10 kl/s (co 95 ms), więc 8–9 kl/s w Full HD to prawie maksimum. W 4K Piotr miał 2–3 kl/s.
 
 ## Szturchnięty statyw (od 2026.10.19j)
