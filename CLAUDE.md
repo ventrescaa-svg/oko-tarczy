@@ -72,6 +72,13 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - Wysyłany jako .txt razem ze zrzutami (Menu, „Wyślij zrzuty i dziennik”).
 - `processFrame` jest celowo ograniczone do ok. 10 kl/s (co 95 ms), więc 8–9 kl/s w Full HD to prawie maksimum. W 4K Piotr miał 2–3 kl/s.
 
+## Szturchnięty statyw (od 2026.10.19j)
+- Mały obrót kamery (0,15–0,5°) daje cienkie zmiany na krawędziach w całej tarczy; `findDart` brał jedną z nich za rzutkę („pudło”).
+- `Detector.analyze`: gdy rzutka to < 12% całej zmiany (`camMovedShare`; sam wstrząs 0,04–0,08, prawdziwa rzutka 1,0, rzutka + wstrząs ok. 0,2)
+  albo < 50% i leży dalej niż 230 mm od bulla, zdarzenie `shifted`: nowe `ref`, brak rzutu, komunikat „Telefon drgnął…”.
+- Ograniczenie: rzutka wbita w tej samej chwili co mocne szturchnięcie (ok. 0,3°+) przepada i trzeba ją dopisać ręcznie.
+- Test w symulacji (scratchpad `bump.js`), nie sprawdzony z śledzeniem tarczy ani na eksporcie rzutów.
+
 ## Test na prawdziwych rzutach
 ```
 python3 narzedzia/rozpakuj.py eksport.zip /tmp/rzuty

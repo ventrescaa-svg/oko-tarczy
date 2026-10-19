@@ -1410,7 +1410,7 @@ input[type=range]{accent-color:var(--cream)}
      cfg: { w, h, Hp (board mm -> processing px), nearDir, thr, settleMs }
      step(frame, nowMs) returns a list of events:
        {type:'motion'} {type:'dart', det, board, tipRaw} {type:'takeout'}
-       {type:'blocked', ms} {type:'removed'} {type:'ignored'} */
+       {type:'blocked', ms} {type:'removed'} {type:'ignored'} {type:'shifted'} (camera knocked) */
   function Detector(cfg) {
     this.w = cfg.w; this.h = cfg.h;
     this.Hp = cfg.Hp; this.Hpi = invertH(cfg.Hp);
@@ -1428,6 +1428,7 @@ input[type=range]{accent-color:var(--cream)}
     this.jitter = cfg.jitter !== false;
     this.align = cfg.align !== false;
     this.occDrop = cfg.occDrop != null ? cfg.occDrop : 2;
+    this.camMovedShare = cfg.camMovedShare != null ? cfg.camMovedShare : 0.12;
     this.mbuf = new Uint16Array((cfg.w >> 1) * (cfg.h >> 1) + 16);
     this.prevHalf = null; this.curHalf = null;
     this.diag = { mv: 0, mvThr: 0, moving: false, A: 0, result: 'start', at: 0, frames: 0 };
@@ -1537,7 +1538,7 @@ input[type=range]{accent-color:var(--cream)}
     }
     const refA = this.aligned(this.ref, frame, 'alignR');
     const th = this.changeCount(refA, frame);
-    this.lastMask = th.mask;
+    this.lastMask = th.mask; this.lastMaskCount = th.count;
     const A = th.robust;
     this.diag.A = A; this.diag.noise = this.noise;
     if (A < this.lim.noise) {
@@ -1567,6 +1568,17 @@ input[type=range]{accent-color:var(--cream)}
       seed: th.seed, seedThr: th.T, occDrop: this.occDrop
     }, cc);
     if (!det) return [];
+    // The camera moved (tripod knocked): the change is thin edges all over the board and the
+    // "dart" is a small part of it. A real dart is most of the change (1.0 alone, ~0.2 even with
+    // a knock at the same time); a knock alone gives 0.04-0.08. Take the new picture, no dart.
+    const share = det.pixels.length / th.count;
+    const bt0 = applyH(this.Hpi, det.tip[0], det.tip[1]);
+    // A "dart" far off the board (r > 230 mm) that is only part of the change is an edge of a knock.
+    if (share < this.camMovedShare || (share < 0.5 && Math.hypot(bt0[0], bt0[1]) > 230)) {
+      this.ref.set(frame); this.prev.set(frame);
+      if (this.dartsInTurn === 0) this.turnRef.set(frame);
+      return [{ type: 'shifted', share }];
+    }
     if (this.dartsInTurn > 0) {
       const toStart = regionDiff(frame, this.aligned(this.turnRef, frame, 'alignT'), det.pixels);
       const toRef = regionDiff(frame, refA, det.pixels);
@@ -3129,7 +3141,8 @@ function handleEvent(e) {
   }
   if (e.type === 'ignored') { setStatus('pull'); return; }
   if (e.type === 'quiet') { if (S.status === 'motion') setStatus(S.game.winner != null ? 'win' : (C.turnOpen(S.game) ? 'ready' : 'pull')); return; }
-  if (e.type === 'removed' || e.type === 'rebased') { hideStageMsg(); setStatus(S.game.winner != null ? 'win' : (C.turnOpen(S.game) ? 'ready' : 'pull')); }
+  if (e.type === 'shifted') { toast('Telefon drgnął. Nie liczę tego jako rzut.', 2500); }
+  if (e.type === 'removed' || e.type === 'rebased' || e.type === 'shifted') { hideStageMsg(); setStatus(S.game.winner != null ? 'win' : (C.turnOpen(S.game) ? 'ready' : 'pull')); }
 }
 
 function onDart(e) {
@@ -3632,7 +3645,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.19i';
+const APP_VERSION = '2026.10.19j';
 const DS = {
   p: null,
   open() {
