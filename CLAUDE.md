@@ -107,6 +107,15 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - Ostry grot: canvas bez `willReadFrequently`; gdy `hiCaptureRef` trwa > 150 ms trzy razy z rzędu, `S.hiOff` wyłącza go do końca sesji (wpis w dzienniku).
 - Przy kolejnym zawieszeniu poproś o „Wyślij dziennik na GitHub” (linie `!!` mówią, co się stało).
 
+## Cień zamiast rzutki (od 2026.10.19p, eksport Piotra z 20:51, 38 rzutów)
+- Dwa rzuty w żywej aplikacji brały za rzutkę ciemną plamę (cień rzutki) kilkaset px od niej: 29 (D20 → T20, plama na czerwonym pierścieniu) i 32 (rzutka na 20 policzona jako 7 przez plamę przy bullu; etykieta `auto` była błędna).
+- Przyczyna: rzutka rozpada się na kilka składowych maski (lotka 1866 px + baryłka 737 px, odstęp 1 px). `findDart` wyrzucał najpierw „najbardziej odstającą” składową; plama (519 px, 96 px dalej) przechylała oś PCA, więc wypadała baryłka, a zostawała plama.
+  Teraz składowe stykające się z główną (`bboxGap` ≤ `gap`·0,15, ok. 5 px) są chronione, a odrzucanie po jednej dotyczy tylko dalszych.
+- Test na 35 rzutach: dobre pole 28 (z ostrym grotem), z szumem 28–29; rzut 29 poprawiony, 32 też (test liczy go jako błąd, bo etykieta `auto` jest zła).
+- Próba osobnego filtra „składowa to cień” (frakcja pikseli o jednakowym zaciemnieniu, bez limitu k > 0,3) nic nie dała przy progu 0,6, a przy 0,4 pogarszała (gubi lotki/wały): cofnięta.
+- Uwaga: `test_rzutow.js` ma teraz domyślnie `pointMm` z próbki (nauczone z poprawek: 14 → 15,8 → 17,6 w ciągu dnia). Wynik prawie nie zależy od pointMm (8–16 daje 27–30 z 35), ale dryf w górę warto obserwować.
+- Nie odtwarza się offline: rzut 33 (żywa aplikacja wybrała plamę, test wybiera rzutkę); stan detektora (`occ`, `turnRef`, `dartsInTurn`) nie jest zapisywany w próbce.
+
 ## Test na prawdziwych rzutach
 ```
 python3 narzedzia/rozpakuj.py eksport.zip /tmp/rzuty

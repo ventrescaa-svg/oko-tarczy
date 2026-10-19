@@ -30,7 +30,7 @@ M.samples.forEach((s, k) => {
   const c = C.applyH(s.proc.Hp, 0, 0), p6 = C.applyH(s.proc.Hp, 170, 0), p11 = C.applyH(s.proc.Hp, -170, 0);
   const q = Math.hypot(p6[0] - c[0], p6[1] - c[1]) >= Math.hypot(p11[0] - c[0], p11[1] - c[1]) ? p6 : p11, l = Math.hypot(q[0] - c[0], q[1] - c[1]);
   const cfg = { w, h, Hp, nearDir: [(q[0] - c[0]) / l, (q[1] - c[1]) / l], thr: 60, shadows: true, pp,
-    pointMm: +(process.env.PMM || 14), pointMaxMm: +(process.env.PMAX || 25) };
+    pointMm: +(process.env.PMM || s.pointMm || 14), pointMaxMm: +(process.env.PMAX || 25) };
   if (mode === 'walk') cfg.tipModel = 'walk';
   if (mode === 'old') cfg.offsetMm = s.offsetMm || 0;   // stare wersje z "Korektą grota"
   const det = new C.Detector(cfg);

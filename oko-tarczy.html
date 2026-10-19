@@ -1051,6 +1051,10 @@ input[type=range]{accent-color:var(--cream)}
     // barrel thrown out instead of itself.
     const keep = new Uint8Array(cand.length).fill(1);
     const perpTol = opts.perpTol || opts.gap * 0.45;
+    // Pieces that touch the main one (flight / shaft / barrel split by a colour that matches the
+    // board) belong to the dart: only pieces further away can be thrown out for lying off the axis.
+    const touchGap = opts.gap * 0.15;
+    const touching = cand.map(c => c === main || bboxGap(c, main) <= touchGap);
     for (let pass = 0; pass < cand.length && cand.length > 1; pass++) {
       const idx = [];
       for (let k = 0; k < m; k++) if (keep[compA[k]]) idx.push(k);
@@ -1062,7 +1066,7 @@ input[type=range]{accent-color:var(--cream)}
       }
       let worst = -1, wd = perpTol;
       for (let c = 0; c < cand.length; c++) {
-        if (cand[c] === main || !keep[c]) continue;
+        if (cand[c] === main || !keep[c] || touching[c]) continue;
         if (sum[c] / cnt[c] > wd) { wd = sum[c] / cnt[c]; worst = c; }
       }
       if (worst < 0) break;
@@ -3808,7 +3812,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.19o';
+const APP_VERSION = '2026.10.19p';
 const DS = {
   p: null,
   open() {
