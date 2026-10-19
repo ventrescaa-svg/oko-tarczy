@@ -1,4 +1,4 @@
-# Oko Tarczy – kontekst projektu (stan na 2026-10-17)
+# Oko Tarczy – kontekst projektu (stan na 2026-10-19)
 
 Aplikacja do automatycznego liczenia punktów w darta (501/301/701) kamerą telefonu, w stylu Dartsmind.
 Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej tarczy i zgłasza wyniki.
@@ -57,25 +57,36 @@ Wynik na eksporcie z 2026-10-17 (77 rzutów, 59 da się odtworzyć):
 
 Zawsze porównuj z wersją przed zmianą i sprawdzaj z `NOISE`.
 
-## Druk 3D: pierścień LED + uchwyty na 2 telefony (`druk3d/`)
-- Generator bez bibliotek CAD (numpy + scikit-image): `sdf.py` (prymitywy SDF, marching cubes, STL),
-  `ring.py` (8 segmentów po 45°, rowek na taśmę COB 10 mm, daszek, wypust/gniazdo + wkręty 3,5×25,
-  4 dociski M5 do boku tarczy, nóżki oparte o przód tarczy), `uchwyty.py` (zacisk na pierścień + rurka Ø20,
-  przegub GoPro, uchwyt telefonu 62–88 mm, gałki M5), `build.py` (STL w orientacji do druku, test szczelności),
-  `podglad.py` (rendery). Szczegóły i lista zakupów w `druk3d/README.md`. STL nie są w repo (`python3 druk3d/build.py katalog`).
-- Ustawienie: z = 0 to przód tarczy (Blade 6, Ø451), pierścień r 231–258, z −12..19, daszek do r 220.
-  Telefon na rurce ok. 30 cm przed tarczą, r ≈ 283 mm, kąt ok. 43°. Drugi telefon ok. 90° dalej po obwodzie (np. 12).
+## Druk 3D: rama LED na nóżkach + uchwyty na 2 telefony (`druk3d/`)
+- Pierwszy projekt (pierścień zaciskany na tarczy, telefon na rurce) użytkownik odrzucił. Chce ramę odsuniętą na nóżkach,
+  telefon między nóżkami, same telefony (bez kamerek USB). Tarcza wisi na płycie OSB 80×90 cm.
+- Generator bez bibliotek CAD (numpy + scikit-image):
+  - `sdf.py`: prymitywy SDF, marching cubes, STL;
+  - `rama.py`: ośmiokąt RC 350 (ok. 75 cm), 8 belek 32×24 z rowkiem na taśmę COB 10 mm z tyłu, fazy 8 mm pod mostki w gniazdach;
+    narożniki `noga` (1:30…10:30) i `telefon` (12/3/6/9, gniazda nakrętek M5); nóżki z jaskółczym ogonem w płytkach na OSB;
+    ramię telefonu w pasie t = 33–47 mm obok góry telefonu, żeby nie wchodziło w kadr;
+  - `uchwyty.py`: uchwyt telefonu 62–88 mm z okienkiem na aparat, ucho zawiasu M5 tuż za aparatem, szczęka, gałka;
+  - `poza.py`: poza aparatu i kadr. Uchwyt założony z FLIP, więc na godz. 3 telefon stoi aparatem do góry (Samsung: aparat lewy górny róg pleców).
+    `hinge_for()` liczy `HINGE_U/HINGE_Z` dla `CAM_TARGET`;
+  - `sprawdz.py`: kolizje, szczelina zawiasu przy pochyleniu, zasłanianie, tory rzutek;
+  - `build.py`: STL w ułożeniu do druku; `nawisy.py`: kontrola nawisów; `podglad.py`: rendery.
+  - STL nie są w repo (`python3 druk3d/build.py katalog`).
+- Ustawienie: z = 0 to przód tarczy, OSB przy z = −44, przód ramy z = 194.
+  - Aparat: (r 300, z 290), 417 mm od bulla, 46° od osi.
+  - Kadr przy 1× (70°×43°): 0,90 na krótszym boku, 0,66 na dłuższym.
+  - 2,29 px/mm w stronę telefonu (statyw: ok. 1,84), 3,29 w poprzek (pełne wideo).
+- Drugi telefon na godz. 6: na 12 tory rzutek w D20 przechodzą przez telefon, a 9 jest na tej samej osi co 3.
 - W tym środowisku duże tablice numpy są wolne: liczyć warstwami (`S.evaluate`) i ustawić
   `MALLOC_MMAP_THRESHOLD_=33554432 MALLOC_TRIM_THRESHOLD_=4000000000`.
 
 ## Otwarte problemy (kolejność wg wpływu)
 1. **Zła rzutka przy grupach** (5 z 26 poprawek): przy 2. i 3. rzutce blisko poprzednich
    `findDart` łapie środek korpusu albo inną rzutkę. Do zbadania w `findDart` (wybór `main`, łączenie składowych, okluzja).
-2. **Rozdzielczość grota**: grot to ok. 3 px szerokości. Tanio: przesunąć tarczę w kadrze do prawej
+2. **Rozdzielczość grota**: grot to ok. 3 px szerokości. Rama z telefonem z bliska daje ok. 25% więcej. Tanio: przesunąć tarczę w kadrze do prawej
    krawędzi i przybliżyć ok. 1,35x, potem kalibracja. Lepiej: dopracowanie grota na pełnej rozdzielczości wideo
    (wycinek `drawImage` przez macierz śledzenia, ref w pełnej rozdzielczości trzymany w canvasie i odświeżany przy każdej zmianie `det.ref`).
 3. **Czarne na czarnym**: tylko zgadywanie z długości (±5 px). Baryłka 40 mm mogłaby dać skalę rzutki,
    ale przy obecnej rozdzielczości nie widać granicy baryłka/shaft.
 4. **Model AI** na wycinkach: po zebraniu ok. 300 rzutów z nową wersją (pełne zdjęcia „przed”).
-5. **Tryb dwóch telefonów** (zaplanowany po zamontowaniu pierścienia): parowanie przez kod QR i WebRTC w tej samej sieci Wi-Fi,
+5. **Tryb dwóch telefonów** (zaplanowany po zamontowaniu ramy): parowanie przez kod QR i WebRTC w tej samej sieci Wi-Fi,
    punkt wbicia z przecięcia osi rzutki z obu kamer (każda oś zrzutowana na tarczę przez swoją homografię), więc bez zgadywania długości grota.

@@ -1,37 +1,11 @@
-"""Uchwyt telefonu na pierscien: zacisk na pierscien z gniazdem rurki 20 mm, koncowka rurki z zawiasem
-typu GoPro, uchwyt telefonu z przesuwna szczeka, galki do srub M5.
+"""Uchwyt telefonu z przesuwna szczeka i uchem zawiasu (sruba M5 z galka), galki do srub M5.
 Kazda funkcja zwraca (lo, hi, fn) w ukladzie lokalnym czesci; orientacja do druku w PRINT."""
 import numpy as np
 import sdf as S
-import ring as Rg
 
 M5 = 2.75          # promien otworu M5
 NUT_AF = 8.4
 NUT_T = 4.4
-TUBE_R = 10.2      # rurka/kolek 20 mm
-GP_R = 7.5         # promien palcow zawiasu GoPro
-GP_HOLE = 2.65
-# palce 3-zebne (y) i 2-zebne (y)
-GP3 = [(-7.6, -4.6), (-1.5, 1.5), (4.6, 7.6)]
-GP2 = [(-4.45, -1.65), (1.65, 4.45)]
-
-
-def _gp_fingers(g, fingers, base_z, hinge_dz, sign, widen=False):
-    """Palce zawiasu w plaszczyznach y=const; os zawiasu wzdluz y w odleglosci hinge_dz od podstawy
-    (sign=+1: w gore osi z, -1: w dol). widen=True dodaje skos 45 st. po stronie -x (druk bez podpor)."""
-    hz = base_z + sign * hinge_dz
-    out = None
-    for y0, y1 in fingers:
-        a, b = (base_z, hz) if sign > 0 else (hz, base_z)
-        f = S.box(g, (-GP_R, GP_R), (y0, y1), (a - 0.01, b + 0.01))
-        f = S.union(f, S.cyl(g, (0, 0, hz), (0, 1, 0), GP_R, y0, y1))
-        if widen:
-            # trojkat od podstawy do zawiasu po stronie -x
-            poly = [(-GP_R, hz), (-GP_R - abs(hinge_dz), base_z), (-GP_R, base_z)]
-            f = S.union(f, _tri_xz(g, poly, y0, y1))
-        f = S.diff(f, S.cyl(g, (0, 0, hz), (0, 1, 0), GP_HOLE, y0 - 1, y1 + 1))
-        out = f if out is None else S.union(out, f)
-    return out
 
 
 def _tri_xz(g, poly, y0, y1):
@@ -44,68 +18,19 @@ def _tri_xz(g, poly, y0, y1):
     return np.maximum(d, np.maximum(y0 - Y, Y - y1)).astype(np.float32)
 
 
-# ---------- zacisk na pierscien + gniazdo rurki ----------
-# uklad: x = promien pierscienia, y = styczna, z = os tarczy (jak w ring.py dla kata 0)
-def ring_clamp():
-    RO, ZF, ZB = Rg.R_OUT, Rg.Z_FRONT, Rg.Z_BACK
-    W = 18.0
-    sock_r = RO + 7 + 18      # os rurki
-    lo = (236 - 2, -W - 2, ZB - 10)
-    hi = (sock_r + 20, W + 2, 47)
-
-    def fn(g):
-        jaw_f = S.box(g, (238.0, RO + 7), (-W, W), (ZF + 0.3, ZF + 6.3))
-        bridge = S.box(g, (RO + 0.4, RO + 7), (-W, W), (ZB - 8, ZF + 6.3))
-        jaw_b = S.box(g, (240.0, RO + 7), (-W, W), (ZB - 8, ZB - 0.4))
-        sock = S.box(g, (RO + 6, sock_r + 18), (-W, W), (-6.0, 46.0))
-        body = S.union(jaw_f, bridge, jaw_b, sock)
-        # sruba dociskowa M5 od tylu w osi z, nakretka w tylnej szczece (wsuwana od srodka)
-        sx = 249.0
-        body = S.diff(body, S.teardrop(g, (sx, 0, 0), (0, 0, 1), (0, 1, 0), M5, ZB - 12, ZB + 1))
-        zc = ZB - 4.2
-        body = S.diff(body, S.hexprism(g, (sx, 0, zc), (0, 0, 1), (0, 1, 0), NUT_AF, -NUT_T / 2, NUT_T / 2))
-        body = S.diff(body, S.box(g, (230.0, sx), (-NUT_AF / 2, NUT_AF / 2), (zc - NUT_T / 2, zc + NUT_T / 2)))
-        # gniazdo rurki (przelotowe, lezka do druku)
-        body = S.diff(body, S.teardrop(g, (sock_r, 0, 0), (0, 0, 1), (0, 1, 0), TUBE_R, -10, 50))
-        # sruba ustalajaca rurke wzdluz y, nakretka wsuwana od przodu (z)
-        zs = 20.0
-        body = S.diff(body, S.cyl(g, (sock_r, 0, zs), (0, 1, 0), M5, 0, W + 2))
-        yc = TUBE_R + 4.0
-        body = S.diff(body, S.hexprism(g, (sock_r, yc, zs), (0, 1, 0), (1, 0, 0), NUT_AF, -NUT_T / 2, NUT_T / 2))
-        body = S.diff(body, S.box(g, (sock_r - NUT_AF / 2, sock_r + NUT_AF / 2), (yc - NUT_T / 2, yc + NUT_T / 2), (zs, 50)))
-        return body
-    return lo, hi, fn
-
-
-# ---------- koncowka rurki z zawiasem (2 palce) ----------
-def tube_end():
-    B = 18.0
-    L = 32.0
-    lo = (-B - 2, -B - 2, -2)
-    hi = (B + 2, B + 2, L + 9 + GP_R + 2)
-
-    def fn(g):
-        body = S.box(g, (-B, B), (-B, B), (0.0, L))
-        body = S.diff(body, S.cyl(g, (0, 0, -1), (0, 0, 1), TUBE_R, 0, 28.0))
-        # sruba ustalajaca wzdluz x, nakretka wsuwana od gory (szczelina w z)
-        zs = 13.0
-        body = S.diff(body, S.cyl(g, (0, 0, zs), (1, 0, 0), M5, 0, B + 2))
-        xc = TUBE_R + 4.0
-        body = S.diff(body, S.hexprism(g, (xc, 0, zs), (1, 0, 0), (0, 1, 0), NUT_AF, -NUT_T / 2, NUT_T / 2))
-        body = S.diff(body, S.box(g, (xc - NUT_T / 2, xc + NUT_T / 2), (-NUT_AF / 2, NUT_AF / 2), (zs, L + 1)))
-        body = S.union(body, _gp_fingers(g, GP2, L - 0.01, 9.0, +1))
-        return body
-    return lo, hi, fn
-
-
 # ---------- uchwyt telefonu (podstawa) ----------
 PH_X = 62.0        # pol dlugosci podstawy (w poprzek telefonu)
 PH_Y = 23.0        # pol szerokosci (wzdluz telefonu)
+WIN_X = (-PH_X + 6.0, -PH_X + 36.0)   # okienko na aparat przy stalej szczece
+WIN_Y = 17.0
+# ucho zawiasu na koncu plyty od strony gory telefonu; os wzdluz y tuz za aparatem
+EAR_X, EAR_Z, EAR_R = (WIN_X[0] + WIN_X[1]) / 2, -6.0, 9.0
+EAR_Y = (-PH_Y - 3.0 - 7.0, -PH_Y - 3.0)
 
 
 def phone_base():
     YW = PH_Y + 3.0           # plyta szersza o boczne prowadnice
-    lo = (-PH_X - 2, -YW - 2, -9 - GP_R - 2)
+    lo = (-PH_X - 2, EAR_Y[0] - 2, EAR_Z - EAR_R - 2)
     hi = (PH_X + 2, YW + 2, 26)
 
     def fn(g):
@@ -113,15 +38,28 @@ def phone_base():
         body = S.union(body, S.box(g, (-PH_X, -PH_X + 6), (-YW, YW), (0.0, 24.0)))          # stala szczeka
         body = S.union(body, S.box(g, (-PH_X + 5.9, -PH_X + 10), (-YW, YW), (21.0, 24.0)))   # wywiniecie
         body = S.union(body, S.box(g, (PH_X - 8, PH_X), (-YW, YW), (0.0, 24.0)))           # blok sruby
+        # skos 45 st. pod blokiem sruby (blok jest u gory przy druku, bez tego wisialby w powietrzu)
+        body = S.union(body, _tri_xz(g, [(PH_X - 8, 8.0), (PH_X - 8, 24.0), (PH_X - 24, 8.0)], -YW, YW))
+        # ucho zawiasu: od stolu (stala szczeka) do osi, u gory zaokraglone
+        ear = S.box(g, (-PH_X, EAR_X), EAR_Y, (EAR_Z - EAR_R, 8.0))
+        ear = S.union(ear, S.cyl(g, (EAR_X, 0, EAR_Z), (0, 1, 0), EAR_R, EAR_Y[0], EAR_Y[1]))
+        body = S.union(body, ear)
         # kanal na stope przesuwnej szczeki (na cala jej szerokosc), boczne listwy prowadza
         body = S.diff(body, S.box(g, (-PH_X + 6, PH_X - 8), (-PH_Y - 0.3, PH_Y + 0.3), (5.0, 9.0)))
+        body = S.diff(body, _tri_xz(g, [(PH_X - 8.01, 5.0), (PH_X - 8.01, 9.0), (PH_X - 4.0, 9.0)], -PH_Y - 0.3, PH_Y + 0.3))
         # sruba M5 wzdluz x w bloku, nakretka wsuwana od gory
         zs = 14.0
-        body = S.diff(body, S.cyl(g, (0, 0, zs), (1, 0, 0), M5, PH_X - 10, PH_X + 2))
+        body = S.diff(body, S.cyl(g, (0, 0, zs), (1, 0, 0), M5, PH_X - 26, PH_X + 2))
         xc = PH_X - 4.0
         body = S.diff(body, S.hexprism(g, (xc, 0, zs), (1, 0, 0), (0, 1, 0), NUT_AF, -NUT_T / 2, NUT_T / 2))
         body = S.diff(body, S.box(g, (xc - NUT_T / 2, xc + NUT_T / 2), (-NUT_AF / 2, NUT_AF / 2), (zs, 26)))
-        body = S.union(body, _gp_fingers(g, GP3, 0.01, 9.0, -1, widen=True))
+        # okienko na aparat telefonu (telefon aparatem do stalej szczeki)
+        # okienko z daszkiem pod katem 45 st. (gora okienka przy druku)
+        win = [(-WIN_Y, WIN_X[0]), (WIN_Y, WIN_X[0]), (WIN_Y, WIN_X[1]), (0.0, WIN_X[1] + WIN_Y), (-WIN_Y, WIN_X[1])]
+        body = S.diff(body, S.extrude(g, win, -1.0, 10.0, u=(0, 1, 0), v=(1, 0, 0), w=(0, 0, 1)))
+        # otwor zawiasu i gniazdo nakretki od wewnetrznej strony ucha (pod plyta)
+        body = S.diff(body, S.teardrop(g, (EAR_X, 0, EAR_Z), (0, 1, 0), (1, 0, 0), M5, EAR_Y[0] - 1, EAR_Y[1] + 1))
+        body = S.diff(body, S.hexprism(g, (EAR_X, 0, EAR_Z), (0, 1, 0), (0, 0, 1), NUT_AF, EAR_Y[1] - NUT_T - 0.2, EAR_Y[1] + 1))
         return body
     return lo, hi, fn
 
@@ -167,8 +105,6 @@ def rot(axis, deg):
 
 # obrot do druku (z lokalnego ukladu): os pionowa druku
 PRINT = {
-    'zacisk_na_ring': rot('x', 90),         # styczna (y) pionowo
-    'koncowka_rurki': np.eye(3),            # rurka pionowo, palce do gory
     'uchwyt_telefonu': rot('y', -90),       # os x pionowo, stala szczeka na stole
     'szczeka_telefonu': np.eye(3),          # stopa na stole, daszek ze skosem 45 st.
     'galka_M5': np.eye(3),

@@ -12,16 +12,18 @@ def render(parts, path, elev=25, azim=-60, size=(9, 7), title=None, lim=None, dp
     ax = fig.add_subplot(111, projection='3d')
     ax.set_proj_type('ortho')
     light = np.array([-0.4, -0.6, 0.8]); light /= np.linalg.norm(light)
-    allv = []
+    allv, tris, cols = [], [], []
     for v, f, col in parts:
         tri = v[f]
         n = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
         n /= np.maximum(np.linalg.norm(n, axis=1, keepdims=True), 1e-9)
         shade = 0.35 + 0.65 * np.clip(n @ light, 0, 1)
-        fc = np.clip(np.array(col)[None, :] * shade[:, None], 0, 1)
-        pc = Poly3DCollection(tri, facecolors=fc, edgecolors='none', linewidths=0)
-        ax.add_collection3d(pc)
+        cols.append(np.clip(np.array(col)[None, :] * shade[:, None], 0, 1))
+        tris.append(tri)
         allv.append(v)
+    # jedna kolekcja: sortowanie glebokosci po trojkatach, a nie po calych czesciach
+    pc = Poly3DCollection(np.concatenate(tris), facecolors=np.concatenate(cols), edgecolors='none', linewidths=0)
+    ax.add_collection3d(pc)
     allv = np.concatenate(allv)
     lo, hi = allv.min(0), allv.max(0)
     c = (lo + hi) / 2

@@ -1,78 +1,137 @@
-# Oko Tarczy: pierścień LED i uchwyty na 2 telefony (druk 3D)
+# Oko Tarczy: rama LED na nóżkach i uchwyty na telefony (druk 3D)
 
-Pierścień zakłada się na tarczę Winmau Blade 6 (średnica 451 mm) i trzyma się na 4 pokrętłach dociskających bok tarczy.
-Nic nie przykręcasz do ściany: odkręcasz 4 pokrętła i zdejmujesz pierścień razem z telefonami.
-Taśma LED świeci od brzegu nisko nad tarczą (tak jak w ringach „Corona”). Daszek zasłania ją od strony gracza i kamery.
+Ośmiokątna rama (ok. 75 cm) stoi na 4 nóżkach. Nóżki wsuwają się w płytki przykręcone do płyty OSB, na której wisi tarcza.
+Rama jest ok. 19 cm przed tarczą. Taśma LED siedzi na tylnej stronie belek i świeci w tarczę, a nie w oczy gracza i nie w aparat.
+
+Telefon wisi na ramieniu przy narożniku z prawej strony (godzina 3):
+- aparat jest ok. 29 cm przed tarczą i 30 cm w bok od bulla;
+- telefon stoi pionowo, aparatem do góry, więc ekran nie jest odwrócony.
+
+Drugi telefon (na później, do trybu dwóch telefonów) idzie na godzinę 6.
+
+**Zdejmowanie:** unieś ramę ok. 8 cm do góry i odciągnij do siebie. Płytki zostają na OSB, a telefon może zostać na ramie.
 
 ![zlozenie](podglad/zlozenie.png)
 
+| Od strony gracza | Z prawej strony |
+|---|---|
+| ![przod](podglad/zlozenie_przod.png) | ![bok](podglad/zlozenie_bok.png) |
+
+## Co to da, a czego nie
+
+- **Stałe, równe światło z 8 stron:** mniej ostrych cieni i odbić, wieczorem tak samo jak w dzień.
+- **Telefon się nie rusza:** rama jest przykręcona do tej samej płyty co tarcza, więc koniec z drganiem statywu.
+- **Większa dokładność:** w kierunku do telefonu ok. 25% więcej pikseli na milimetr niż teraz (ok. 2,3 zamiast 1,85 px/mm w pełnym wideo). W poprzek jest podobnie jak teraz.
+- **Miejsce na drugi telefon:** później punkt wbicia będzie liczony z dwóch widoków, bez zgadywania długości grota.
+- **Uwaga na zoom:** telefon jest blisko, więc w aplikacji zoom musi być 1× (bez przybliżenia).
+  - Pole punktowe z zapasem zajmuje wtedy ok. 90% kadru w jedną stronę i ok. 65% w drugą.
+  - Liczyłem dla typowego aparatu głównego (ok. 70° × 43° w wideo).
+  - Napisy z numerami po bliższej i dalszej stronie tarczy mogą się nie zmieścić. To nie przeszkadza w liczeniu.
+
 ## Części do druku (Zortrax M300 Plus, wszystko bez podpór)
 
-| Plik STL | Ile sztuk | Uwagi |
+| Plik STL | Ile sztuk | Do czego |
 |---|---|---|
-| `ring_segment_zwykly.stl` | 3 | |
-| `ring_segment_z_dociskiem.stl` | 4 | z gniazdem nakrętki M5 i nóżką opartą o tarczę |
-| `ring_segment_z_przewodem.stl` | 1 | z otworem na przewód zasilania |
-| `zacisk_na_ring.stl` | 2 | uchwyt rurki na pierścieniu |
-| `koncowka_rurki.stl` | 2 | przegub typu GoPro |
-| `uchwyt_telefonu.stl` | 2 | telefony 62–88 mm szerokości, do 13 mm grubości z etui |
+| `belka.stl` | 8 | boki ramy, z tyłu rowek na taśmę LED |
+| `naroznik_noga.stl` | 4 | narożniki ukośne (1:30, 4:30, 7:30, 10:30) z gniazdem na nóżkę |
+| `naroznik_telefon.stl` | 4 | narożniki na 12, 3, 6 i 9 z gniazdami nakrętek pod ramię telefonu |
+| `noga.stl` | 4 | nóżki, na dole wypust wsuwany w płytkę |
+| `plytka_scienna.stl` | 4 | płytki przykręcane do OSB |
+| `ramie_telefonu.stl` | 2 | ramię przykręcane do narożnika (na 1 telefon wystarczy 1) |
+| `uchwyt_telefonu.stl` | 2 | telefony 62–88 mm szerokości i do 13 mm grubości (z etui) |
 | `szczeka_telefonu.stl` | 2 | przesuwna szczęka uchwytu |
-| `galka_M5.stl` | 16 | pokrętła na śruby i nakrętki M5 |
+| `galka_M5.stl` | 4 | pokrętła na łby śrub M5 |
 
-Pliki są już obrócone tak, jak mają leżeć na stole: segmenty przodem do stołu, a pozostałe części w pozycji bez nawisów.
+Pliki są już obrócone tak, jak mają leżeć na stole:
+- belki i narożniki leżą przodem do stołu;
+- nóżka stoi pionowo (ok. 23 cm);
+- uchwyt telefonu stoi na stałej szczęce.
+
+Nawisy sprawdza skrypt `nawisy.py`. Zostały tylko skosy 45° i krótkie mostki: ok. 17 mm w gniazdach narożników i otwory na śruby.
 
 **Ustawienia w Z-Suite:**
 - **Materiał:** Z-PETG albo Z-ULTRAT. Nie PLA, bo taśma LED grzeje się do ok. 40–50°C.
-- **Warstwa:** 0,19 mm dla małych części, 0,29 mm dla segmentów (szybciej).
-- **Wypełnienie:** średnie (ok. 20–30%).
-- **Podpory:** wyłączone. Raft zostaw domyślny.
-- **Zużycie:** ok. 0,8–1 kg filamentu. Segment drukuje się kilka godzin.
+- **Warstwa:** 0,29 mm dla belek, narożników, nóżek i płytek; 0,19 mm dla ramienia, uchwytu, szczęki i gałek.
+- **Wypełnienie:** 20–30%; nóżki i ramię 40%.
+- **Podpory:** wyłączone.
+- **Zużycie:** ok. 1,2 kg filamentu. Belka drukuje się kilka godzin, całość kilkadziesiąt godzin.
 
-Pasowanie wypustu w gnieździe ma 0,25 mm luzu na stronę. Jeśli po druku wchodzi za ciasno, przeszlifuj wypust papierem ściernym.
+Gniazda mają 0,3 mm luzu na stronę. Jeśli belka albo nóżka wchodzi za ciasno, przeszlifuj jej koniec papierem ściernym.
 
 ## Lista zakupów
 
-- **Taśma LED COB 24 V, 10 mm, neutralna biel 4000–5000 K, CRI 90 lub więcej:** 2 m (potrzeba ok. 1,45 m).
-- **Zasilacz 24 V, co najmniej 1,5 A (36 W)**, z wtykiem 5,5/2,1 mm. Do tego gniazdo DC z zaciskami śrubowymi albo złączka. Nie bierz taniego ściemniacza, bo migotanie przeszkadza kamerze.
-- **Śruby M5 i nakrętki:**
-  - M5×45 – 4 szt. (dociski do tarczy)
-  - M5×20 – 6 szt. (zaciski i rurki)
-  - M5×30 – 2 szt. (przeguby)
-  - M5×50 – 2 szt. (szczęki telefonów)
-  - nakrętki M5 – 14 szt.
-- **Wkręty do tworzyw lub drewna 3,5×25:** 16 szt. (łączenie segmentów).
-- **Kołek drewniany albo rurka aluminiowa Ø20 mm:** 2 kawałki po ok. 30 cm.
-- Opcjonalnie: kawałki filcu albo gumy na końcówki śrub dociskowych.
+- **Taśma LED COB 24 V, 10 mm:**
+  - neutralna biel 4000–5000 K, CRI 90 lub więcej;
+  - 2 m (potrzeba ok. 1,2–1,4 m: na każdej belce odcinek ok. 15–17 cm).
+- **Zasilacz 24 V, co najmniej 1,5 A**, z wtykiem 5,5/2,1 mm:
+  - do tego gniazdo DC z zaciskami śrubowymi;
+  - nie bierz taniego ściemniacza, bo migotanie przeszkadza kamerze.
+- **Przewód 2×0,35 mm²:** ok. 3 m (połączenia między odcinkami taśmy i do zasilacza).
+- **Śruby M5 (na 2 telefony; na 1 telefon połowa):**
+  - M5×40: 4 szt. (ramię do narożnika);
+  - M5×25: 2 szt. (zawias uchwytu);
+  - M5×50: 2 szt. (dociskanie szczęki);
+  - nakrętki M5: 8 szt.
+- **Wkręty 3,5×20 albo 3,5×25 do drewna lub plastiku:** 20 szt. (16 do belek, 4 do nóżek).
+- **Wkręty do drewna 4×25 z łbem stożkowym:** 16 szt. (płytki do OSB). Jeśli OSB ma 18 mm, nie bierz dłuższych.
 
 ## Montaż
 
 1. **Nakrętki.** Wciśnij nakrętki M5 w sześciokątne gniazda:
-   - w 4 segmentach z dociskiem (wsuwa się je od tyłu pierścienia),
-   - w zaciskach, końcówkach rurek i uchwytach telefonów.
-2. **Pokrętła.** Śruby wciśnij łbem w sześciokątne gniazdo pokrętła. Przy przegubie GoPro jedno pokrętło trzyma łeb śruby, a drugie nakrętkę.
-3. **Złóż pierścień.** Wypust każdego segmentu wchodzi w gniazdo następnego. Każde łączenie skręć 2 wkrętami od zewnętrznej strony. Kolejność dookoła tarczy, patrząc od przodu:
-   - zwykły na godzinie 3, z dociskiem na 1:30, zwykły na 12, z dociskiem na 10:30,
-   - zwykły na 9, z dociskiem na 7:30, z przewodem na 6, z dociskiem na 4:30.
-4. **Taśma LED.** Przyklej taśmę w rowek na wewnętrznej ścianie, dookoła całego pierścienia. Zacznij i skończ przy otworze na przewód na dole. Przewód przełóż przez otwór i podłącz do gniazda DC.
-5. **Załóż na tarczę.** Wkręć 4 śruby M5×45 z pokrętłami w segmenty z dociskiem, ale nie dokręcaj. Nasuń pierścień na tarczę tak, żeby 4 nóżki pod daszkiem oparły się o przód tarczy (czarny brzeg). Dokręcaj pokrętła na zmianę, lekko, aż pierścień siedzi równo i się nie rusza.
-6. **Uchwyt telefonu.**
-   - Zacisk nasuń na pierścień z boku i dokręć pokrętłem od tyłu. Nie zakładaj go na łączenie segmentów ani przy pokrętle docisku.
-   - Wsuń rurkę i ustaw ją tak, żeby telefon był ok. 30 cm przed tarczą.
-   - Na rurkę nałóż końcówkę i obróć ją tak, żeby oś przegubu biegła wzdłuż pierścienia.
-   - Przykręć uchwyt telefonu.
-   - Telefon wkładasz ekranem do siebie, aparatem w stronę tarczy. Dosuń szczękę śrubą i obróć przegub tak, żeby aparat celował w bulla.
-
-**Zdejmowanie:** odkręć 4 pokrętła docisku i zdejmij pierścień do przodu. Uchwyty telefonów mogą zostać na pierścieniu.
+   - w narożniku na godzinie 3: od tyłu, 2 sztuki;
+   - w uchwycie telefonu: w uchu zawiasu (od spodu płyty) i w bloku śruby (od góry).
+2. **Gałki.** Łby śrub M5×25 i M5×50 wciśnij w sześciokątne gniazda gałek.
+3. **Nóżki.** Wsuń nóżkę od tyłu w kwadratowe gniazdo narożnika z nóżką i przykręć wkrętem z boku narożnika.
+4. **Rama.** Złóż ośmiokąt:
+   - narożniki z nóżkami na ukosach (1:30, 4:30, 7:30, 10:30), a narożniki telefonu na 12, 3, 6 i 9;
+   - przody narożników są płaskie, rowek na taśmę i fazy belek są z tyłu (od strony tarczy);
+   - każdą belkę przykręć w obu narożnikach wkrętem od zewnątrz.
+5. **Taśma LED.**
+   - Przyklej odcinek taśmy w rowek na tylnej stronie każdej belki, między narożnikami.
+   - Połącz odcinki przewodem, + do +. Przewód prowadź po fazie belki i rowkiem na tylnej stronie narożnika.
+   - Zasilanie poprowadź rowkiem w jednej z dolnych nóżek do gniazda DC.
+6. **Płytki na OSB.** Najlepiej we dwie osoby:
+   - Nasuń płytki na wypusty nóżek, szerszym wejściem rowka do góry.
+   - Przyłóż ramę do OSB tak, żeby tarcza była na środku: odstęp od brzegu tarczy do belek ma być taki sam dookoła.
+   - Przykręć płytki do OSB (4 wkręty w każdej, obok nóżki).
+   - Środki płytek wypadają ok. 24,7 cm w bok i 24,7 cm w górę lub w dół od bulla. Przy tarczy na środku płyty 80×90 cm wszystko się mieści.
+7. **Ramię telefonu.** Przykręć ramię płaską podstawą do przodu narożnika na godzinie 3: 2 śruby M5×40 w nakrętki od tyłu.
+8. **Uchwyt telefonu.**
+   - Wkręć śrubę M5×50 z gałką przez blok uchwytu i włóż szczękę w kanał.
+   - Przyłóż ucho uchwytu do ucha ramienia i skręć śrubą M5×25 z gałką.
+   - Włóż telefon plecami do płyty uchwytu, ekranem do siebie, górą w stronę zawiasu. Aparat ma trafić w okienko przy stałej szczęce.
+   - Dosuń szczękę gałką.
+   ![uchwyt](podglad/uchwyt_telefonu.png)
+9. **Ustawienie.**
+   - W aplikacji ustaw zoom 1×.
+   - Pochyl telefon na zawiasie tak, żeby cała tarcza była w kadrze, a bull mniej więcej na środku, i dokręć gałkę.
+   - Skalibruj tarczę od nowa.
 
 ## Gdzie stawiać telefony
 
-- **Pierwszy telefon:** godzina 3, z prawej strony, tak jak teraz. Kąt wychodzi ok. 43°, a cała tarcza mieści się w kadrze przy zoomie 1×.
-- **Drugi telefon:** najlepiej mniej więcej 90° dalej po obwodzie, np. na godzinie 12. Wtedy dwa widoki przecinają się pod dobrym kątem. Dokładne miejsce ustalimy przy przeróbce aplikacji na dwa telefony.
-  - Na godzinie 12 skróć rurkę albo wysuń telefon wyżej, bo rzutki lecące w podwójną 20 przechodzą niedaleko.
-  - Na godzinie 9 drugi telefon prawie nic nie wnosi, bo patrzy z tej samej osi co pierwszy.
+- **Pierwszy telefon:** godzina 3, z prawej strony, tak jak teraz. Obraz wygląda podobnie jak ze statywu, tylko z bliska.
+- **Drugi telefon (na później):** godzina 6, telefon leży poziomo. Dwa widoki przecinają się wtedy pod kątem prostym.
+  - Na godzinie 12 nie, bo rzutki lecące w górę tarczy (20, D20) nadlatują od dołu i mogłyby trafić w telefon.
+  - Na godzinie 9 nie: ten widok jest z tej samej osi co pierwszy i prawie nic nie wnosi. Do tego telefon byłby tam do góry nogami.
 
 ## Uwagi
 
-- Rzutki, które trafią poza tarczę, uderzą w pierścień. Z-PETG to wytrzyma, ale z czasem zostaną ślady.
-- Po założeniu pierścienia skalibruj tarczę od nowa w aplikacji. W ustawieniach przywróć długość grota do 14 mm.
-- Zmiana wymiarów: wszystkie wymiary są na górze pliku `ring.py` (np. `BOARD_R`, jeśli tarcza ma inną średnicę). Nowe pliki STL tworzy `python3 build.py katalog`.
+- Rzutka, która chybi tarczę o więcej niż ok. 8 cm, może trafić w belkę. Z-PETG to wytrzyma, ale zostaną ślady.
+- Uchwyt telefonu jest poza torem rzutek. Wyjątek: rzut, który chybi podwójną z prawej i leci mocno z boku, może zahaczyć o blok śruby uchwytu.
+- Założyłem, że przód tarczy jest ok. 4,4 cm przed płytą OSB (`Z_OSB` w `rama.py`). Jeśli jest inaczej, rama będzie o tyle bliżej albo dalej. Pochylenie telefonu to wyrówna.
+
+## Pliki i zmiany wymiarów
+
+| Plik | Co robi |
+|---|---|
+| `rama.py` | belki, narożniki, nóżki, płytki, ramię telefonu (wymiary na górze pliku) |
+| `uchwyty.py` | uchwyt telefonu, szczęka, gałka |
+| `poza.py` | gdzie jest aparat, co widzi i gdzie ma być zawias (`python3 poza.py`) |
+| `sprawdz.py` | kolizje części, kadr aparatu, zasłanianie tarczy, tory rzutek |
+| `build.py` | pliki STL w ułożeniu do druku: `python3 build.py katalog` |
+| `nawisy.py` | nawisy w plikach STL: `python3 nawisy.py katalog` |
+| `podglad.py` | rendery do katalogu `podglad/` |
+
+Po zmianie położenia aparatu (`CAM_TARGET` w `poza.py`):
+1. `python3 poza.py` poda nowe położenie zawiasu. Wpisz je do `HINGE_U` i `HINGE_Z` w `rama.py`.
+2. `python3 sprawdz.py` sprawdzi kolizje, kadr i zasłanianie.
