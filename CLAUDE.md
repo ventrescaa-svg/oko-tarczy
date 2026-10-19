@@ -66,6 +66,12 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - Na S26 w przeglądarce działa: 2160×3840, kadr szerszy niż przy Full HD (tarcza ok. 56% szerokości zamiast 68%), ale na tarczy ok. 1,6× więcej pikseli. Kalibracja w 4K: błąd 0,55 mm, pierścienie 97,3/107,6/159,9.
 - Wykrywanie dalej zmniejsza wycinek tarczy do 960 px (`setupProc`), więc 4K pomaga na razie tylko kalibracji i zrzutom. Następny krok: dopracowanie grota na pełnej rozdzielczości (otwarty problem 2).
 
+## Dziennik czasów (od 2026.10.19i)
+- W grze `perfAdd`/`perfFlush` co 10 s zapisują linię: średni/najdłuższy czas (ms) i ile razy na sekundę dla kroków
+  `śledzenie`, `śledzenie między`, `kopiowanie klatki`, `wyrównanie`, `wykrywanie`, `obsługa rzutu`, `rysowanie`, `odstęp klatek` (ostatnie 90 linii).
+- Wysyłany jako .txt razem ze zrzutami (Menu, „Wyślij zrzuty i dziennik”).
+- `processFrame` jest celowo ograniczone do ok. 10 kl/s (co 95 ms), więc 8–9 kl/s w Full HD to prawie maksimum. W 4K Piotr miał 2–3 kl/s.
+
 ## Test na prawdziwych rzutach
 ```
 python3 narzedzia/rozpakuj.py eksport.zip /tmp/rzuty

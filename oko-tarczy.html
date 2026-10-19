@@ -370,7 +370,7 @@ input[type=range]{accent-color:var(--cream)}
       <button class="btn" data-act="newgame">Nowa gra</button>
       <button class="btn" data-act="calib">Kalibracja kamery</button>
       <button class="btn" data-act="settings">Ustawienia wykrywania</button>
-      <button class="btn" data-act="shots">Wyślij zrzuty siatki</button>
+      <button class="btn" data-act="shots">Wyślij zrzuty i dziennik</button>
       <button class="btn" data-act="cam">Ukryj obraz z kamery</button>
       <button class="btn" data-act="full">Pełny ekran</button>
       <button class="btn" data-act="intro">Instrukcja ustawienia</button>
@@ -2890,8 +2890,15 @@ function gridShot(tag, info) {
   } catch (e) {}
 }
 async function shareGridShots() {
-  if (!S.gridShots.length) { toast('Nie ma jeszcze zrzutów. Zrobią się same po kalibracji i po rozpoczęciu gry.', 4000); return; }
   const files = [].concat(...S.gridShots.map(g => g.files));
+  if (S.perf.log.length) {
+    const st = S.track && S.track.getSettings ? S.track.getSettings() : {};
+    const head = ['Oko Tarczy ' + APP_VERSION + '  ' + new Date().toLocaleString('pl-PL'), navigator.userAgent,
+      'Kamera: ' + S.vw + '×' + S.vh + ' ' + (st.frameRate || '?') + ' kl/s, 4K ' + (S.settings.cam4k ? 'tak' : 'nie') + ', śledzenie ' + (S.settings.track ? 'tak' : 'nie') + (S.proc ? ', przetwarzanie ' + S.proc.pw + '×' + S.proc.ph : ''),
+      'Każda linia: średnio/najdłużej w ms, ile razy na sekundę.', ''];
+    files.push(new File([head.concat(S.perf.log).join('\n')], 'oko-dziennik-' + Date.now() + '.txt', { type: 'text/plain' }));
+  }
+  if (!files.length) { toast('Nie ma jeszcze zrzutów ani dziennika. Zrobią się same po kalibracji i w trakcie gry.', 4000); return; }
   try {
     if (navigator.canShare && navigator.canShare({ files })) { await navigator.share({ files, title: 'Oko Tarczy: zrzuty siatki' }); return; }
   } catch (e) { if (e && e.name === 'AbortError') return; }
@@ -3039,17 +3046,35 @@ function alignCalibration() {
 // Live video px <-> start video px (identity without tracking).
 function stabD() { const T = S.stab; return T && T.tracker ? C.affMul(T.M, C.affInv(T.M0)) : [1, 0, 0, 0, 1, 0]; }
 
+/* Time log: how long each step of play takes, averaged every 10 s (sent with the grid shots). */
+S.perf = { acc: {}, t0: 0, log: [] };
+function perfAdd(k, ms) { const a = S.perf.acc[k] || (S.perf.acc[k] = [0, 0, 0]); a[0] += ms; a[1]++; if (ms > a[2]) a[2] = ms; }
+function perfFlush(now) {
+  const pf = S.perf;
+  if (!pf.t0) { pf.t0 = now; return; }
+  if (now - pf.t0 < 10000) return;
+  const secs = (now - pf.t0) / 1000;
+  const parts = Object.keys(pf.acc).map(k => { const a = pf.acc[k]; return k + ' ' + (a[0] / a[1]).toFixed(1) + '/' + a[2].toFixed(0) + ' ms ×' + (a[1] / secs).toFixed(1) + '/s'; });
+  pf.log.push(new Date().toLocaleTimeString('pl-PL') + '  ' + S.vw + '×' + S.vh + '  wykrywanie ' + (S.fps || 0).toFixed(1) + ' kl/s  stan ' + (S.status || '') + '  |  ' + parts.join('  |  '));
+  if (pf.log.length > 90) pf.log.shift();
+  pf.acc = {}; pf.t0 = now;
+}
+
 function processFrame(now) {
   const P = S.proc;
   if (!P || !S.det || S.video.readyState < 2) return;
   const T = S.stab;
+  let t = performance.now();
   if (T) {
-    if (!trackBoard(now) || !S.stab) return;
+    const ok = trackBoard(now) && S.stab;
+    perfAdd('śledzenie', performance.now() - t); t = performance.now();
+    if (!ok) return;
     const Mi = C.affInv(T.M);
     setT(P.ctx, Mi); P.ctx.drawImage(S.video, 0, 0); P.ctx.setTransform(1, 0, 0, 1, 0, 0);
   } else P.ctx.drawImage(S.video, P.x, P.y, P.w, P.h, 0, 0, P.pw, P.ph);
   const data = P.ctx.getImageData(0, 0, P.pw, P.ph).data;
-  if (T) S.det.stabPatch(data, T.M, S.vw, S.vh, 2);
+  perfAdd('kopiowanie klatki', performance.now() - t); t = performance.now();
+  if (T) { S.det.stabPatch(data, T.M, S.vw, S.vh, 2); perfAdd('wyrównanie', performance.now() - t); }
   if (T && T.lost && now - T.lastOk > 8000 && !S.blockedShown && S.status !== 'blocked') {
     $('#stage-msg-t').textContent = 'Nie mogę złapać tarczy. Jeśli telefon się przesunął, stuknij Kalibruj.';
     showStageMsg(); S.stabMsg = true;
@@ -3063,14 +3088,19 @@ function processFrame(now) {
   }
   S.det.turnFull = !C.turnOpen(S.game);
   S.fps = S.lastFrameAt ? 0.85 * (S.fps || 10) + 0.15 * (1000 / Math.max(1, now - S.lastFrameAt)) : 10;
+  if (S.lastFrameAt) perfAdd('odstęp klatek', now - S.lastFrameAt);
   S.lastFrameAt = now;
+  t = performance.now();
   const evs = S.det.step(data, now);
+  perfAdd('wykrywanie', performance.now() - t);
   // The picture keeps changing for a long time with nobody at the board: tell the player.
   if (S.det.moving && now - S.det.motionStart > 8000 && !S.blockedShown) {
     $('#stage-msg-t').textContent = 'Obraz ciągle się zmienia. Postaw telefon nieruchomo (statyw albo oparcie) i sprawdź, czy w kadrze nic nie miga ani się nie rusza.';
     showStageMsg();
   }
+  t = performance.now();
   for (const e of evs) handleEvent(e);
+  if (evs.some(e => e.type === 'dart')) perfAdd('obsługa rzutu', performance.now() - t);
   if (S.settings.mask && S.det.lastMask && evs.length) paintMask();
 }
 
@@ -3403,9 +3433,12 @@ function drawLoupe(cal, m) {
 function loop(now) {
   if (S.mode === 'game' && !S.manual) {
     if (now - S.lastProc >= 95) { S.lastProc = now; processFrame(now); }
-    else if (S.stab && now - (S.lastTrack || 0) >= 45) trackBoard(now); // keeps the grid on the board between detections
+    else if (S.stab && now - (S.lastTrack || 0) >= 45) { const t = performance.now(); trackBoard(now); perfAdd('śledzenie między', performance.now() - t); } // keeps the grid on the board between detections
+    perfFlush(now);
   }
+  const t = performance.now();
   if (S.mode !== 'intro' && !S.manual) drawOverlay();
+  if (S.mode === 'game') perfAdd('rysowanie', performance.now() - t);
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
@@ -3599,7 +3632,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.19h';
+const APP_VERSION = '2026.10.19i';
 const DS = {
   p: null,
   open() {
