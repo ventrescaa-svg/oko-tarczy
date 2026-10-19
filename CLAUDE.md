@@ -43,6 +43,10 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - Naprawione 2026.10.17: zdjęcie „przed” bywało kopią „po”, bo `refA` aliasował `this.ref`. Dotyczyło 17 z 77 starych próbek.
 - Nowe próbki mają też `det.nose`, `pointPx`, `pxPerMm`, `tipBy`, `pointMm`.
 
+## Zrzuty siatki (od 2026.10.19)
+- Same się robią po automatycznej kalibracji i 6 s po „Gotowe, gramy” (bez dotykania statywu). Pełna rozdzielczość, siatka cienką turkusową linią + to samo zdjęcie bez siatki.
+- Menu, „Wyślij zrzuty siatki”: udostępnia (lub zapisuje) ostatnie 4. Służą do sprawdzania, czy siatka leży na drutach.
+
 ## Test na prawdziwych rzutach
 ```
 python3 narzedzia/rozpakuj.py eksport.zip /tmp/rzuty

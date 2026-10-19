@@ -370,6 +370,7 @@ input[type=range]{accent-color:var(--cream)}
       <button class="btn" data-act="newgame">Nowa gra</button>
       <button class="btn" data-act="calib">Kalibracja kamery</button>
       <button class="btn" data-act="settings">Ustawienia wykrywania</button>
+      <button class="btn" data-act="shots">Wyślij zrzuty siatki</button>
       <button class="btn" data-act="cam">Ukryj obraz z kamery</button>
       <button class="btn" data-act="full">Pełny ekran</button>
       <button class="btn" data-act="intro">Instrukcja ustawienia</button>
@@ -2626,6 +2627,7 @@ async function runAutoCal(quiet) {
     // The picture the grid was fitted on: with a shaky tripod the board is found again on it
     // when play starts, so the grid lands on the board and not where it was a moment ago.
     S.calShot = shot;
+    gridShot('kalibracja', 'rms ' + (res.rms || 0).toFixed(2) + '  krawędzie ' + (res.edges || 0) + '  wzór ' + (res.pattern || 0).toFixed(2) + (res.ok ? '' : '  (niepewne)'));
     if (res.ok) toast('Znalazłem tarczę. Sprawdź, czy siatka leży na drutach.', 3200);
     else toast(AUTO_FAIL.quality, 4000);
     return res.ok;
@@ -2651,7 +2653,51 @@ $('#cal-done').addEventListener('click', () => {
   S.resetPending = true;
   toast('Wyjmij lotki z tarczy. Uczę się pustej tarczy.', 3200);
   renderGame();
+  // Grid as used in play, once the tripod has settled after the tap (no touching needed later).
+  clearTimeout(S.shotTimer);
+  S.shotTimer = setTimeout(() => { if (S.mode === 'game' && S.cal && !S.manual) gridShot('gra', S.stab && S.stab.tracker ? 'śledzenie tarczy włączone' : 'bez śledzenia'); }, 6000);
 });
+
+/* ---------- Grid snapshots (to check calibration against the wires) ----------
+   Taken by themselves (after automatic calibration and a few seconds into play), so the phone
+   is not touched. Menu, "Wyślij zrzuty siatki" shares or saves the last ones. */
+S.gridShots = [];
+function gridShot(tag, info) {
+  try {
+    if (!S.vw || S.video.readyState < 2) return;
+    let H = null;
+    if (S.mode === 'game' && S.cal) { const D = stabD(); H = C.mulH([D[0], D[1], D[2], D[3], D[4], D[5], 0, 0, 1], S.cal.H); }
+    else { const cal = (S.pts && C.makeCalibration(S.pts)) || S.cal; H = cal && cal.H; }
+    if (!H) return;
+    const c = document.createElement('canvas'); c.width = S.vw; c.height = S.vh;
+    const x = c.getContext('2d');
+    x.drawImage(S.video, 0, 0, S.vw, S.vh);
+    const ts = new Date(), stamp = ts.toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '-');
+    const head = 'Oko Tarczy ' + APP_VERSION + '  ' + tag + '  ' + ts.toLocaleString('pl-PL') + (info ? '  ' + info : '');
+    const plain = new Promise(r => c.toBlob(r, 'image/jpeg', 0.95));
+    plain.then(() => {
+      drawBoard(x, H, (q) => q, { color: 'rgba(0,255,255,.8)', width: 1.4, halo: false });
+      x.font = '600 28px sans-serif'; x.textBaseline = 'top';
+      x.fillStyle = 'rgba(0,0,0,.6)'; x.fillRect(0, 0, c.width, 44);
+      x.fillStyle = '#fff'; x.fillText(head, 12, 8);
+      return Promise.all([plain, new Promise(r => c.toBlob(r, 'image/jpeg', 0.92))]);
+    }).then(([a, b]) => {
+      if (!a || !b) return;
+      const base = 'oko-siatka-' + stamp + '-' + tag;
+      S.gridShots.push({ tag, files: [new File([b], base + '.jpg', { type: 'image/jpeg' }), new File([a], base + '-bez.jpg', { type: 'image/jpeg' })] });
+      while (S.gridShots.length > 4) S.gridShots.shift();
+    }).catch(() => {});
+  } catch (e) {}
+}
+async function shareGridShots() {
+  if (!S.gridShots.length) { toast('Nie ma jeszcze zrzutów. Zrobią się same po kalibracji i po rozpoczęciu gry.', 4000); return; }
+  const files = [].concat(...S.gridShots.map(g => g.files));
+  try {
+    if (navigator.canShare && navigator.canShare({ files })) { await navigator.share({ files, title: 'Oko Tarczy: zrzuty siatki' }); return; }
+  } catch (e) { if (e && e.name === 'AbortError') return; }
+  files.forEach((f, i) => setTimeout(() => download(f, f.name), i * 400));
+  toast('Zapisano ' + files.length + ' zdjęć w Pobranych. Wyślij je w rozmowie.', 4000);
+}
 
 // Dragging: touch anywhere, the selected point follows at half speed (precise, finger never covers it).
 let drag = null;
@@ -3026,7 +3072,7 @@ function drawBoard(ctx, H, map, opts) {
   const P = (x, y) => { if (Math.sign(H[6] * x + H[7] * y + H[8]) !== sgn) return null; return map(C.applyH(H, x, y)); };
   ctx.save();
   ctx.lineJoin = 'round';
-  const stroke = (fn, color, width) => { ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.lineWidth = width + 2; fn(); ctx.stroke(); ctx.strokeStyle = color; ctx.lineWidth = width; fn(); ctx.stroke(); };
+  const stroke = (fn, color, width) => { if (opts.halo !== false) { ctx.strokeStyle = 'rgba(0,0,0,.55)'; ctx.lineWidth = width + 2; fn(); ctx.stroke(); } ctx.strokeStyle = color; ctx.lineWidth = width; fn(); ctx.stroke(); };
   const rings = [C.RING.bull, C.RING.outerBull, C.RING.trebleIn, C.RING.trebleOut, C.RING.doubleIn, C.RING.doubleOut];
   for (const R of rings) {
     stroke(() => {
@@ -3353,7 +3399,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.17';
+const APP_VERSION = '2026.10.19';
 const DS = {
   p: null,
   open() {
@@ -3617,6 +3663,7 @@ $('#sh-menu').addEventListener('click', async (e) => {
     selectPoint(0); showScreen('cal'); autoCalSoon();
   }
   else if (act === 'settings') openSettings();
+  else if (act === 'shots') shareGridShots();
   else if (act === 'cam') { S.camHidden = !S.camHidden; showScreen('game'); }
   else if (act === 'full') { try { await document.documentElement.requestFullscreen(); if (screen.orientation && screen.orientation.lock) screen.orientation.lock(screen.orientation.type).catch(() => {}); } catch (err) { toast('Pełny ekran niedostępny.'); } }
   else if (act === 'intro') showScreen('intro');
@@ -3687,7 +3734,7 @@ renderGame();
 showScreen('intro');
 
 // Hooks for automated testing.
-window.OkoTarczy = { S, C, DS, stabD, setPoints(p) { S.pts = p.map(q => q.slice()); updateReadout(); }, finishCalibration() { $('#cal-done').click(); }, startCamera, screenMap, exportDataset, dsIdle: () => dsChain, version: APP_VERSION };
+window.OkoTarczy = { S, C, DS, stabD, gridShot, setPoints(p) { S.pts = p.map(q => q.slice()); updateReadout(); }, finishCalibration() { $('#cal-done').click(); }, startCamera, screenMap, exportDataset, dsIdle: () => dsChain, version: APP_VERSION };
 })();
 </script>
 </body>
