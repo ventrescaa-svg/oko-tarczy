@@ -1950,6 +1950,133 @@ input[type=range]{accent-color:var(--cream)}
     return { ok, pts, H: Ht, rms, edges: good, used, pattern, upness: -bestUp, ellipse: el, reason: ok ? '' : 'quality' };
   }
 
+  /* ---------- Snap the grid to the wires ----------
+     The colour fit above sees only the rings; the sector wires (rotation, squeeze of the
+     picture) take no part in it. Here, along every predicted wire (20 sector wires and the
+     6 rings), look a few pixels sideways for the colour change the wire separates, and
+     refit the homography to those points. img: RGBA, H: board mm -> image px. */
+  function refineGrid(img, w, h, H, opts) {
+    opts = opts || {};
+    const WIRES = [];
+    for (let k = 0; k < 20; k++) WIRES.push((9 + 18 * k) * Math.PI / 180);
+    const rgb = new Float32Array(3);
+    const colorAt = (x, y) => {
+      if (x < 1 || y < 1 || x >= w - 2 || y >= h - 2) return false;
+      const x0 = x | 0, y0 = y | 0, fx = x - x0, fy = y - y0;
+      const i = (y0 * w + x0) * 4, j = i + w * 4;
+      for (let c = 0; c < 3; c++) {
+        const a = img[i + c] + (img[i + 4 + c] - img[i + c]) * fx, b = img[j + c] + (img[j + 4 + c] - img[j + c]) * fx;
+        rgb[c] = a + (b - a) * fy;
+      }
+      return true;
+    };
+    // Strongest colour change along (dx,dy) within +-S px of (x,y). Returns the offset in px or null.
+    const prof = new Float32Array(512 * 3), grad = new Float32Array(512);
+    const locateEdge = opts.locate || ((x, y, dx, dy, S) => {
+      const st = 0.5, n = Math.min(500, Math.round((2 * S + 4) / st) + 1);
+      for (let k = 0; k < n; k++) {
+        const t = -S - 2 + k * st;
+        if (!colorAt(x + dx * t, y + dy * t)) return null;
+        prof[k * 3] = rgb[0]; prof[k * 3 + 1] = rgb[1]; prof[k * 3 + 2] = rgb[2];
+      }
+      // difference across +-1 px (2 samples each side): a 1-2 px wire gives one peak on its middle
+      let best = -1, bk = -1;
+      for (let k = 2; k < n - 2; k++) {
+        const a = (k - 2) * 3, b = (k + 2) * 3;
+        const g = Math.hypot(prof[b] - prof[a], prof[b + 1] - prof[a + 1], prof[b + 2] - prof[a + 2]);
+        grad[k] = g;
+        if (g > best) { best = g; bk = k; }
+      }
+      if (best < (opts.minEdge || 40) || bk <= 2 || bk >= n - 3) return null;
+      // a second edge of similar strength elsewhere in the window makes the point ambiguous
+      for (let k = 2; k < n - 2; k++) if (Math.abs(k - bk) > 6 && grad[k] > 0.8 * best) return null;
+      const g0 = grad[bk - 1], g1 = grad[bk], g2 = grad[bk + 1], den = g0 - 2 * g1 + g2;
+      const sub = den < 0 ? 0.5 * (g0 - g2) / den : 0;
+      return -S - 2 + (bk + sub) * st;
+    });
+    // board samples: [x, y, nx, ny (search direction on the board), kind, param]
+    const samples = [];
+    const nearRing = (r) => RING_LIST.some(R => Math.abs(r - R) < 2.2);
+    WIRES.forEach((a, k) => {
+      const c = Math.cos(a), s = Math.sin(a);
+      for (let r = 18; r <= 168; r += 2) if (!nearRing(r)) samples.push([r * c, r * s, -s, c, 0, a]);
+    });
+    RING_LIST.forEach(R => {
+      const n = Math.max(24, Math.round(2 * Math.PI * R / 3));
+      for (let k = 0; k < n; k++) {
+        const a = (k + 0.5) / n * 2 * Math.PI;
+        let dw = Infinity; for (const wa of WIRES) { const d = Math.abs(Math.atan2(Math.sin(a - wa), Math.cos(a - wa))); if (d < dw) dw = d; }
+        if (R > 20 && dw * R < 3) continue;
+        samples.push([R * Math.cos(a), R * Math.sin(a), Math.cos(a), Math.sin(a), 1, R]);
+      }
+    });
+    // G: image -> board on normalised image coords (u = (x - ox) / sc)
+    const ox = w / 2, oy = h / 2, sc = Math.max(w, h) / 2;
+    const T = [1 / sc, 0, -ox / sc, 0, 1 / sc, -oy / sc, 0, 0, 1], Ti = invertH(T);
+    let G = mulH(invertH(H), Ti);
+    G = G.map(v => v / G[8]);
+    const toBoard = (g, u, v) => { const W = g[6] * u + g[7] * v + 1; return [(g[0] * u + g[1] * v + g[2]) / W, (g[3] * u + g[4] * v + g[5]) / W]; };
+    const resid = (g, m) => {
+      const b = toBoard(g, m[0], m[1]);
+      if (m[2] === 0) return -Math.sin(m[3]) * b[0] + Math.cos(m[3]) * b[1];
+      return Math.hypot(b[0], b[1]) - m[3];
+    };
+    const H0 = H;
+    let Hc = H, meas = [], rms = 99, nRad = 0, nRing = 0;
+    const rounds = opts.rounds || [12, 6, 4];
+    for (const Smax of rounds) {
+      // 1. find the wire next to every predicted point
+      meas = [];
+      for (const sm of samples) {
+        const p = applyH(Hc, sm[0], sm[1]), q = applyH(Hc, sm[0] + sm[2], sm[1] + sm[3]);
+        let dx = q[0] - p[0], dy = q[1] - p[1];
+        const ppm = Math.hypot(dx, dy); if (!(ppm > 0.2)) continue;
+        dx /= ppm; dy /= ppm;
+        // rings lie a few mm apart: never search past half the gap to the next one
+        const S = sm[4] === 1 ? Math.min(Smax, 3.6 * ppm) : Smax;
+        const t = locateEdge(p[0], p[1], dx, dy, S);
+        if (t === null || t === undefined) continue;
+        const x = p[0] + dx * t, y = p[1] + dy * t;
+        meas.push([(x - ox) / sc, (y - oy) / sc, sm[4], sm[5]]);
+      }
+      if (meas.length < 80) return { ok: false, reason: 'few', n: meas.length };
+      // 2. robust Gauss-Newton on the 8 homography parameters
+      for (let it = 0; it < 12; it++) {
+        const delta = it < 3 ? 2 : 0.8;
+        const JTJ = Array.from({ length: 8 }, () => new Array(8).fill(0)), JTr = new Array(8).fill(0);
+        const eps = 1e-6;
+        for (const m of meas) {
+          const r = resid(G, m), a = Math.abs(r);
+          if (a > 6 * delta) continue;
+          const wt = a <= delta ? 1 : delta / a;
+          const J = new Array(8);
+          for (let p = 0; p < 8; p++) { const g2 = G.slice(); g2[p] += eps; J[p] = (resid(g2, m) - r) / eps; }
+          for (let p = 0; p < 8; p++) { JTr[p] += wt * J[p] * r; for (let q = 0; q < 8; q++) JTJ[p][q] += wt * J[p] * J[q]; }
+        }
+        for (let p = 0; p < 8; p++) JTJ[p][p] = JTJ[p][p] * 1.001 + 1e-9;
+        const d = solveLinear(JTJ, JTr.map(x => -x));
+        if (!d) break;
+        for (let p = 0; p < 8; p++) G[p] += d[p];
+        if (Math.max(...d.map(Math.abs)) < 1e-7) break;
+      }
+      const Gi = invertH(mulH(G, T));
+      if (!Gi) return { ok: false, reason: 'singular' };
+      Hc = Gi.map(v => v / Gi[8]);
+    }
+    let ss = 0, good = 0; nRad = 0; nRing = 0;
+    for (const m of meas) { const r = resid(G, m); if (Math.abs(r) < 1.5) { good++; ss += r * r; if (m[2] === 0) nRad++; else nRing++; } }
+    rms = good ? Math.sqrt(ss / good) : 99;
+    // how far the grid moved (px), at the double ring
+    let move = 0;
+    for (let a = 0; a < 360; a += 10) {
+      const x = 170 * Math.cos(a * Math.PI / 180), y = 170 * Math.sin(a * Math.PI / 180);
+      const p = applyH(H0, x, y), q = applyH(Hc, x, y);
+      move = Math.max(move, Math.hypot(p[0] - q[0], p[1] - q[1]));
+    }
+    const ok = nRad >= 150 && nRing >= 150 && rms < 0.9;
+    return { ok, H: Hc, rms, nRad, nRing, n: meas.length, move, reason: ok ? '' : 'quality', meas: opts.keepMeas ? meas.map(m => [m[0] * sc + ox, m[1] * sc + oy, m[2]]) : undefined };
+  }
+
   /* ---------- 501 game ---------- */
   function evalTurn(startRem, darts, doubleOut) {
     let rem = startRem, state = 'open', bustAt = -1;
@@ -2362,7 +2489,7 @@ input[type=range]{accent-color:var(--cream)}
     makeDart, scoreAt, wireDistance,
     homography, applyH, invertH, mulH, localScale, makeCalibration, boardOutline,
     buildRoi, meanLum, diffMap, cameraFromH, camProject, heightStep, locateTip, envelopeDist, thresholdMap, quickChange, motionMeasure, motionMeasureHalf, halfRes, estimateShift, shiftRGBA, components, findDart, extendTip, regionDiff, markOcclusion, Detector,
-    autoCalibrate, classifyColors,
+    autoCalibrate, refineGrid, classifyColors,
     Tracker, affMul, affInv, affApply, grayOf, warpAffineRGBA,
     evalTurn, createGame, remainingOf, currentView, turnOpen, addDart, setDart, removeDart, commitTurn, undo, playerStats,
     checkout, sayDart
@@ -2595,12 +2722,12 @@ function upVector() {
   if (v[1] > 0) v = [-v[0], -v[1]]; // sensor sign differs on some devices; up is never below the horizon here
   return v;
 }
-function grabFrame(maxD) {
+function grabFrame(maxD, src) {
   const s = Math.min(1, maxD / Math.max(S.vw, S.vh));
   const w = Math.round(S.vw * s), h = Math.round(S.vh * s);
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const ctx = c.getContext('2d', { willReadFrequently: true });
-  ctx.drawImage(S.video, 0, 0, w, h);
+  ctx.drawImage(src || S.video, 0, 0, w, h);
   return { data: ctx.getImageData(0, 0, w, h).data, w, h, s, canvas: c };
 }
 const AUTO_FAIL = {
@@ -2619,7 +2746,18 @@ async function runAutoCal(quiet) {
   $('#cal-auto').disabled = true;
   await new Promise(r => setTimeout(r, 40));
   let res, shot = null;
-  try { const f = grabFrame(800); shot = { canvas: f.canvas, s: f.s }; res = C.autoCalibrate(f.data, f.w, f.h, { up: upVector() }); if (res.pts) res.pts = res.pts.map(p => [p[0] / f.s, p[1] / f.s]); }
+  try {
+    // One full-size picture: the colour fit runs on a small copy, the wires are then found on the full one.
+    const full = grabFrame(Math.max(S.vw, S.vh)), f = grabFrame(800, full.canvas);
+    shot = { canvas: f.canvas, s: f.s };
+    res = C.autoCalibrate(f.data, f.w, f.h, { up: upVector() });
+    if (res.pts) res.pts = res.pts.map(p => [p[0] / f.s, p[1] / f.s]);
+    if (res.H) {
+      const k = full.s / f.s, wires = C.refineGrid(full.data, full.w, full.h, C.mulH([k, 0, 0, 0, k, 0, 0, 0, 1], res.H));
+      res.wires = wires;
+      if (wires.ok && wires.move < 40) res.pts = C.calBoardPoints().map(p => { const q = C.applyH(wires.H, p[0], p[1]); return [q[0] / full.s, q[1] / full.s]; });
+    }
+  }
   catch (e) { res = { ok: false, reason: 'error' }; }
   autoBusy = false; $('#cal-auto').disabled = false;
   if (res.ok || (res.reason === 'quality' && res.pts)) {
@@ -2627,7 +2765,9 @@ async function runAutoCal(quiet) {
     // The picture the grid was fitted on: with a shaky tripod the board is found again on it
     // when play starts, so the grid lands on the board and not where it was a moment ago.
     S.calShot = shot;
-    gridShot('kalibracja', 'rms ' + (res.rms || 0).toFixed(2) + '  krawędzie ' + (res.edges || 0) + '  wzór ' + (res.pattern || 0).toFixed(2) + (res.ok ? '' : '  (niepewne)'));
+    const wr = res.wires;
+    gridShot('kalibracja', 'rms ' + (res.rms || 0).toFixed(2) + '  wzór ' + (res.pattern || 0).toFixed(2) + (res.ok ? '' : '  (niepewne)') +
+      (wr ? '  druty: ' + (wr.ok && wr.move < 40 ? 'dociągnięte o ' + wr.move.toFixed(1) + ' px, błąd ' + wr.rms.toFixed(2) + ' mm' : 'nie (' + (wr.reason || '') + (wr.rms ? ' ' + wr.rms.toFixed(2) + ' mm' : '') + ')') : ''));
     if (res.ok) toast('Znalazłem tarczę. Sprawdź, czy siatka leży na drutach.', 3200);
     else toast(AUTO_FAIL.quality, 4000);
     return res.ok;
@@ -3401,7 +3541,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.19b';
+const APP_VERSION = '2026.10.19c';
 const DS = {
   p: null,
   open() {

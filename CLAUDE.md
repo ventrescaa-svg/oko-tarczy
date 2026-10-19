@@ -47,6 +47,13 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - Same się robią po automatycznej kalibracji i 6 s po „Gotowe, gramy” (bez dotykania statywu), z krótkim komunikatem. Pełna rozdzielczość, siatka cienką turkusową linią + to samo zdjęcie bez siatki.
 - Menu, „Wyślij zrzuty siatki”: udostępnia (lub zapisuje) ostatnie 4. Służą do sprawdzania, czy siatka leży na drutach.
 
+## Dociąganie siatki do drutów (`refineGrid`, od 2026.10.19c)
+- `autoCalibrate` dopasowuje tylko okręgi (krawędzie kolorów na zdjęciu 800 px); obrót bierze z wzoru pól, więc linie sektorów potrafiły być 2–4 mm obok drutów.
+- Po nim `refineGrid` na pełnym kadrze: wzdłuż 20 drutów sektorów i 6 okręgów szuka w bok najsilniejszej zmiany koloru, potem odporne dopasowanie homografii (8 parametrów), 3 rundy (okno 12/6/4 px).
+  Przyjmowane, gdy `ok` (≥150 punktów na drutach i na okręgach, błąd < 0,9 mm) i przesunięcie < 40 px.
+- Zrzut Piotra z 2026-10-19: błąd linii sektorów 1,58 → 0,75 mm (najgorszy drut 3,6 → 1,6 mm), zbiega z odchyłki 24 px i z szumem. Poprawka na krzywiznę obiektywu nic nie dała.
+- Jeszcze nie: dociąganie w trakcie gry (śledzenie tarczy jest tylko afiniczne).
+
 ## Test na prawdziwych rzutach
 ```
 python3 narzedzia/rozpakuj.py eksport.zip /tmp/rzuty
