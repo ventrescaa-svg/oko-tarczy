@@ -1332,6 +1332,58 @@ input[type=range]{accent-color:var(--cream)}
     return [(p1[0] - p0[0]) / 10, (p1[1] - p0[1]) / 10];
   }
 
+  /* ---------- The dart's cast shadow gives the point back ----------
+     A black point on a black field leaves nothing in the picture, but the dart's cast shadow is a
+     straight line that starts exactly at the point. Where that thin line crosses a lighter field
+     it shows up in the change mask as a thin streak lying across the dart. The picture of the
+     dart axis and the picture of the shadow line both pass through the point, so they cross
+     there. Returns the crossing as a distance t (picture px) beyond the barrel end along the axis,
+     or null. det: { barrelTip, axis }; occ: pieces of earlier darts of this turn (ignored). */
+  function shadowLine(cc, w, det, occ) {
+    const bt = det.barrelTip, ax = det.axis;
+    if (!bt || !ax) return null;
+    const cr = (a, b) => a[0] * b[1] - a[1] * b[0];
+    let best = null;
+    for (const cp of cc.comps.slice(0, 40)) {
+      if (cp.area < 25 || cp.area > 600) continue;
+      let sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0, n = 0, inOcc = 0;
+      for (let y = cp.miny; y <= cp.maxy; y++) for (let x = cp.minx; x <= cp.maxx; x++) {
+        const i = y * w + x;
+        if (cc.labels[i] !== cp.id) continue;
+        sx += x; sy += y; sxx += x * x; syy += y * y; sxy += x * y; n++;
+        if (occ && occ[i]) inOcc++;
+      }
+      if (n < 25 || inOcc > 0.4 * n) continue;
+      const mx = sx / n, my = sy / n, cxx = sxx / n - mx * mx, cyy = syy / n - my * my, cxy = sxy / n - mx * my;
+      const th = 0.5 * Math.atan2(2 * cxy, cxx - cyy), ux = Math.cos(th), uy = Math.sin(th);
+      const r = Math.hypot((cxx - cyy) / 2, cxy), e1 = (cxx + cyy) / 2 + r, e2 = Math.max((cxx + cyy) / 2 - r, 0.01);
+      const elong = Math.sqrt(e1 / e2), len = 4 * Math.sqrt(e1);
+      if (elong < 2.5 || len < 14 || n / len > 9) continue;          // a thin line, not a blob
+      const cosA = Math.abs(ux * ax[0] + uy * ax[1]);
+      if (cosA > 0.5) continue;                                       // lies across the dart (> 60 deg)
+      const den = cr(ax, [ux, uy]);
+      const t = cr([mx - bt[0], my - bt[1]], [ux, uy]) / den;
+      if (!(t > -8 && t < 32)) continue;
+      const dist = Math.hypot(bt[0] + t * ax[0] - mx, bt[1] + t * ax[1] - my);
+      if (dist > 40) continue;                                        // the streak must start near the point
+      if (!best || dist < best.dist) best = { t, dist, len, ang: Math.acos(cosA) * 180 / Math.PI, area: n };
+    }
+    return best;
+  }
+  // Use the shadow crossing instead of a point that was "seen" (black on black gives false
+  // sightings) when the two differ by 6 px or more; a guessed point stays (the typical length is
+  // as good as the shadow). maxT: longest believable point in picture px.
+  function fuseShadowTip(det, maxT) {
+    const s = det.shadow;
+    if (!s || det.tipBy !== 'seen' && det.tipBy !== 'shadow') return false;
+    const bt = det.barrelTip, ax = det.axis;
+    const t = Math.max(0, Math.min(maxT || 30, s.t));
+    const cur = (det.tip[0] - bt[0]) * ax[0] + (det.tip[1] - bt[1]) * ax[1];
+    if (det.tipBy === 'seen' && Math.abs(t - cur) < 6) return false;
+    det.tip = [bt[0] + ax[0] * t, bt[1] + ax[1] * t]; det.tipBy = 'shadow';
+    return true;
+  }
+
   /* ---------- Where the point enters the board ----------
      The barrel is easy to see; the point (often black) is not. Look across the dart at every
      step along its axis to find where the thick barrel ends (the nose), then decide how long
@@ -1491,6 +1543,8 @@ input[type=range]{accent-color:var(--cream)}
     this.cam = cfg.pp ? cameraFromH(cfg.Hp, cfg.pp[0], cfg.pp[1]) : null;
     this.pointMm = cfg.pointMm || 14;
     this.pointMaxMm = cfg.pointMaxMm || 25;   // measured point length of the player's darts (mm)
+    if (cfg.shadowTip === false) this.shadowTip = false;   // switch off the point from the cast shadow
+    if (cfg.dirPrior === false) this.dirPrior = false;
     this.tipModel = cfg.tipModel || 'nose';
     this.shadows = cfg.shadows !== false;
     this.jitter = cfg.jitter !== false;
@@ -1680,6 +1734,12 @@ input[type=range]{accent-color:var(--cream)}
       det.ext = xt.ext;
       det.tip = xt.end;
       det.tipBy = 'walk';
+    }
+    if (R && this.shadowTip !== false) {
+      try {
+        det.shadow = shadowLine(cc, this.w, det, this.dartsInTurn ? this.occ : null);
+        if (det.shadow) { det.shadowFrom = det.tip.slice(); fuseShadowTip(det, 1.1 * this.pointMaxMm * det.pxPerMm); }
+      } catch (err) { det.shadow = null; }
     }
     if (!this.occPrev || this.occPrev.length !== this.occ.length) this.occPrev = new Uint8Array(this.occ.length);
     this.occPrev.set(this.occ);
@@ -2595,7 +2655,7 @@ input[type=range]{accent-color:var(--cream)}
     SECTORS, RING, CAL_ANGLES, CAL_LABELS, calBoardPoints,
     makeDart, scoreAt, wireDistance,
     homography, applyH, invertH, mulH, localScale, makeCalibration, boardOutline,
-    buildRoi, meanLum, diffMap, cameraFromH, camProject, heightStep, locateTip, refineTipHi, envelopeDist, thresholdMap, quickChange, motionMeasure, motionMeasureHalf, halfRes, estimateShift, shiftRGBA, components, findDart, extendTip, regionDiff, markOcclusion, Detector,
+    buildRoi, meanLum, diffMap, cameraFromH, camProject, heightStep, locateTip, refineTipHi, shadowLine, fuseShadowTip, envelopeDist, thresholdMap, quickChange, motionMeasure, motionMeasureHalf, halfRes, estimateShift, shiftRGBA, components, findDart, extendTip, regionDiff, markOcclusion, Detector,
     autoCalibrate, refineGrid, setRings, classifyColors,
     Tracker, affMul, affInv, affApply, grayOf, warpAffineRGBA,
     evalTurn, createGame, remainingOf, currentView, turnOpen, addDart, setDart, removeDart, commitTurn, undo, playerStats,
@@ -3215,9 +3275,11 @@ function hiRefine(e) {
     d.hi = { tip, lo: d.tip.slice(), by: r.byPrior ? 'prior' : 'seen', move: Math.round(move * 10) / 10, shift: r.shift.map(v => Math.round(v * 100) / 100), z, used: false };
     if (e.debug) e.debug.hi = d.hi;
     if (e.debug) e.debug.hiCrop = { x0, y0, w: cw, h: ch, z, ref: Uint8ClampedArray.from(ref), cur: Uint8ClampedArray.from(cur) };
-    if (move > 8 || (r.byPrior && d.tipBy === 'seen' && move > 3)) return;
+    if (move > 8 || (r.byPrior && (d.tipBy === 'seen' || d.tipBy === 'shadow') && move > 3)) return;
     d.hi.used = true;
     d.tip = tip; d.tipBy = d.hi.by; e.tip = tip.slice(); e.tipRaw = tip.slice(); e.board = b;
+    // a point "seen" at the sharp picture can still be a false sighting on black: the shadow decides
+    if (S.det.shadowTip !== false && C.fuseShadowTip(d, 1.1 * D.pointMaxMm * d.pxPerMm)) { e.tip = d.tip.slice(); e.tipRaw = d.tip.slice(); e.board = C.applyH(D.Hpi, d.tip[0], d.tip[1]); }
   } catch (err) {} finally { perfAdd('ostry grot', performance.now() - t0); }
 }
 
@@ -3929,7 +3991,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.19u';
+const APP_VERSION = '2026.10.19v';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,

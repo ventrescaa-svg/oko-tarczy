@@ -124,6 +124,16 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - Wynik na 60 rzutach z `HI=1`: dobre pole 38 → 40, poprawiane stuknięciem 14/23 → 18/23, z szumem 40–41. Część etykiet `auto` w eksporcie jest błędna (cień zaakceptowany po cichu), więc prawdziwa poprawa jest większa niż w liczbach.
 - Nadal nie obsługiwane: rzutka, której główna składowa to sam cień (większy od rzutki), oraz dwie rzutki, gdy lotka drugiej zasłania baryłkę pierwszej (próbka 30).
 
+## Grot z cienia rzutki (od 2026.10.19v)
+- Piotr (po 19u): czarny grot na czarnym polu jest nie do odróżnienia nawet po rozjaśnieniu, a Dartsmind nie miał z tym problemu. Faktura czarnego pola nie pomaga: ziarno nie jest stałym wzorem między zdjęciem „przed” i „po” (korelacja lokalna ≈ 0,2 na ciemnych polach).
+- Pomysł, który działa: cień rzutki to prosta linia zaczynająca się dokładnie w grocie. Tam, gdzie przechodzi przez jasne lub kolorowe pole, widać go w masie zmian jako cienką kreskę w poprzek rzutki. Obraz osi rzutki i obraz linii cienia przecinają się w grocie, nawet gdy sam grot jest niewidoczny.
+- `shadowLine(cc, w, det, occ)` (rdzeń): składowe 25–600 px, wydłużone (≥ 2,5, długość ≥ 14 px, pole/długość ≤ 9), pod kątem > 60° do osi, środek kreski ≤ 40 px od przecięcia, przecięcie 8 px przed końcem baryłki do 32 px za nim. Zwraca `det.shadow = {t, dist, len, ang, area}` (t = odległość za końcem baryłki wzdłuż osi, px).
+- `fuseShadowTip(det, maxT)`: tylko gdy grot jest „zobaczony” (`seen`) i różni się od cienia o ≥ 6 px, grot przechodzi na przecięcie (t ograniczone do 0..`maxT`), `tipBy = 'shadow'`. Zgadnięty (`prior`) zostaje: typowa długość jest tak samo dobra jak cień (odchylenie ok. 4,5 px wobec ok. 7 px dla cienia).
+- Wywołane w `Detector.analyze` po `locateTip`, a w aplikacji jeszcze raz po `hiRefine` (ostry obraz też potrafi „zobaczyć” fałszywy grot na czarnym). Wyłączenie: `cfg.shadowTip = false` (test: `NOSHADOW=1`).
+- Wynik na 60 rzutach (`test_rzutow.js`): bez ostrego grotu dobre pole 39 → 43, poprawiane stuknięciem 16/23 → 20/23 (poprawione rzuty 13, 23, 57, 60, żadnego nie zepsuło); z `HI=1` 40 → 42, 18/23 → 20/23, z szumem 4: 42–43.
+- Ograniczenie: cień musi być gdzieś widoczny. Gdy cały leży na czarnym polu, nic się nie zmienia (zostaje zgadywanie z długości).
+- Nie sprawdzone: ekspozycja kamery (`exposureCompensation` przez `applyConstraints`) jako sposób na podniesienie czerni.
+
 ## Okno „Popraw rzut”: jasność, lupa, siatka (od 2026.10.19u)
 - Piotr: czarny grot na czarnym polu jest prawie niewidoczny, a on sam ma ocenić miejsce wbicia na powiększeniu.
 - Nad obrazem trzy przyciski: „Jasność 0/1/2” (`brightenDark`: ciemne piksele < 90 jasności rozciągane na pełny zakres, od 2. do 92. lub 70. percentyla, więc czarne pole pokazuje fakturę), „Lupa ×1/×2/×3” (okno `fixView` wokół zielonego kółka, a bez niego wokół wykrytego grota; stuknięcie przelicza `fixMap` z uwzględnieniem lupy) i „Siatka wł./wył.” (żółte druty zasłaniały grot).

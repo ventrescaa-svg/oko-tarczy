@@ -32,6 +32,7 @@ M.samples.forEach((s, k) => {
   const cfg = { w, h, Hp, nearDir: [(q[0] - c[0]) / l, (q[1] - c[1]) / l], thr: 60, shadows: true, pp,
     pointMm: +(process.env.PMM || s.pointMm || 14), pointMaxMm: +(process.env.PMAX || 25) };
   if (mode === 'walk') cfg.tipModel = 'walk';
+  if (process.env.NOSHADOW) cfg.shadowTip = false;   // bez grota z cienia rzutki (19u)
   if (mode === 'old') cfg.offsetMm = s.offsetMm || 0;   // stare wersje z "Korektą grota"
   const det = new C.Detector(cfg);
   det.reset(ref);
@@ -53,7 +54,9 @@ M.samples.forEach((s, k) => {
     const r = C.refineTipHi(hr, hcur, hc.w, hc.h, det.lastGain || 1, { tip: [bt[0] * z + ox, bt[1] * z + oy], axis: d.det.axis }, z,
       { thrLow, pxPerMm: d.det.pxPerMm * z, pointMm: det.pointMm, pointMaxMm: det.pointMaxMm });
     const tip = [(r.tip[0] - ox) / z, (r.tip[1] - oy) / z], b = C.applyH(det.Hpi, tip[0], tip[1]);
-    if (Math.hypot(b[0] - d.board[0], b[1] - d.board[1]) <= +(process.env.HIMAX || 15)) { d.board = b; d.det.tipBy = r.byPrior ? 'prior' : 'seen'; }
+    if (Math.hypot(b[0] - d.board[0], b[1] - d.board[1]) <= +(process.env.HIMAX || 15)) { d.board = b; d.det.tip = tip; d.det.tipBy = r.byPrior ? 'prior' : 'seen'; }
+    // od 2026.10.19u: cień rzutki poprawia grot "zobaczony" także po ostrym obrazie, tak jak w aplikacji
+    if (!process.env.NOSHADOW && C.fuseShadowTip(d.det, 1.1 * det.pointMaxMm * d.det.pxPerMm)) d.board = C.applyH(det.Hpi, d.det.tip[0], d.det.tip[1]);
   }
   const lab = C.scoreAt(d.board[0], d.board[1]).label, good = lab === s.label.label;
   ok += good; if (tap) tapOk += good; if (d.det.tipBy === 'prior') prior++;
