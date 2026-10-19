@@ -9,9 +9,9 @@ os.makedirs(out, exist_ok=True)
 with zipfile.ZipFile(zp) as z:
     man = json.loads(z.read('manifest.json'))
     for i, s in enumerate(man['samples'], 1):
-        for k in ('ref', 'cur', 'hiRef', 'hiCur'):
+        for k in ('ref', 'cur', 'hiRef', 'hiCur', 'mask', 'occ'):
             if k not in s['files']: continue
-            im = Image.open(io.BytesIO(z.read(s['files'][k]))).convert('RGBA')
+            im = Image.open(io.BytesIO(z.read(s['files'][k]))).convert('RGBA')   # mask/occ: 0 albo 255
             np.asarray(im, dtype=np.uint8).tofile(os.path.join(out, f'{i:03d}_{k.lower()}.rgba'))
     with open(os.path.join(out, 'manifest.json'), 'w') as f:
         json.dump(man, f)

@@ -1712,13 +1712,14 @@ input[type=range]{accent-color:var(--cream)}
     const x0 = Math.max(0, Math.min(bb.minx - m, Math.floor(tx - R))), y0 = Math.max(0, Math.min(bb.miny - m, Math.floor(ty - R)));
     const x1 = Math.min(this.w - 1, Math.max(bb.maxx + m, Math.ceil(tx + R))), y1 = Math.min(this.h - 1, Math.max(bb.maxy + m, Math.ceil(ty + R)));
     const cw = x1 - x0 + 1, ch = y1 - y0 + 1;
-    const ref = new Uint8ClampedArray(cw * ch * 4), cur = new Uint8ClampedArray(cw * ch * 4), mk = new Uint8Array(cw * ch);
+    const ref = new Uint8ClampedArray(cw * ch * 4), cur = new Uint8ClampedArray(cw * ch * 4), mk = new Uint8Array(cw * ch), oc = new Uint8Array(cw * ch);
+    const occ0 = this.dartsInTurn > 1 && this.occPrev && this.occPrev.length === this.w * this.h ? this.occPrev : null;   // earlier darts of this turn, before this one
     for (let y = 0; y < ch; y++) {
       const so = ((y + y0) * this.w + x0) * 4, d = y * cw * 4;
       ref.set(refA.subarray(so, so + cw * 4), d); cur.set(frame.subarray(so, so + cw * 4), d);
-      for (let x = 0; x < cw; x++) mk[y * cw + x] = mask[(y + y0) * this.w + x0 + x];
+      for (let x = 0; x < cw; x++) { mk[y * cw + x] = mask[(y + y0) * this.w + x0 + x]; if (occ0) oc[y * cw + x] = occ0[(y + y0) * this.w + x0 + x]; }
     }
-    return { x0, y0, w: cw, h: ch, ref, cur, mask: mk, tip: det.tip.slice(), barrel: (det.barrelTip || det.tip).slice(), axis: det.axis.slice(),
+    return { x0, y0, w: cw, h: ch, ref, cur, mask: mk, occ: occ0 ? oc : null, tip: det.tip.slice(), barrel: (det.barrelTip || det.tip).slice(), axis: det.axis.slice(),
       ext: det.ext, area: det.area, hidden: det.hidden, nearOcc: det.tipNearOcc, noise: this.noise, shift: this.diag.shift || [0, 0], dartsInTurn: this.dartsInTurn,
       nose: det.nose ? det.nose.slice() : null, pointPx: det.pointPx, pxPerMm: det.pxPerMm, tipBy: det.tipBy, pointMm: this.pointMm };
   };
@@ -3812,7 +3813,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.19p';
+const APP_VERSION = '2026.10.19q';
 const DS = {
   p: null,
   open() {
@@ -3904,10 +3905,26 @@ function harvestTurn(darts) {
   });
 }
 let persistAsked = false;
+// 0/1 map -> PNG (the live change mask and the earlier-darts map, so a throw can be replayed exactly)
+function bitsToPng(bits, w, h) {
+  return new Promise((res) => {
+    try {
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      const img = new ImageData(w, h);
+      for (let i = 0; i < bits.length; i++) { const v = bits[i] ? 255 : 0, j = i * 4; img.data[j] = img.data[j + 1] = img.data[j + 2] = v; img.data[j + 3] = 255; }
+      c.getContext('2d').putImageData(img, 0, 0);
+      c.toBlob((b) => res(b), 'image/png');
+    } catch (e) { res(null); }
+  });
+}
 async function saveSample(rec, D) {
   const [a, b] = await Promise.all([rgbaToJpeg(D.ref, D.w, D.h, D.k), rgbaToJpeg(D.cur, D.w, D.h, D.k)]);
   if (!a || !b) return;
   rec.ref = a.blob; rec.cur = b.blob; rec.crop.w = a.w; rec.crop.h = a.h; rec.bytes = a.blob.size + b.blob.size;
+  if (D.mask && D.w * D.h === D.mask.length) {
+    const mb = await bitsToPng(D.mask, D.w, D.h); if (mb) { rec.maskImg = mb; rec.bytes += mb.size; }
+    if (D.occ) { const ob = await bitsToPng(D.occ, D.w, D.h); if (ob) { rec.occImg = ob; rec.bytes += ob.size; } }
+  }
   if (D.hiCrop) {
     const [ha, hb] = await Promise.all([rgbaToJpeg(D.hiCrop.ref, D.hiCrop.w, D.hiCrop.h), rgbaToJpeg(D.hiCrop.cur, D.hiCrop.w, D.hiCrop.h)]);
     if (ha && hb) { rec.hiRef = ha.blob; rec.hiCur = hb.blob; rec.bytes += ha.blob.size + hb.blob.size; }
@@ -3982,10 +3999,12 @@ async function exportDataset() {
     const files = [], meta = [];
     for (let k = 0; k < recs.length; k++) {
       const r = recs[k], base = 'samples/' + String(k + 1).padStart(5, '0');
-      const m = Object.assign({}, r); delete m.ref; delete m.cur; delete m.hiRef; delete m.hiCur;
+      const m = Object.assign({}, r); delete m.ref; delete m.cur; delete m.hiRef; delete m.hiCur; delete m.maskImg; delete m.occImg;
       m.files = { ref: base + '_ref.jpg', cur: base + '_cur.jpg' };
       files.push({ name: m.files.ref, data: new Uint8Array(await r.ref.arrayBuffer()) });
       files.push({ name: m.files.cur, data: new Uint8Array(await r.cur.arrayBuffer()) });
+      if (r.maskImg) { m.files.mask = base + '_mask.png'; files.push({ name: m.files.mask, data: new Uint8Array(await r.maskImg.arrayBuffer()) }); }
+      if (r.occImg) { m.files.occ = base + '_occ.png'; files.push({ name: m.files.occ, data: new Uint8Array(await r.occImg.arrayBuffer()) }); }
       if (r.hiRef && r.hiCur) {
         m.files.hiRef = base + '_hiref.jpg'; m.files.hiCur = base + '_hicur.jpg';
         files.push({ name: m.files.hiRef, data: new Uint8Array(await r.hiRef.arrayBuffer()) });
@@ -4181,7 +4200,7 @@ renderGame();
 showScreen('intro');
 
 // Hooks for automated testing.
-window.OkoTarczy = { S, C, DS, stabD, gridShot, hiRefine, hiCaptureRef, setPoints(p) { S.pts = p.map(q => q.slice()); updateReadout(); }, finishCalibration() { $('#cal-done').click(); }, startCamera, screenMap, exportDataset, dsIdle: () => dsChain, version: APP_VERSION };
+window.OkoTarczy = { S, C, DS, stabD, gridShot, bitsToPng, hiRefine, hiCaptureRef, setPoints(p) { S.pts = p.map(q => q.slice()); updateReadout(); }, finishCalibration() { $('#cal-done').click(); }, startCamera, screenMap, exportDataset, dsIdle: () => dsChain, version: APP_VERSION };
 })();
 </script>
 </body>

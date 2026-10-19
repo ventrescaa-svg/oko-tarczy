@@ -114,7 +114,7 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - Test na 35 rzutach: dobre pole 28 (z ostrym grotem), z szumem 28–29; rzut 29 poprawiony, 32 też (test liczy go jako błąd, bo etykieta `auto` jest zła).
 - Próba osobnego filtra „składowa to cień” (frakcja pikseli o jednakowym zaciemnieniu, bez limitu k > 0,3) nic nie dała przy progu 0,6, a przy 0,4 pogarszała (gubi lotki/wały): cofnięta.
 - Uwaga: `test_rzutow.js` ma teraz domyślnie `pointMm` z próbki (nauczone z poprawek: 14 → 15,8 → 17,6 w ciągu dnia). Wynik prawie nie zależy od pointMm (8–16 daje 27–30 z 35), ale dryf w górę warto obserwować.
-- Nie odtwarza się offline: rzut 33 (żywa aplikacja wybrała plamę, test wybiera rzutkę); stan detektora (`occ`, `turnRef`, `dartsInTurn`) nie jest zapisywany w próbce.
+- Nie odtwarzało się offline: rzut 33 (żywa aplikacja wybrała plamę, test rzutkę), bo próbka nie miała stanu detektora. Od 2026.10.19q próbki mają `_mask.png` (żywa maska zmian) i `_occ.png` (poprzednie rzutki tury, gdy `dartsInTurn` > 1); `rozpakuj.py` je rozpakowuje, a `test_rzutow.js` ustawia z nich `det.occ` i `dartsInTurn` (`NOSTATE=1` wyłącza).
 
 ## Test na prawdziwych rzutach
 ```

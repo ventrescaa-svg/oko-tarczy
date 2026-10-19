@@ -35,6 +35,12 @@ M.samples.forEach((s, k) => {
   if (mode === 'old') cfg.offsetMm = s.offsetMm || 0;   // stare wersje z "Korektą grota"
   const det = new C.Detector(cfg);
   det.reset(ref);
+  // od 2026.10.19q próbka ma też stan detektora: poprzednie rzutki tury (occ) i numer rzutu w turze
+  const occFile = path.join(dir, `${String(id).padStart(3, '0')}_occ.rgba`);
+  if (!process.env.NOSTATE && s.dartsInTurn > 1 && fs.existsSync(occFile)) {
+    const o = rd('occ'); for (let i = 0; i < w * h; i++) det.occ[i] = o[i * 4] > 127 ? 1 : 0;
+    det.dartsInTurn = s.dartsInTurn - 1;
+  }
   const ev = det.analyze(Uint8ClampedArray.from(cur), 1000, false, false);
   const d = ev.find(e => e.type === 'dart');
   n++; const tap = s.label.source === 'tap'; if (tap) tapN++;
