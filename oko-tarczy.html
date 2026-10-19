@@ -2666,6 +2666,7 @@ async function startCamera() {
         : { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }
     });
     S.stream = stream; S.track = stream.getVideoTracks()[0];
+    ['ended', 'mute', 'unmute'].forEach(ev => S.track.addEventListener(ev, () => { if (S.perf) logNote('ścieżka kamery: ' + ev); }));
     S.video.srcObject = stream;
     await S.video.play().catch(() => {});
     await new Promise(r => { if (S.video.videoWidth) r(); else S.video.onloadedmetadata = () => r(); });
@@ -3134,7 +3135,7 @@ function hiCaptureRef() {
   let H = S.hi;
   if (!H || H.canvas.width !== cw || H.canvas.height !== ch) {
     const c = document.createElement('canvas'); c.width = cw; c.height = ch;
-    H = S.hi = { canvas: c, ctx: c.getContext('2d', { willReadFrequently: true }) };
+    H = S.hi = { canvas: c, ctx: c.getContext('2d') };   // not "willReadFrequently": it is only read once per throw
   }
   H.z = z; H.det = S.det; H.ver = S.det.refVer;
   try { hiDraw(H.ctx, z, 0, 0); } catch (err) { S.hi = null; }
@@ -3143,7 +3144,7 @@ function hiCaptureRef() {
 function hiRefine(e) {
   const H = S.hi, d = e.det, D = S.det;
   // The detector has already taken the picture with this dart as its new reference (refVer + 1).
-  if (!S.settings.hiTip || !H || H.det !== D || H.ver !== D.refVer - 1 || !d.barrelTip || !d.pxPerMm || d.tipBy === 'walk') return;
+  if (!S.settings.hiTip || S.hiOff || !H || H.det !== D || H.ver !== D.refVer - 1 || !d.barrelTip || !d.pxPerMm || d.tipBy === 'walk') return;
   const t0 = performance.now();
   try {
     const z = H.z, ppm = d.pxPerMm * z, Lp = (D.pointMm || 14) * ppm;
@@ -3170,6 +3171,47 @@ function hiRefine(e) {
     d.hi.used = true;
     d.tip = tip; d.tipBy = d.hi.by; e.tip = tip.slice(); e.tipRaw = tip.slice(); e.board = b;
   } catch (err) {} finally { perfAdd('ostry grot', performance.now() - t0); }
+}
+
+// Errors and a frozen camera go into the same log (sent with "Wyślij dziennik").
+function logNote(msg) {
+  S.perf.log.push(new Date().toLocaleTimeString('pl-PL') + '  !! ' + msg);
+  if (S.perf.log.length > 90) S.perf.log.shift();
+}
+window.addEventListener('error', (e) => logNote('błąd: ' + (e.message || e) + (e.lineno ? ' (wiersz ' + e.lineno + ')' : '')));
+window.addEventListener('unhandledrejection', (e) => logNote('błąd (obietnica): ' + (e.reason && e.reason.message || e.reason)));
+// The camera picture can stop (browser or phone camera hiccup): the video time no longer moves.
+// After 3 s try play(), after 7 s switch the camera off and on again.
+const wd = { t: 0, ct: -1, at: 0, stalled: 0 };
+function watchVideo(now) {
+  if (now - wd.t < 1000) return;
+  wd.t = now;
+  const v = S.video;
+  if (!S.stream || v.readyState < 1 || document.hidden) { wd.at = now; return; }
+  if (v.currentTime !== wd.ct) {
+    if (wd.stalled) logNote('kamera ruszyła po ' + ((now - wd.at) / 1000).toFixed(1) + ' s');
+    wd.ct = v.currentTime; wd.at = now; wd.stalled = 0; return;
+  }
+  const dt = now - wd.at;
+  if (dt > 3000 && wd.stalled < 1) {
+    wd.stalled = 1;
+    logNote('obraz stoi od 3 s (stan ' + v.readyState + ', paused ' + v.paused + ', ścieżka ' + (S.track ? S.track.readyState + (S.track.muted ? ' wyciszona' : '') : '?') + '), wznawiam');
+    toast('Kamera stanęła. Wznawiam…', 3000);
+    v.play().catch(() => {});
+  } else if (dt > 7000 && wd.stalled < 2) {
+    wd.stalled = 2;
+    restartCamera();
+  }
+}
+async function restartCamera() {
+  logNote('restart kamery');
+  toast('Kamera nadal stoi. Włączam ją od nowa.', 3500);
+  try { if (S.stream) S.stream.getTracks().forEach(t => t.stop()); } catch (e) {}
+  S.stream = null;
+  const ok = await startCamera();
+  wd.at = performance.now(); wd.ct = -1; wd.stalled = 0;
+  if (ok) { logNote('kamera włączona od nowa'); if (S.det) S.resetPending = true; }
+  else { logNote('restart kamery się nie udał'); setTimeout(restartCamera, 5000); }
 }
 
 function processFrame(now) {
@@ -3213,7 +3255,12 @@ function processFrame(now) {
   t = performance.now();
   for (const e of evs) handleEvent(e);
   if (evs.some(e => e.type === 'dart')) perfAdd('obsługa rzutu', performance.now() - t);
-  if (S.settings.hiTip && S.det && (!S.hi || S.hi.det !== S.det || S.hi.ver !== S.det.refVer)) { t = performance.now(); hiCaptureRef(); perfAdd('ostre zdjęcie przed', performance.now() - t); }
+  if (S.settings.hiTip && !S.hiOff && S.det && (!S.hi || S.hi.det !== S.det || S.hi.ver !== S.det.refVer)) {
+    t = performance.now(); hiCaptureRef(); const dt = performance.now() - t; perfAdd('ostre zdjęcie przed', dt);
+    // Too slow on this phone: switch the sharp tip off for this session instead of slowing the picture.
+    S.hiSlow = dt > 150 ? (S.hiSlow || 0) + 1 : 0;
+    if (S.hiSlow >= 3) { S.hiOff = true; S.hi = null; logNote('ostry grot wyłączony: zdjęcie przed trwało ' + dt.toFixed(0) + ' ms'); }
+  }
   if (S.settings.mask && S.det.lastMask && evs.length) paintMask();
 }
 
@@ -3546,14 +3593,20 @@ function drawLoupe(cal, m) {
 
 /* ---------------- Main loop ---------------- */
 function loop(now) {
-  if (S.mode === 'game' && !S.manual) {
-    if (now - S.lastProc >= 95) { S.lastProc = now; processFrame(now); }
-    else if (S.stab && now - (S.lastTrack || 0) >= 45) { const t = performance.now(); trackBoard(now); perfAdd('śledzenie między', performance.now() - t); } // keeps the grid on the board between detections
-    perfFlush(now);
-  }
-  const t = performance.now();
-  if (S.mode !== 'intro' && !S.manual) drawOverlay();
-  if (S.mode === 'game') perfAdd('rysowanie', performance.now() - t);
+  // An error in one round must not stop the loop for good (that froze the whole picture).
+  try {
+    watchVideo(now);
+    if (S.mode === 'game' && !S.manual) {
+      if (now - S.lastProc >= 95) { S.lastProc = now; processFrame(now); }
+      else if (S.stab && now - (S.lastTrack || 0) >= 45) { const t = performance.now(); trackBoard(now); perfAdd('śledzenie między', performance.now() - t); } // keeps the grid on the board between detections
+      perfFlush(now);
+    }
+  } catch (err) { S.loopErrs = (S.loopErrs || 0) + 1; if (S.loopErrs <= 20) logNote('błąd w pętli: ' + (err && err.stack ? err.stack.split('\n').slice(0, 3).join(' | ') : err)); }
+  try {
+    const t = performance.now();
+    if (S.mode !== 'intro' && !S.manual) drawOverlay();
+    if (S.mode === 'game') perfAdd('rysowanie', performance.now() - t);
+  } catch (err) { S.loopErrs = (S.loopErrs || 0) + 1; if (S.loopErrs <= 20) logNote('błąd rysowania: ' + (err && err.stack ? err.stack.split('\n').slice(0, 3).join(' | ') : err)); }
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
@@ -3747,7 +3800,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.19m';
+const APP_VERSION = '2026.10.19n';
 const DS = {
   p: null,
   open() {

@@ -100,6 +100,13 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - `test_rzutow.js` z `HI=1` stosuje też ostry grot (`refineTipHi` na `hiCrop`, `rozpakuj.py` rozpakowuje `hiref`/`hicur`). Wynik: 13 → 15 → 16 dobrych pól z 19 (zwykły → po cieniach i składowych → z ostrym grotem),
   poprawiane stuknięciem 4/7 → 7/7 (bez szumu; z szumem 4: 15/19, 5–6/7). Nadal źle: rzut 17 (12 → 5, grot za drutem) i 7 (3 → 17).
 
+## Zawieszona kamera (od 2026.10.19n)
+- Piotr zgłosił, że po 19l/19m obraz stał na jednej klatce mimo wyjęcia lotek. Przyczyny nie ustalono (podejrzenia: ostry grot `hiCaptureRef`, wyjątek w `loop` zabijający `requestAnimationFrame`, zatrzymana ścieżka kamery).
+- `loop` ma try/catch i zawsze planuje następną klatkę; błędy trafiają do dziennika (`logNote`, linie z `!!`, też `window.onerror`).
+- `watchVideo`: gdy `video.currentTime` stoi 3 s, `play()`; po 7 s `restartCamera` (zatrzymuje ścieżki, `startCamera`, `resetPending`). Test Playwright: pauza i zatrzymana ścieżka wracają same.
+- Ostry grot: canvas bez `willReadFrequently`; gdy `hiCaptureRef` trwa > 150 ms trzy razy z rzędu, `S.hiOff` wyłącza go do końca sesji (wpis w dzienniku).
+- Przy kolejnym zawieszeniu poproś o „Wyślij dziennik na GitHub” (linie `!!` mówią, co się stało).
+
 ## Test na prawdziwych rzutach
 ```
 python3 narzedzia/rozpakuj.py eksport.zip /tmp/rzuty
