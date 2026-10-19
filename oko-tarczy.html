@@ -435,7 +435,9 @@ input[type=range]{accent-color:var(--cream)}
 
   /* ---------- Board geometry (mm, x right, y up, origin at bull) ---------- */
   const SECTORS = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5];
-  const RING = { bull: 6.35, outerBull: 15.9, trebleIn: 99, trebleOut: 107, doubleIn: 162, doubleOut: 170 };
+  // 170 and 107 are to the outside of the outer wire; the 8 mm ring width is between the wires,
+  // so the coloured ring with its wires is ~10 mm wide (measured on Piotr's Winmau Blade 6).
+  const RING = { bull: 6.35, outerBull: 15.9, trebleIn: 97, trebleOut: 107, doubleIn: 160, doubleOut: 170 };
   const RING_LIST = [RING.bull, RING.outerBull, RING.trebleIn, RING.trebleOut, RING.doubleIn, RING.doubleOut];
 
   // Calibration targets: where the radial wire meets the outer wire of the double ring.
@@ -3550,7 +3552,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.19c';
+const APP_VERSION = '2026.10.19d';
 const DS = {
   p: null,
   open() {

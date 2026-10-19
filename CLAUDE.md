@@ -52,6 +52,9 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - Po nim `refineGrid` na pełnym kadrze: wzdłuż 20 drutów sektorów i 6 okręgów szuka w bok najsilniejszej zmiany koloru, potem odporne dopasowanie homografii (8 parametrów), 3 rundy (okno 12/6/4 px).
   Przyjmowane, gdy `ok` (≥150 punktów na drutach i na okręgach, błąd < 0,9 mm) i przesunięcie < 40 px.
 - Zrzut Piotra z 2026-10-19: błąd linii sektorów 1,58 → 0,75 mm (najgorszy drut 3,6 → 1,6 mm), zbiega z odchyłki 24 px i z szumem. Poprawka na krzywiznę obiektywu nic nie dała.
+- Od 2026.10.19d `RING.trebleIn` = 97, `RING.doubleIn` = 160 (było 99/162). 170 i 107 to wymiar do zewnętrznej strony drutu, a 8 mm to szerokość między drutami, więc kolorowe pole z drutami ma ok. 10 mm.
+  Piotr zmierzył linijką ok. 10 mm (Winmau Blade 6); dopasowanie promieni z obrazu (`refineGrid` z `rings: true`) dało 96,6–97,6 i 158,9–159,8. Zmienia też liczenie punktów (pas 160–162 to teraz podwójna).
+  Wynik `test_rzutow.js` po tej zmianie nie był sprawdzony (brak eksportu w tej sesji).
 - Jeszcze nie: dociąganie w trakcie gry (śledzenie tarczy jest tylko afiniczne).
 
 ## Test na prawdziwych rzutach
