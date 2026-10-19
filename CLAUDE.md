@@ -116,6 +116,11 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - Uwaga: `test_rzutow.js` ma teraz domyślnie `pointMm` z próbki (nauczone z poprawek: 14 → 15,8 → 17,6 w ciągu dnia). Wynik prawie nie zależy od pointMm (8–16 daje 27–30 z 35), ale dryf w górę warto obserwować.
 - Nie odtwarzało się offline: rzut 33 (żywa aplikacja wybrała plamę, test rzutkę), bo próbka nie miała stanu detektora. Od 2026.10.19q próbki mają `_mask.png` (żywa maska zmian) i `_occ.png` (poprzednie rzutki tury, gdy `dartsInTurn` > 1); `rozpakuj.py` je rozpakowuje, a `test_rzutow.js` ustawia z nich `det.occ` i `dartsInTurn` (`NOSTATE=1` wyłącza).
 
+## Poprawka rzutu: cała tarczą (od 2026.10.19s)
+- Okno „Popraw rzut” pokazywało tylko wycinek ±70 mm wokół wykrytego grota. Gdy wykrycie trafiło w cień daleko od rzutki, prawdziwego miejsca nie było na obrazie i nie dało się go zaznaczyć (Piotr, 2026-10-19).
+- `captureSnap` robi teraz też `snap.wide` (`captureWide`: cała tarcza r = 185 mm w prostokącie 600 px szerokości, proporcje z homografii; `null` przy nieprawdopodobnej kalibracji). Przycisk „Pokaż całą tarczę” / „Pokaż zbliżenie” przełącza widok; w widoku całej tarczy kreskowane czerwone kółko = miejsce wykryte przez aplikację.
+- `fixMap` ma osobne `sw/sh/cw/ch`; stuknięcie przelicza się przez wybrany widok. Test Playwright: stuknięcie w widoku całej tarczy daje poprawny wynik.
+
 ## Test na prawdziwych rzutach
 ```
 python3 narzedzia/rozpakuj.py eksport.zip /tmp/rzuty

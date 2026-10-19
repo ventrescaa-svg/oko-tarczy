@@ -348,8 +348,9 @@ input[type=range]{accent-color:var(--cream)}
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="fix-title">
     <h3 id="fix-title">Popraw rzut</h3>
     <div id="fix-photo">
-      <p class="hint">Stuknij dokładnie tam, gdzie grot wchodzi w tarczę.</p>
-      <div class="fixwrap"><canvas id="fix-cv" width="480" height="480"></canvas></div>
+      <p class="hint">Stuknij dokładnie tam, gdzie grot wchodzi w tarczę. Nie widzisz rzutki? Stuknij „Pokaż całą tarczę”.</p>
+      <div class="fixwrap" id="fix-wrap"><canvas id="fix-cv" width="480" height="480"></canvas></div>
+      <button id="fix-wide" class="btn ghost" type="button">Pokaż całą tarczę</button>
     </div>
     <div class="fixres"><span class="hint">Wynik</span><b id="fix-val">–</b></div>
     <div class="btn-row" id="fix-actions">
@@ -3343,7 +3344,27 @@ function captureSnap(tip) {
     // live video -> still (start) picture -> this square; tip is in still-picture px
     const k = 480 / size, A = C.affMul([k, 0, -sx * k, 0, k, -sy * k], C.affInv(stabD()));
     ctx.setTransform(A[0], A[3], A[1], A[4], A[2], A[5]); ctx.drawImage(S.video, 0, 0); ctx.setTransform(1, 0, 0, 1, 0, 0);
-    return { canvas: c, sx, sy, size };
+    return { canvas: c, sx, sy, sw: size, sh: size, cw: 480, ch: 480, wide: captureWide() };
+  } catch (err) { return { canvas: null, wide: null }; }
+}
+// The whole board in one picture, for when the detected spot is far from the real one
+// (a shadow taken for the dart): the correction must always be able to reach the real tip.
+function captureWide() {
+  try {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (let a = 0; a < 360; a += 10) {
+      const q = C.applyH(S.cal.H, 185 * Math.cos(a * Math.PI / 180), 185 * Math.sin(a * Math.PI / 180));
+      x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); y0 = Math.min(y0, q[1]); y1 = Math.max(y1, q[1]);
+    }
+    const sw = x1 - x0, sh = y1 - y0;
+    if (!(sw > 50 && sh > 50 && sh / sw > 0.3 && sh / sw < 3)) return null;   // not a believable calibration
+    const cw = 600, ch = Math.round(cw * sh / sw);
+    const c = document.createElement('canvas'); c.width = cw; c.height = ch;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, cw, ch);
+    const k = cw / sw, A = C.affMul([k, 0, -x0 * k, 0, k, -y0 * k], C.affInv(stabD()));
+    ctx.setTransform(A[0], A[3], A[1], A[4], A[2], A[5]); ctx.drawImage(S.video, 0, 0); ctx.setTransform(1, 0, 0, 1, 0, 0);
+    return { canvas: c, sx: x0, sy: y0, sw, sh, cw, ch };
   } catch (err) { return null; }
 }
 
@@ -3677,7 +3698,7 @@ function manualDart(d) {
 }
 
 /* ---------------- Fix sheet ---------------- */
-const fix = { i: -1, dart: null, tip: null };
+const fix = { i: -1, dart: null, tip: null, wide: false };
 function openFix(i) {
   const g = S.game;
   fix.i = i;
@@ -3686,8 +3707,10 @@ function openFix(i) {
   fix.tip = d && d.tip ? d.tip.slice() : null;
   $('#fix-title').textContent = d ? 'Rzut ' + (i + 1) + ': ' + d.label : 'Dodaj rzut';
   $('#fix-val').textContent = d ? d.label : '–';
-  const hasSnap = !!(d && d.snap && S.cal);
+  const hasSnap = !!(d && d.snap && (d.snap.canvas || d.snap.wide) && S.cal);
+  fix.wide = !!(d && d.snap && !d.snap.canvas);
   $('#fix-photo').hidden = !hasSnap;
+  $('#fix-wide').hidden = !(d && d.snap && d.snap.canvas && d.snap.wide);
   $('#fix-actions').hidden = !d;
   $('#fix-export').hidden = !(d && d.debug);
   if (hasSnap) drawFix();
@@ -3703,27 +3726,37 @@ function openFix(i) {
 }
 function fixMap(snap) {
   return {
-    v2c: (q) => [(q[0] - snap.sx) / snap.size * 480, (q[1] - snap.sy) / snap.size * 480],
-    c2v: (c) => [snap.sx + c[0] / 480 * snap.size, snap.sy + c[1] / 480 * snap.size]
+    v2c: (q) => [(q[0] - snap.sx) / snap.sw * snap.cw, (q[1] - snap.sy) / snap.sh * snap.ch],
+    c2v: (c) => [snap.sx + c[0] / snap.cw * snap.sw, snap.sy + c[1] / snap.ch * snap.sh]
   };
 }
+// The picture on show: the close-up around the detected tip, or the whole board.
+function fixSnap(d) { return d && d.snap ? (fix.wide && d.snap.wide ? d.snap.wide : (d.snap.canvas ? d.snap : d.snap.wide)) : null; }
 function drawFix() {
-  const d = S.game.cur.darts[fix.i]; if (!d || !d.snap) return;
-  const cv = $('#fix-cv'), ctx = cv.getContext('2d'), mp = fixMap(d.snap);
-  ctx.drawImage(d.snap.canvas, 0, 0);
-  drawBoard(ctx, S.cal.H, mp.v2c, { color: 'rgba(242,180,65,.6)', width: 1.4 });
+  const d = S.game.cur.darts[fix.i], sn = fixSnap(d); if (!sn) return;
+  const cv = $('#fix-cv'), ctx = cv.getContext('2d'), mp = fixMap(sn);
+  if (cv.width !== sn.cw || cv.height !== sn.ch) { cv.width = sn.cw; cv.height = sn.ch; }
+  $('#fix-wrap').style.aspectRatio = sn.cw + ' / ' + sn.ch;
+  $('#fix-wide').textContent = fix.wide ? 'Pokaż zbliżenie' : 'Pokaż całą tarczę';
+  ctx.drawImage(sn.canvas, 0, 0);
+  drawBoard(ctx, S.cal.H, mp.v2c, { color: 'rgba(242,180,65,.6)', width: fix.wide ? 1 : 1.4 });
+  if (d.tip && fix.wide) {   // where the app thinks the dart is
+    const c0 = mp.v2c(d.tip);
+    ctx.beginPath(); ctx.arc(c0[0], c0[1], 12, 0, Math.PI * 2); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,80,80,.9)'; ctx.setLineDash([5, 4]); ctx.stroke(); ctx.setLineDash([]);
+  }
   if (fix.tip) {
     const c = mp.v2c(fix.tip);
-    ctx.beginPath(); ctx.arc(c[0], c[1], 9, 0, Math.PI * 2);
+    ctx.beginPath(); ctx.arc(c[0], c[1], fix.wide ? 7 : 9, 0, Math.PI * 2);
     ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,.8)'; ctx.stroke();
     ctx.lineWidth = 2.5; ctx.strokeStyle = '#3cb06d'; ctx.stroke();
   }
 }
+$('#fix-wide').addEventListener('click', () => { fix.wide = !fix.wide; drawFix(); });
 $('#fix-cv').addEventListener('pointerdown', (e) => {
-  const d = S.game.cur.darts[fix.i]; if (!d || !d.snap) return;
+  const d = S.game.cur.darts[fix.i], sn = fixSnap(d); if (!d || !sn) return;
   const cv = e.currentTarget, r = cv.getBoundingClientRect();
-  const c = [(e.clientX - r.left) / r.width * 480, (e.clientY - r.top) / r.height * 480];
-  fix.tip = fixMap(d.snap).c2v(c);
+  const c = [(e.clientX - r.left) / r.width * sn.cw, (e.clientY - r.top) / r.height * sn.ch];
+  fix.tip = fixMap(sn).c2v(c);
   const b = C.applyH(S.cal.Hi, fix.tip[0], fix.tip[1]);
   fix.dart = Object.assign({}, d, C.scoreAt(b[0], b[1]));
   $('#fix-val').textContent = fix.dart.label;
@@ -3813,7 +3846,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.19r';
+const APP_VERSION = '2026.10.19s';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
@@ -4201,7 +4234,7 @@ renderGame();
 showScreen('intro');
 
 // Hooks for automated testing.
-window.OkoTarczy = { S, C, DS, stabD, gridShot, bitsToPng, hiRefine, hiCaptureRef, setPoints(p) { S.pts = p.map(q => q.slice()); updateReadout(); }, finishCalibration() { $('#cal-done').click(); }, startCamera, screenMap, exportDataset, dsIdle: () => dsChain, version: APP_VERSION };
+window.OkoTarczy = { S, C, DS, stabD, gridShot, bitsToPng, captureSnap, openFix, hiRefine, hiCaptureRef, setPoints(p) { S.pts = p.map(q => q.slice()); updateReadout(); }, finishCalibration() { $('#cal-done').click(); }, startCamera, screenMap, exportDataset, dsIdle: () => dsChain, version: APP_VERSION };
 })();
 </script>
 </body>
