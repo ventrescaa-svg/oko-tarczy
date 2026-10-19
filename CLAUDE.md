@@ -116,6 +116,14 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - Uwaga: `test_rzutow.js` ma teraz domyślnie `pointMm` z próbki (nauczone z poprawek: 14 → 15,8 → 17,6 w ciągu dnia). Wynik prawie nie zależy od pointMm (8–16 daje 27–30 z 35), ale dryf w górę warto obserwować.
 - Nie odtwarzało się offline: rzut 33 (żywa aplikacja wybrała plamę, test rzutkę), bo próbka nie miała stanu detektora. Od 2026.10.19q próbki mają `_mask.png` (żywa maska zmian) i `_occ.png` (poprzednie rzutki tury, gdy `dartsInTurn` > 1); `rozpakuj.py` je rozpakowuje, a `test_rzutow.js` ustawia z nich `det.occ` i `dartsInTurn` (`NOSTATE=1` wyłącza).
 
+## Kierunek rzutki z geometrii kamery (od 2026.10.19t, eksport Piotra z 21:26, 60 rzutów)
+- Cień rzutki to nie plama obok, tylko długi cień rzucony na tarczę: cienka linia od grota w dół, potem plama (cień lotki) ok. 100–120 px od grota, aż do bulla. Bywa bardzo ciemny (k ≈ 0,15 na kremowym), więc `isShadow` go nie łapie (czarna lotka też ma k ≈ 0,1).
+- Przyczyna błędu: oś PCA po złączeniu głównej składowej z plamą robiła się pionowa (plama dominuje rozrzut), a grot lądował na dalekim końcu cienia (52, 55, 60, też 41, 54, 36, 44, 50).
+- `findDart` dostaje `opts.axisAt(x, y)` z `Detector` (kierunek odwrotny do `heightStep`, czyli od lotki do grota). Daleka składowa (> 0,3·`gap` od środka głównej), której środek leży w kierunku poza oknem `axisWin` = [−35°, +45°] względem tej osi (mod 180°), jest odrzucana jeszcze przed PCA. Prawdziwe rzutki na eksporcie leżą 6–24° od przewidywanej osi, cienie 44–89°.
+- Przewidywana oś ma sens tylko przy kamerze z boku (|J| > 0,3 px/mm), inaczej `axisAt` zwraca `null` i nic się nie zmienia. Wyłączenie: `det.dirPrior = false`.
+- Wynik na 60 rzutach z `HI=1`: dobre pole 38 → 40, poprawiane stuknięciem 14/23 → 18/23, z szumem 40–41. Część etykiet `auto` w eksporcie jest błędna (cień zaakceptowany po cichu), więc prawdziwa poprawa jest większa niż w liczbach.
+- Nadal nie obsługiwane: rzutka, której główna składowa to sam cień (większy od rzutki), oraz dwie rzutki, gdy lotka drugiej zasłania baryłkę pierwszej (próbka 30).
+
 ## Poprawka rzutu: cała tarczą (od 2026.10.19s)
 - Okno „Popraw rzut” pokazywało tylko wycinek ±70 mm wokół wykrytego grota. Gdy wykrycie trafiło w cień daleko od rzutki, prawdziwego miejsca nie było na obrazie i nie dało się go zaznaczyć (Piotr, 2026-10-19).
 - `captureSnap` robi teraz też `snap.wide` (`captureWide`: cała tarcza r = 185 mm w prostokącie 600 px szerokości, proporcje z homografii; `null` przy nieprawdopodobnej kalibracji). Przycisk „Pokaż całą tarczę” / „Pokaż zbliżenie” przełącza widok; w widoku całej tarczy kreskowane czerwone kółko = miejsce wykryte przez aplikację.

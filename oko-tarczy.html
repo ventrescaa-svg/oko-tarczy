@@ -1029,6 +1029,29 @@ input[type=range]{accent-color:var(--cream)}
     // barrel when a part matches the board colour or hides behind an earlier dart.
     const radius = opts.mergeRadius || opts.gap * 3.5;
     let cand = comps.filter(c => c === main || bboxGap(c, main) <= radius);
+    if (opts.axisAt && cand.length > 1) {
+      // The picture says which way a dart can lie: its axis is the picture of the line standing
+      // on the board, tilted a little by the throw (measured 6-24 deg off, steeper only in odd
+      // cases). A far piece that sits in another direction from the main one is the dart's cast
+      // shadow (thin line from the point, then the flight's blob) or something else, never the
+      // dart: it used to drag the axis, and the "point", to the far end of the shadow.
+      const cen = (c) => {
+        let sx = 0, sy = 0, k = 0;
+        for (let y = c.miny; y <= c.maxy; y++) for (let x = c.minx; x <= c.maxx; x++) if (cc.labels[y * w + x] === c.id) { sx += x; sy += y; k++; }
+        return [sx / k, sy / k];
+      };
+      const cm = cen(main), th = opts.axisAt(cm[0], cm[1]);
+      if (th != null) {
+        const win = opts.axisWin || [-35, 45];
+        cand = cand.filter(c => {
+          if (c === main) return true;
+          const q = cen(c), dx = q[0] - cm[0], dy = q[1] - cm[1];
+          if (Math.hypot(dx, dy) < opts.gap * 0.3) return true;
+          const dev = ((((Math.atan2(dy, dx) - th) * 180 / Math.PI + 90) % 180) + 180) % 180 - 90;
+          return dev >= win[0] && dev <= win[1];
+        });
+      }
+    }
     const box = { minx: Infinity, maxx: -Infinity, miny: Infinity, maxy: -Infinity };
     for (const c of cand) {
       box.minx = Math.min(box.minx, c.minx); box.maxx = Math.max(box.maxx, c.maxx);
@@ -1603,7 +1626,11 @@ input[type=range]{accent-color:var(--cream)}
     const det = findDart(th.mask, this.w, this.h, {
       nearDir: this.nearDir, minComp: this.lim.minComp, minDartArea: this.lim.minDartArea,
       gap: this.lim.gap, occ: this.dartsInTurn ? this.occ : null, weights: this.useBarrel ? this.buf2 : null,
-      seed: th.seed, seedThr: th.T, occDrop: this.occDrop
+      seed: th.seed, seedThr: th.T, occDrop: this.occDrop,
+      axisAt: this.cam && this.dirPrior !== false ? (x, y) => {
+        const J = heightStep(this.cam, this.Hpi, x, y);
+        return Math.hypot(J[0], J[1]) > 0.3 ? Math.atan2(-J[1], -J[0]) : null;
+      } : null
     }, cc);
     if (!det) return [];
     // The camera moved (tripod knocked): the change is thin edges all over the board and the
@@ -3846,7 +3873,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.19s';
+const APP_VERSION = '2026.10.19t';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
