@@ -80,6 +80,18 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - Ograniczenie: rzutka wbita w tej samej chwili co mocne szturchnięcie (ok. 0,3°+) przepada i trzeba ją dopisać ręcznie.
 - Test w symulacji (scratchpad `bump.js`), nie sprawdzony z śledzeniem tarczy ani na eksporcie rzutów.
 
+## Grot na ostrym obrazie (od 2026.10.19l)
+- Ustawienia wykrywania, „Grot na ostrym obrazie” (`S.settings.hiTip`, domyślnie wł.). Wykrywanie dalej na 540×960, ale raz na rzut
+  `hiRefine` szuka grota jeszcze raz na wycinku w pełnej rozdzielczości (z = min(2, 1/`P.s`), w Full HD 2×) przez `C.refineTipHi`
+  (= `locateTip` z `opt.z`, które skaluje stałe w px, plus wyrównanie resztkowego przesunięcia `estimateShift`).
+- Zdjęcie „przed” w pełnej rozdzielczości: `S.hi` (canvas całej tarczy w układzie obrazu przetwarzania × z), robione przez `hiCaptureRef`
+  po każdej zmianie `det.ref` (licznik `Detector.refVer`). Przy rzucie detektor już podbił `refVer`, więc `hiRefine` wymaga `S.hi.ver === refVer - 1`.
+- Wynik ostry jest odrzucany, gdy przesuwa punkt o > 8 mm albo gdy jest zgadnięty, a zwykły był widziany i różnica > 3 mm. `det.hi` = {tip, lo, by, move, shift, used}.
+- Nauka AI: próbki mają też `hiCrop` + `_hiref.jpg`/`_hicur.jpg` w ZIP (do sprawdzenia na prawdziwych rzutach).
+- Test: `narzedzia/sztuczne_rzuty.js` rysuje sztuczną rzutkę 3D (geometria kamery z homografii) na zdjęciu tarczy Piotra 1080×1920
+  (wymaga `img/plain2.rgba` i `Hnew2.json` w `SP`, nie ma ich w repo). 240 rzutów: dobre pole 214 → 224, mediana błędu 1,6 → 1,3 mm.
+  Na prawdziwych rzutach jeszcze nie sprawdzone.
+
 ## Test na prawdziwych rzutach
 ```
 python3 narzedzia/rozpakuj.py eksport.zip /tmp/rzuty

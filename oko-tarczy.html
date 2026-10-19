@@ -405,6 +405,7 @@ input[type=range]{accent-color:var(--cream)}
     <label class="toggle"><span>Ignoruj cienie lotek</span><input type="checkbox" id="opt-shadow" checked></label>
     <label class="toggle"><span>Następna tura po wyjęciu lotek</span><input type="checkbox" id="opt-auto" checked></label>
     <label class="toggle"><span>Śledź tarczę (chwiejący się statyw)</span><input type="checkbox" id="opt-track" checked></label>
+    <label class="toggle"><span>Grot na ostrym obrazie (pełna rozdzielczość)</span><input type="checkbox" id="opt-hitip" checked></label>
     <label class="toggle"><span>Kamera 4K (więcej szczegółów, większe obciążenie)</span><input type="checkbox" id="opt-4k"></label>
     <p class="hint" id="cam-info"></p>
     <label class="toggle"><span>Blokuj ekspozycję i ostrość aparatu</span><input type="checkbox" id="opt-lock"></label>
@@ -1295,10 +1296,11 @@ input[type=range]{accent-color:var(--cream)}
     opt = opt || {};
     const tau = opt.thrLow || 18;
     const ux = det.axis[0], uy = det.axis[1], nx = -uy, ny = ux;
+    const z = opt.z || 1;                                // picture scale vs the processing picture (sharper crop: 2)
     const px = opt.pxPerMm || 1.2;                       // picture px per mm of point height
-    const Lp = Math.max(4, (opt.pointMm || 14) * px);    // usual visible point length (px)
-    const back = Math.round(opt.back || 30), fwd = Math.round(opt.fwd || Math.max(50, 3 * Lp));
-    const W = opt.halfWidth || 6;
+    const Lp = Math.max(4 * z, (opt.pointMm || 14) * px); // usual visible point length (px)
+    const back = Math.round(opt.back || 30 * z), fwd = Math.round(opt.fwd || Math.max(50 * z, 3 * Lp));
+    const W = opt.halfWidth || Math.round(6 * z);
     const ox = det.tip[0], oy = det.tip[1];
     const brightMin = opt.brightMin || 70, darkK = opt.darkK || 0.62;
     const ns = back + fwd + 1, no = 2 * W + 1;
@@ -1328,21 +1330,21 @@ input[type=range]{accent-color:var(--cream)}
     }
     // Centre line: weighted centre of the change just behind the barrel front.
     let sw = 0, so = 0;
-    for (let k = Math.max(0, back - 20); k <= Math.min(kEnd - 1, back); k++) for (let q = 0; q < no; q++) { const e = CH[k * no + q]; if (e > tau) { sw += e; so += e * (q - W); } }
-    const c = sw ? Math.max(-3, Math.min(3, so / sw)) : 0;
+    for (let k = Math.max(0, back - Math.round(20 * z)); k <= Math.min(kEnd - 1, back); k++) for (let q = 0; q < no; q++) { const e = CH[k * no + q]; if (e > tau) { sw += e; so += e * (q - W); } }
+    const c = sw ? Math.max(-3 * z, Math.min(3 * z, so / sw)) : 0;
     const near = (k, half, fn) => { for (let q = 0; q < no; q++) { const o = q - W; if (Math.abs(o - c) <= half) fn(k * no + q); } };
     // Width of the change across the axis at each step: the barrel is wide, the point thin.
     const width = new Uint8Array(ns);
-    for (let k = 0; k < kEnd; k++) { let m = 0; near(k, opt.widthHalf || 5, (at) => { if (CH[at] > tau) m++; }); width[k] = m; }
-    const wb = Array.from(width.subarray(Math.max(0, back - 25), Math.min(kEnd, back + 3))).filter(v => v > 2).sort((a, b) => a - b);
+    for (let k = 0; k < kEnd; k++) { let m = 0; near(k, opt.widthHalf || 5 * z, (at) => { if (CH[at] > tau) m++; }); width[k] = m; }
+    const wb = Array.from(width.subarray(Math.max(0, back - Math.round(25 * z)), Math.min(kEnd, back + Math.round(3 * z)))).filter(v => v > 2).sort((a, b) => a - b);
     const Wb = wb.length ? wb[Math.floor(wb.length * 0.7)] : 0;
-    const thick = Math.max(opt.minThick || 5, (opt.thickK || 0.6) * Wb);
+    const thick = Math.max(opt.minThick || 5 * z, (opt.thickK || 0.6) * Wb);
     // Nose: end of the thick run through the barrel front (short gaps allowed; the barrel line
     // may stop early, e.g. behind an earlier dart, so the run may continue past it).
-    let k = Math.min(kEnd - 1, back + 2);
-    while (k > back - 20 && width[k] < thick) k--;
+    let k = Math.min(kEnd - 1, back + Math.round(2 * z));
+    while (k > back - Math.round(20 * z) && width[k] < thick) k--;
     let nose = k - back;
-    if (width[k] >= thick) { let gap = 0; for (let kk = k; kk < kEnd; kk++) { if (width[kk] >= thick) { nose = kk - back; gap = 0; } else if (++gap > (opt.gap || 1)) break; } }
+    if (width[k] >= thick) { let gap = 0; for (let kk = k; kk < kEnd; kk++) { if (width[kk] >= thick) { nose = kk - back; gap = 0; } else if (++gap > (opt.gap || Math.round(z))) break; } }
     else nose = 0;
     const k0 = back + nose;
     // Evidence along the centre line beyond the nose.
@@ -1354,7 +1356,7 @@ input[type=range]{accent-color:var(--cream)}
     for (let s2 = 1; s2 <= S; s2++) {
       const kk = k0 + s2;
       let dark = 0, bright = 0, cnt = 0;
-      near(kk, 1.5, (at) => {
+      near(kk, 1.5 * z, (at) => {
         if (LR[at] < 0) return; cnt++;
         const lr = LR[at], lc = LC[at];
         if (CH[at] > tau && lc < darkK * lr) dark++;                 // point over a brighter background
@@ -1366,7 +1368,7 @@ input[type=range]{accent-color:var(--cream)}
       else if (bright) l = -0.5;
       lv.push(l);
     }
-    const sig = Math.max(3, (opt.sigma || 0.4) * Lp);
+    const sig = Math.max(3 * z, (opt.sigma || 0.4) * Lp);
     const lam = opt.lambda != null ? opt.lambda : 1;
     let bestL = 0, bestSc = -Infinity, acc = 0;
     for (let L = 0; L <= S; L++) {
@@ -1382,6 +1384,24 @@ input[type=range]{accent-color:var(--cream)}
     return { tip, ext: tl, nose, nosePt: [ox + ux * nose + nx * c, oy + uy * nose + ny * c], pointPx: bestL, byPrior,
       info: { nose, L: bestL, Lp: +Lp.toFixed(1), Wb, c: +c.toFixed(1), seen },
       profile: opt.debug ? { back, lv, width: Array.from(width.subarray(0, kEnd)) } : null };
+  }
+
+  // The tip again on a sharper crop (full video resolution) around the dart, once per throw.
+  // ref/cur: RGBA crops cw x ch of the still picture, z times the processing picture; d.tip (barrel
+  // front) and d.axis in crop px. The small leftover shift between the two crops is undone first.
+  function refineTipHi(ref, cur, cw, ch, gain, d, z, opt) {
+    const hw = cw >> 1, hh = ch >> 1, m = new Uint8Array(hw * hh);
+    const r0 = (opt.pxPerMm || 1.2) * 25 / 2;       // leave the dart itself out of the shift estimate
+    for (let y = 0; y < hh; y++) for (let x = 0; x < hw; x++) {
+      const dx = 2 * x - d.tip[0], dy = 2 * y - d.tip[1];
+      const along = dx * d.axis[0] + dy * d.axis[1], across = Math.abs(-dx * d.axis[1] + dy * d.axis[0]);
+      m[y * hw + x] = (across < 12 * z && along < r0 * 2 + 10 * z) ? 0 : 1;
+    }
+    const sh = estimateShift(ref, cur, cw, ch, m);
+    const refA = Math.hypot(sh[0], sh[1]) >= 0.2 ? shiftRGBA(ref, cw, ch, sh[0], sh[1]) : ref;
+    const R = locateTip(refA, cur, cw, ch, gain, d, Object.assign({}, opt, { z }));
+    R.shift = sh;
+    return R;
   }
 
   // Mean colour difference between two frames over given pixel indices.
@@ -1462,7 +1482,7 @@ input[type=range]{accent-color:var(--cream)}
     this.lastMask = null;
   }
   Detector.prototype.reset = function (frame) {
-    this.ref = Uint8ClampedArray.from(frame);
+    this.ref = Uint8ClampedArray.from(frame); this.refVer = (this.refVer || 0) + 1;
     this.turnRef = Uint8ClampedArray.from(frame);
     this.prev = Uint8ClampedArray.from(frame);
     this.prevHalf = halfRes(frame, this.w, this.h, null);
@@ -1472,7 +1492,7 @@ input[type=range]{accent-color:var(--cream)}
   // (used after a dart was entered by hand).
   Detector.prototype.rebase = function (frame) {
     if (!this.ref) { this.reset(frame); return; }
-    this.ref.set(frame); this.prev.set(frame);
+    this.ref.set(frame); this.refVer++; this.prev.set(frame);
     this.dartsInTurn = Math.max(this.dartsInTurn, 1);
   };
   Detector.prototype.changeCount = function (a, b) {
@@ -1543,7 +1563,7 @@ input[type=range]{accent-color:var(--cream)}
     const A = th.robust;
     this.diag.A = A; this.diag.noise = this.noise;
     if (A < this.lim.noise) {
-      if (quiet) { this.ref.set(frame); if (this.dartsInTurn === 0) this.turnRef.set(frame); }
+      if (quiet) { this.ref.set(frame); this.refVer++; if (this.dartsInTurn === 0) this.turnRef.set(frame); }
       this.blockedSince = 0;
       return [];
     }
@@ -1557,7 +1577,7 @@ input[type=range]{accent-color:var(--cream)}
       // Someone was at the board: darts were pulled out (maybe not all) or adjusted.
       this.sawBlock = false;
       if (this.dartsInTurn > 0 || this.turnFull) { this.reset(frame); return [{ type: 'takeout', partial: true }]; }
-      this.ref.set(frame); this.turnRef.set(frame); this.prev.set(frame);
+      this.ref.set(frame); this.refVer++; this.turnRef.set(frame); this.prev.set(frame);
       return [{ type: 'rebased' }];
     }
     if (this.turnFull) return [{ type: 'ignored' }];
@@ -1576,14 +1596,14 @@ input[type=range]{accent-color:var(--cream)}
     const bt0 = applyH(this.Hpi, det.tip[0], det.tip[1]);
     // A "dart" far off the board (r > 230 mm) that is only part of the change is an edge of a knock.
     if (share < this.camMovedShare || (share < 0.5 && Math.hypot(bt0[0], bt0[1]) > 230)) {
-      this.ref.set(frame); this.prev.set(frame);
+      this.ref.set(frame); this.refVer++; this.prev.set(frame);
       if (this.dartsInTurn === 0) this.turnRef.set(frame);
       return [{ type: 'shifted', share }];
     }
     if (this.dartsInTurn > 0) {
       const toStart = regionDiff(frame, this.aligned(this.turnRef, frame, 'alignT'), det.pixels);
       const toRef = regionDiff(frame, refA, det.pixels);
-      if (toStart < 0.45 * toRef) { this.ref.set(frame); return [{ type: 'removed' }]; }
+      if (toStart < 0.45 * toRef) { this.ref.set(frame); this.refVer++; return [{ type: 'removed' }]; }
     }
     // Find where the point enters the board, beyond the barrel.
     const gain = this.lastGain || 1;
@@ -1617,7 +1637,7 @@ input[type=range]{accent-color:var(--cream)}
     markOcclusion(this.occWide, det.pixels, this.w, this.h, Math.max(3, Math.round(4 * this.ppm)));
     // refA may be this.ref itself (no alignment needed): keep the picture before the throw for the crops.
     const refBefore = refA === this.ref ? Uint8ClampedArray.from(refA) : refA;
-    this.ref.set(frame);
+    this.ref.set(frame); this.refVer++;
     this.dartsInTurn++;
     const tipRaw = det.tip.slice();
     const tip = this.applyOffset(det);
@@ -2523,7 +2543,7 @@ input[type=range]{accent-color:var(--cream)}
     SECTORS, RING, CAL_ANGLES, CAL_LABELS, calBoardPoints,
     makeDart, scoreAt, wireDistance,
     homography, applyH, invertH, mulH, localScale, makeCalibration, boardOutline,
-    buildRoi, meanLum, diffMap, cameraFromH, camProject, heightStep, locateTip, envelopeDist, thresholdMap, quickChange, motionMeasure, motionMeasureHalf, halfRes, estimateShift, shiftRGBA, components, findDart, extendTip, regionDiff, markOcclusion, Detector,
+    buildRoi, meanLum, diffMap, cameraFromH, camProject, heightStep, locateTip, refineTipHi, envelopeDist, thresholdMap, quickChange, motionMeasure, motionMeasureHalf, halfRes, estimateShift, shiftRGBA, components, findDart, extendTip, regionDiff, markOcclusion, Detector,
     autoCalibrate, refineGrid, setRings, classifyColors,
     Tracker, affMul, affInv, affApply, grayOf, warpAffineRGBA,
     evalTurn, createGame, remainingOf, currentView, turnOpen, addDart, setDart, removeDart, commitTurn, undo, playerStats,
@@ -2548,7 +2568,7 @@ const S = {
   pts: null, cal: null, sel: 0,
   proc: null, det: null, frameData: null, resetPending: false, rebasePending: false,
   mode: 'intro', manual: false, camHidden: false,
-  settings: Object.assign({ thr: 60, shadows: true, autoNext: true, voice: true, mask: false, lock: false, diag: false, view: 'board', collect: true, track: true }, store.get('settings', {})),
+  settings: Object.assign({ thr: 60, shadows: true, autoNext: true, voice: true, mask: false, lock: false, diag: false, view: 'board', collect: true, track: true, hiTip: true }, store.get('settings', {})),
   offset: { mm: 0, samples: [] },
   point: Object.assign({ mm: 14, samples: [], max: 25 }, store.get('point', {})),   // max = measured point (25 mm), barrel 40 mm
   game: null, status: 'idle', blockedShown: false, lastProc: 0, maskImg: null, maskCanvas: null
@@ -3085,6 +3105,61 @@ function perfFlush(now) {
   pf.acc = {}; pf.t0 = now;
 }
 
+/* Sharper point: the still picture at full video resolution (up to 2x the processing picture),
+   taken each time the detector takes a new reference; at a throw the same crop of the live video
+   around the dart goes to C.refineTipHi. Once per throw, so detection keeps its speed. */
+function hiZoom() { const P = S.proc; return P ? Math.min(2, 1 / P.s) : 1; }
+// Draw the live video into ctx as the still (processing) picture scaled z, moved by (-ox, -oy).
+function hiDraw(ctx, z, ox, oy) {
+  const P = S.proc, T = S.stab;
+  const Mi = C.affInv(T ? T.M : [1 / P.s, 0, P.x, 0, 1 / P.s, P.y]);
+  setT(ctx, C.affMul([1, 0, -ox, 0, 1, -oy], C.affMul(affS(z), Mi))); ctx.drawImage(S.video, 0, 0); ctx.setTransform(1, 0, 0, 1, 0, 0);
+}
+function hiCaptureRef() {
+  const P = S.proc, z = hiZoom();
+  if (!P || z < 1.3) { S.hi = null; return; }
+  const cw = Math.round(P.pw * z), ch = Math.round(P.ph * z);
+  let H = S.hi;
+  if (!H || H.canvas.width !== cw || H.canvas.height !== ch) {
+    const c = document.createElement('canvas'); c.width = cw; c.height = ch;
+    H = S.hi = { canvas: c, ctx: c.getContext('2d', { willReadFrequently: true }) };
+  }
+  H.z = z; H.det = S.det; H.ver = S.det.refVer;
+  try { hiDraw(H.ctx, z, 0, 0); } catch (err) { S.hi = null; }
+}
+// Find the point again on the sharp crop; keep the first answer when the two disagree a lot.
+function hiRefine(e) {
+  const H = S.hi, d = e.det, D = S.det;
+  // The detector has already taken the picture with this dart as its new reference (refVer + 1).
+  if (!S.settings.hiTip || !H || H.det !== D || H.ver !== D.refVer - 1 || !d.barrelTip || !d.pxPerMm || d.tipBy === 'walk') return;
+  const t0 = performance.now();
+  try {
+    const z = H.z, ppm = d.pxPerMm * z, Lp = (D.pointMm || 14) * ppm;
+    const R = Math.round(40 * z + Math.max(50 * z, 3 * Lp));
+    const bx = d.barrelTip[0] * z, by = d.barrelTip[1] * z;
+    const x0 = Math.max(0, Math.round(bx - R)), y0 = Math.max(0, Math.round(by - R));
+    const x1 = Math.min(H.canvas.width, Math.round(bx + R)), y1 = Math.min(H.canvas.height, Math.round(by + R));
+    const cw = x1 - x0, ch = y1 - y0;
+    if (cw < 40 || ch < 40) return;
+    const ref = H.ctx.getImageData(x0, y0, cw, ch).data;
+    const c = document.createElement('canvas'); c.width = cw; c.height = ch;
+    const cx = c.getContext('2d', { willReadFrequently: true });
+    hiDraw(cx, z, x0, y0);
+    const cur = cx.getImageData(0, 0, cw, ch).data;
+    const thrLow = Math.max(D.pointMin, D.pointK * (D.noise || 0));
+    const r = C.refineTipHi(ref, cur, cw, ch, D.lastGain || 1, { tip: [bx - x0, by - y0], axis: d.axis }, z,
+      { thrLow, pxPerMm: ppm, pointMm: D.pointMm, pointMaxMm: D.pointMaxMm });
+    const tip = [(r.tip[0] + x0) / z, (r.tip[1] + y0) / z], b = C.applyH(D.Hpi, tip[0], tip[1]);
+    const move = Math.hypot(b[0] - e.board[0], b[1] - e.board[1]);
+    d.hi = { tip, lo: d.tip.slice(), by: r.byPrior ? 'prior' : 'seen', move: Math.round(move * 10) / 10, shift: r.shift.map(v => Math.round(v * 100) / 100), z, used: false };
+    if (e.debug) e.debug.hi = d.hi;
+    if (e.debug) e.debug.hiCrop = { x0, y0, w: cw, h: ch, z, ref: Uint8ClampedArray.from(ref), cur: Uint8ClampedArray.from(cur) };
+    if (move > 8 || (r.byPrior && d.tipBy === 'seen' && move > 3)) return;
+    d.hi.used = true;
+    d.tip = tip; d.tipBy = d.hi.by; e.tip = tip.slice(); e.tipRaw = tip.slice(); e.board = b;
+  } catch (err) {} finally { perfAdd('ostry grot', performance.now() - t0); }
+}
+
 function processFrame(now) {
   const P = S.proc;
   if (!P || !S.det || S.video.readyState < 2) return;
@@ -3126,6 +3201,7 @@ function processFrame(now) {
   t = performance.now();
   for (const e of evs) handleEvent(e);
   if (evs.some(e => e.type === 'dart')) perfAdd('obsługa rzutu', performance.now() - t);
+  if (S.settings.hiTip && S.det && (!S.hi || S.hi.det !== S.det || S.hi.ver !== S.det.refVer)) { t = performance.now(); hiCaptureRef(); perfAdd('ostre zdjęcie przed', performance.now() - t); }
   if (S.settings.mask && S.det.lastMask && evs.length) paintMask();
 }
 
@@ -3160,6 +3236,7 @@ function handleEvent(e) {
 
 function onDart(e) {
   if (S.game.winner != null) return;
+  hiRefine(e);
   const sc = C.scoreAt(e.board[0], e.board[1]);
   const tipV = toVideo(e.tip), rawV = toVideo(e.tipRaw);
   const wd = C.wireDistance(e.board[0], e.board[1]);
@@ -3658,7 +3735,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.19k';
+const APP_VERSION = '2026.10.19l';
 const DS = {
   p: null,
   open() {
@@ -3732,7 +3809,9 @@ function harvestTurn(darts) {
         id: d.sid, ts: Date.now(), app: APP_VERSION, kind: D.kind || 'dart', label,
         det: det ? { label: det.label, num: det.num, mult: det.mult, unsure: det.unsure, board: det.board.map(r2), tip: toCrop(det.tip, P, cr), raw: toCrop(det.raw, P, cr),
           seen: pc(D.tip), barrel: pc(D.barrel), axis: D.axis, ext: D.ext, area: D.area, hidden: D.hidden, nearOcc: D.nearOcc,
-          nose: pc(D.nose), pointPx: D.pointPx, pxPerMm: D.pxPerMm != null ? r2(D.pxPerMm) : null, tipBy: D.tipBy } : null,
+          nose: pc(D.nose), pointPx: D.pointPx, pxPerMm: D.pxPerMm != null ? r2(D.pxPerMm) : null, tipBy: D.tipBy,
+          hi: D.hi ? { tip: pc(D.hi.tip), lo: pc(D.hi.lo), by: D.hi.by, move: D.hi.move, shift: D.hi.shift, used: D.hi.used } : null } : null,
+        hiCrop: D.hiCrop ? { x0: D.hiCrop.x0, y0: D.hiCrop.y0, w: D.hiCrop.w, h: D.hiCrop.h, z: D.hiCrop.z, note: 'hi px = proc px * z - x0/y0' } : null,
         crop: { x0: D.x0, y0: D.y0, k: cr.k },
         proc: P, cal: cal ? { H: cal.H, viewAngle: r2(cal.viewAngle), side: cal.side, pxPerMm: r2(cal.pxPerMm) } : null,
         video: [S.vw, S.vh], noise: D.noise, shift: D.shift, dartsInTurn: D.dartsInTurn, pointMm: r2(D.pointMm || S.point.mm),
@@ -3752,6 +3831,10 @@ async function saveSample(rec, D) {
   const [a, b] = await Promise.all([rgbaToJpeg(D.ref, D.w, D.h, D.k), rgbaToJpeg(D.cur, D.w, D.h, D.k)]);
   if (!a || !b) return;
   rec.ref = a.blob; rec.cur = b.blob; rec.crop.w = a.w; rec.crop.h = a.h; rec.bytes = a.blob.size + b.blob.size;
+  if (D.hiCrop) {
+    const [ha, hb] = await Promise.all([rgbaToJpeg(D.hiCrop.ref, D.hiCrop.w, D.hiCrop.h), rgbaToJpeg(D.hiCrop.cur, D.hiCrop.w, D.hiCrop.h)]);
+    if (ha && hb) { rec.hiRef = ha.blob; rec.hiCur = hb.blob; rec.bytes += ha.blob.size + hb.blob.size; }
+  }
   await DS.put(rec);
   S.dsCount++; syncAiPill();
   if (S.dsCount % 100 === 0) toast('Zebrano ' + rzut(S.dsCount) + ' do nauki AI.', 3500);
@@ -3822,10 +3905,15 @@ async function exportDataset() {
     const files = [], meta = [];
     for (let k = 0; k < recs.length; k++) {
       const r = recs[k], base = 'samples/' + String(k + 1).padStart(5, '0');
-      const m = Object.assign({}, r); delete m.ref; delete m.cur;
+      const m = Object.assign({}, r); delete m.ref; delete m.cur; delete m.hiRef; delete m.hiCur;
       m.files = { ref: base + '_ref.jpg', cur: base + '_cur.jpg' };
       files.push({ name: m.files.ref, data: new Uint8Array(await r.ref.arrayBuffer()) });
       files.push({ name: m.files.cur, data: new Uint8Array(await r.cur.arrayBuffer()) });
+      if (r.hiRef && r.hiCur) {
+        m.files.hiRef = base + '_hiref.jpg'; m.files.hiCur = base + '_hicur.jpg';
+        files.push({ name: m.files.hiRef, data: new Uint8Array(await r.hiRef.arrayBuffer()) });
+        files.push({ name: m.files.hiCur, data: new Uint8Array(await r.hiCur.arrayBuffer()) });
+      }
       meta.push(m);
     }
     const manifest = { app: APP_VERSION, exported: new Date().toISOString(), ua: navigator.userAgent, count: meta.length,
@@ -3850,6 +3938,7 @@ $('#opt-track').addEventListener('change', (e) => {
   S.settings.track = e.target.checked; saveSettings();
   if (S.proc) { setupStab(); S.resetPending = true; }
 });
+$('#opt-hitip').addEventListener('change', (e) => { S.settings.hiTip = e.target.checked; saveSettings(); if (!e.target.checked) S.hi = null; });
 $('#opt-collect').addEventListener('change', (e) => { S.settings.collect = e.target.checked; saveSettings(); syncAiPill(); });
 // What the camera really gives (the browser may give less than asked) and how fast play runs.
 function camInfo() {
@@ -3989,6 +4078,7 @@ function openSettings() {
   $('#opt-off').textContent = S.point.mm.toFixed(1) + ' mm' + (S.point.samples.length ? ' (' + S.point.samples.length + ' popr.)' : '');
   $('#opt-collect').checked = !!S.settings.collect;
   $('#opt-track').checked = !!S.settings.track;
+  $('#opt-hitip').checked = S.settings.hiTip !== false;
   $('#opt-4k').checked = !!S.settings.cam4k; camInfo();
   refreshDsInfo();
   openSheet('#sh-set');
@@ -4014,7 +4104,7 @@ renderGame();
 showScreen('intro');
 
 // Hooks for automated testing.
-window.OkoTarczy = { S, C, DS, stabD, gridShot, setPoints(p) { S.pts = p.map(q => q.slice()); updateReadout(); }, finishCalibration() { $('#cal-done').click(); }, startCamera, screenMap, exportDataset, dsIdle: () => dsChain, version: APP_VERSION };
+window.OkoTarczy = { S, C, DS, stabD, gridShot, hiRefine, hiCaptureRef, setPoints(p) { S.pts = p.map(q => q.slice()); updateReadout(); }, finishCalibration() { $('#cal-done').click(); }, startCamera, screenMap, exportDataset, dsIdle: () => dsChain, version: APP_VERSION };
 })();
 </script>
 </body>
