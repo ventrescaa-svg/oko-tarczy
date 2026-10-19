@@ -2686,6 +2686,8 @@ function gridShot(tag, info) {
       const base = 'oko-siatka-' + stamp + '-' + tag;
       S.gridShots.push({ tag, files: [new File([b], base + '.jpg', { type: 'image/jpeg' }), new File([a], base + '-bez.jpg', { type: 'image/jpeg' })] });
       while (S.gridShots.length > 4) S.gridShots.shift();
+      // Short notice; after calibration it waits for the 'found the board' message to go away.
+      setTimeout(() => toast('Zrobiłem zrzut siatki (' + (tag === 'gra' ? 'gra' : 'kalibracja') + '). Wyślesz go z Menu.', 2500), tag === 'gra' ? 0 : 4300);
     }).catch(() => {});
   } catch (e) {}
 }
@@ -3399,7 +3401,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.19';
+const APP_VERSION = '2026.10.19b';
 const DS = {
   p: null,
   open() {
