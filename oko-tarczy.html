@@ -417,6 +417,11 @@ input[type=range]{accent-color:var(--cream)}
     <label class="toggle"><span>Kamera 4K (więcej szczegółów, większe obciążenie)</span><input type="checkbox" id="opt-4k"></label>
     <p class="hint" id="cam-info"></p>
     <label class="toggle"><span>Blokuj ekspozycję i ostrość aparatu</span><input type="checkbox" id="opt-lock"></label>
+    <div class="field" id="ev-row">
+      <label for="opt-ev">Jaśniejszy obraz z kamery (czarny grot): <b id="opt-ev-v" class="num">0</b> <span class="hint">(0 = bez zmian)</span></label>
+      <input type="range" id="opt-ev" min="0" max="3" step="1" value="0">
+      <p class="hint" id="ev-info">Próbna funkcja: rozjaśnia obraz samą kamerą, żeby w czerni było więcej szczegółów. Jasne pola się przepalą, to nie szkodzi. Po zmianie poczekaj chwilę na ustabilizowanie obrazu.</p>
+    </div>
     <label class="toggle"><span>Pokaż, co widzi wykrywanie (różowe)</span><input type="checkbox" id="opt-mask"></label>
     <label class="toggle"><span>Pokaż diagnostykę (liczby na obrazie)</span><input type="checkbox" id="opt-diag"></label>
     <div class="field">
@@ -2680,7 +2685,7 @@ const S = {
   pts: null, cal: null, sel: 0,
   proc: null, det: null, frameData: null, resetPending: false, rebasePending: false,
   mode: 'intro', manual: false, camHidden: false,
-  settings: Object.assign({ thr: 60, shadows: true, autoNext: true, voice: true, mask: false, lock: false, diag: false, view: 'board', collect: true, track: true, hiTip: true }, store.get('settings', {})),
+  settings: Object.assign({ thr: 60, shadows: true, autoNext: true, voice: true, mask: false, lock: false, diag: false, view: 'board', collect: true, track: true, hiTip: true, ev: 0 }, store.get('settings', {})),
   offset: { mm: 0, samples: [] },
   point: Object.assign({ mm: 14, samples: [], max: 25 }, store.get('point', {})),   // max = measured point (25 mm), barrel 40 mm
   game: null, status: 'idle', blockedShown: false, lastProc: 0, maskImg: null, maskCanvas: null
@@ -2772,6 +2777,8 @@ async function startCamera() {
     await new Promise(r => { if (S.video.videoWidth) r(); else S.video.onloadedmetadata = () => r(); });
     S.vw = S.video.videoWidth; S.vh = S.video.videoHeight;
     setupZoom();
+    S.evManual = false;   // a new camera starts in automatic exposure
+    if (S.settings.ev > 0) applyEv();
     keepAwake();
     return true;
   } catch (e) {
@@ -2820,6 +2827,42 @@ async function applyLocks(on) {
     if (caps.whiteBalanceMode && caps.whiteBalanceMode.includes('continuous')) await tryC({ whiteBalanceMode: 'continuous' }, 'balans bieli');
   }
   return done.length ? done.join(', ') : 'brak';
+}
+
+// A brighter picture from the camera itself (exposure compensation, else a longer exposure time):
+// a black point on a black field sits at the very bottom of the brightness range, where the
+// picture has little detail left. Cream fields clip, which does not matter for the point.
+async function applyEv() {
+  const info = $('#ev-info');
+  const say = (t) => { if (info) info.textContent = t; return t; };
+  if (!S.track || !S.track.getCapabilities) return say('Kamera wyłączona.');
+  const ev = Math.max(0, +S.settings.ev || 0), caps = S.track.getCapabilities();
+  const wait = (ms) => new Promise(r => setTimeout(r, ms));
+  const cmp = caps.exposureCompensation;
+  let res = null;
+  try {
+    if (S.settings.lock) await applyLocks(false);   // start again from the automatic exposure
+    if (cmp && cmp.max > cmp.min) {
+      const v = Math.max(cmp.min, Math.min(cmp.max, ev));
+      await S.track.applyConstraints({ advanced: [{ exposureCompensation: v }] });
+      res = 'kompensacja ekspozycji ' + (S.track.getSettings().exposureCompensation != null ? S.track.getSettings().exposureCompensation : v) + ' (zakres ' + cmp.min + '…' + cmp.max + ')';
+    } else if (caps.exposureTime && caps.exposureMode && caps.exposureMode.includes('manual')) {
+      if (ev > 0) {
+        await wait(600);
+        if (!S.evManual) S.evBase = S.track.getSettings().exposureTime;   // the automatic exposure the boost starts from
+        const t0 = S.evBase;
+        if (t0) {
+          const t = Math.max(caps.exposureTime.min, Math.min(caps.exposureTime.max, t0 * Math.pow(2, ev)));
+          await S.track.applyConstraints({ advanced: [{ exposureMode: 'manual', exposureTime: t }] });
+          S.evManual = true; res = 'czas naświetlania ×' + (t / t0).toFixed(1);
+        }
+      } else if (S.evManual && caps.exposureMode.includes('continuous')) {
+        await S.track.applyConstraints({ advanced: [{ exposureMode: 'continuous' }] }); S.evManual = false; res = 'bez zmian';
+      }
+    }
+    if (S.settings.lock && !S.evManual) { await wait(1200); await applyLocks(true); }
+  } catch (e) { logNote('jasność kamery: ' + (e && e.message || e)); }
+  return say(res ? 'Ustawiono: ' + res + '.' : (ev > 0 ? 'Ta kamera nie pozwala zmienić jasności z przeglądarki.' : 'Bez zmian.'));
 }
 
 let wakeLock = null;
@@ -3991,7 +4034,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.19v';
+const APP_VERSION = '2026.10.19w';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
@@ -4355,6 +4398,7 @@ function openSettings() {
   $('#opt-track').checked = !!S.settings.track;
   $('#opt-hitip').checked = S.settings.hiTip !== false;
   $('#opt-4k').checked = !!S.settings.cam4k; camInfo();
+  $('#opt-ev').value = S.settings.ev || 0; $('#opt-ev-v').textContent = S.settings.ev || 0;
   refreshDsInfo();
   openSheet('#sh-set');
 }
@@ -4368,6 +4412,13 @@ $('#opt-lock').addEventListener('change', async (e) => {
   S.settings.lock = e.target.checked; saveSettings();
   const res = await applyLocks(S.settings.lock);
   toast(S.settings.lock ? 'Zablokowano: ' + res : 'Automatyka aparatu włączona');
+});
+$('#opt-ev').addEventListener('change', async (e) => {
+  S.settings.ev = +e.target.value; $('#opt-ev-v').textContent = e.target.value; saveSettings();
+  $('#ev-info').textContent = 'Zmieniam…';
+  const t = await applyEv();
+  setTimeout(() => { if (S.det) S.resetPending = true; }, 2500);   // the picture changed brightness: take a new reference once it has settled
+  toast(t, 3500);
 });
 $('#opt-off-reset').addEventListener('click', () => { S.point = { mm: 14, samples: [], max: S.point.max || 25 }; store.set('point', S.point); if (S.det) S.det.pointMm = 14; $('#opt-off').textContent = '14.0 mm'; });
 $('#opt-voice-test').addEventListener('click', () => { const was = S.settings.voice; S.settings.voice = true; speak('potrójne 20. Razem 180'); S.settings.voice = was; });

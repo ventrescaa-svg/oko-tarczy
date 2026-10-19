@@ -132,7 +132,7 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - Wywołane w `Detector.analyze` po `locateTip`, a w aplikacji jeszcze raz po `hiRefine` (ostry obraz też potrafi „zobaczyć” fałszywy grot na czarnym). Wyłączenie: `cfg.shadowTip = false` (test: `NOSHADOW=1`).
 - Wynik na 60 rzutach (`test_rzutow.js`): bez ostrego grotu dobre pole 39 → 43, poprawiane stuknięciem 16/23 → 20/23 (poprawione rzuty 13, 23, 57, 60, żadnego nie zepsuło); z `HI=1` 40 → 42, 18/23 → 20/23, z szumem 4: 42–43.
 - Ograniczenie: cień musi być gdzieś widoczny. Gdy cały leży na czarnym polu, nic się nie zmienia (zostaje zgadywanie z długości).
-- Nie sprawdzone: ekspozycja kamery (`exposureCompensation` przez `applyConstraints`) jako sposób na podniesienie czerni.
+- Od 2026.10.19w Ustawienia wykrywania, „Jaśniejszy obraz z kamery” (`S.settings.ev` 0–3, `applyEv`): kompensacja ekspozycji aparatu (`exposureCompensation`), a gdy jej nie ma, ręczny czas naświetlania × 2^ev (z auto-wartości `S.evBase`). Jasne pola się przepalają, w czerni jest więcej szczegółów. Funkcja próbna, domyślnie 0 (nic się nie zmienia); po zmianie nowe `ref` po 2,5 s. Przetestowane tylko na atrapie kamery Chromium (ścieżka z czasem naświetlania); na S26 nie wiadomo, co przeglądarka udostępnia (komunikat pod suwakiem to mówi). Nie sprawdzone, czy pomaga czarnemu grotowi.
 
 ## Okno „Popraw rzut”: jasność, lupa, siatka (od 2026.10.19u)
 - Piotr: czarny grot na czarnym polu jest prawie niewidoczny, a on sam ma ocenić miejsce wbicia na powiększeniu.
