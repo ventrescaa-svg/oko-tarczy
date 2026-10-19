@@ -2857,8 +2857,14 @@ function gridShot(tag, info) {
     plain.then(() => {
       drawBoard(x, H, (q) => q, { color: 'rgba(0,255,255,.8)', width: 1.4, halo: false });
       x.font = '600 28px sans-serif'; x.textBaseline = 'top';
-      x.fillStyle = 'rgba(0,0,0,.6)'; x.fillRect(0, 0, c.width, 44);
-      x.fillStyle = '#fff'; x.fillText(head, 12, 8);
+      // wrap the info into as many lines as the picture width needs
+      const lines = [''];
+      for (const word of head.split('  ')) {
+        const t = lines[lines.length - 1] ? lines[lines.length - 1] + '  ' + word : word;
+        if (x.measureText(t).width > c.width - 24 && lines[lines.length - 1]) lines.push(word); else lines[lines.length - 1] = t;
+      }
+      x.fillStyle = 'rgba(0,0,0,.6)'; x.fillRect(0, 0, c.width, 10 + 36 * lines.length);
+      x.fillStyle = '#fff'; lines.forEach((l, i) => x.fillText(l, 12, 8 + 36 * i));
       return Promise.all([plain, new Promise(r => c.toBlob(r, 'image/jpeg', 0.92))]);
     }).then(([a, b]) => {
       if (!a || !b) return;
@@ -3580,7 +3586,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.19e';
+const APP_VERSION = '2026.10.19f';
 const DS = {
   p: null,
   open() {
