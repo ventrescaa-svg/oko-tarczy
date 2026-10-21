@@ -1,4 +1,4 @@
-# Oko Tarczy – kontekst projektu (stan na 2026-10-19)
+# Oko Tarczy – kontekst projektu (stan na 2026-10-21)
 
 Aplikacja do automatycznego liczenia punktów w darta (501/301/701) kamerą telefonu, w stylu Dartsmind.
 Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej tarczy i zgłasza wyniki.
@@ -133,6 +133,21 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - Wynik na 60 rzutach (`test_rzutow.js`): bez ostrego grotu dobre pole 39 → 43, poprawiane stuknięciem 16/23 → 20/23 (poprawione rzuty 13, 23, 57, 60, żadnego nie zepsuło); z `HI=1` 40 → 42, 18/23 → 20/23, z szumem 4: 42–43.
 - Ograniczenie: cień musi być gdzieś widoczny. Gdy cały leży na czarnym polu, nic się nie zmienia (zostaje zgadywanie z długości).
 - Od 2026.10.19w Ustawienia wykrywania, „Jaśniejszy obraz z kamery” (`S.settings.ev` 0–3, `applyEv`): kompensacja ekspozycji aparatu (`exposureCompensation`), a gdy jej nie ma, ręczny czas naświetlania × 2^ev (z auto-wartości `S.evBase`). Jasne pola się przepalają, w czerni jest więcej szczegółów. Funkcja próbna, domyślnie 0 (nic się nie zmienia); po zmianie nowe `ref` po 2,5 s. Przetestowane tylko na atrapie kamery Chromium (ścieżka z czasem naświetlania); na S26 nie wiadomo, co przeglądarka udostępnia (komunikat pod suwakiem to mówi). Nie sprawdzone, czy pomaga czarnemu grotowi.
+
+## Eksport z 2026-10-21 i wersja 2026.10.19x
+- Eksport `oko-tarczy-dane-20261021-1837.zip`: 233 próbki (108 z wersji 19w, id 126–233; reszta to stare próbki). Odtworzenie w scratchpadzie jako `rz4`.
+  Na żywo 19w: grot z cienia zadziałał 8 razy na 108. Jedna tura (id 190–192, 16:21) z „Jaśniejszym obrazem”: 24–50% kadru przepalone, potem Piotr wrócił do 0.
+- Rodzaj błędu A (zły obiekt): długi pionowy cień rzutki bywa największą składową (213) albo przechodzi przez bramkę kierunku z 19t (216). Od 19x `findDart` przed wyborem `main`
+  odrzuca składowe wydłużone (≥ 3, `crossElong`) leżące pod kątem > 55° (`crossDeg`) do przewidywanej osi rzutki (`axisAt` w ich środku), o ile coś zostaje.
+  Zgubione przy tym w teście tylko „rzuty” bez rzutki (ręka, przesunięty kadr: 80, 119, 78 dają teraz brak rzutki) i 93 (17 → 3, grot na drucie).
+- Rodzaj błędu B (grot za krótki): kreska cienia była odrzucana, bo jej środek leżał > 40 px od przecięcia z osią (długa kreska). Od 19x `shadowLine` liczy odstęp od bliższego końca kreski: `gap = dist − len/2` ≤ 35 i `dist` ≤ 100, wybiera najmniejszy `gap`.
+- Wynik (`test_rzutow.js`, HI=1): `rz4` dobre pole 158 → 164, poprawiane stuknięciem 47/79 → 54/79; bez HI 154 → 161; z NOISE=4 (ziarna 1–3) 161/156/158 → 163/160/163.
+  `rz3` (60 rzutów z 21:26): HI 42 → 43, bez HI 43 → 42 (rzut 28: wykluczona kreska cienia trochę zmieniła oś, grot przeszedł z `seen` na `prior`), z szumem 43/42/42 → 43/42/43.
+  Sztuczne rzuty (`sztuczne_rzuty.js`-podobny `synth.js`, 60 rzutów) bez zmian: 54/57.
+- Sprawdzone: dla grota `prior` cień nadal nie jest lepszy (mediana błędu 2,3–2,5 px wobec 3,6–5,1 px), dla `seen` jest (1,7–2,4 wobec 3,7–5,9 px), więc reguła z 19v zostaje.
+- Odrzucony pomysł: minimalna długość całej rzutki (od końca lotki do grota w mm wysokości, mediana ok. 131, IQR 125–137). Wiele dobrych rzutów ma krótszą (lotka zasłonięta, rzutka pochylona), więc ryzyko większe niż zysk.
+- Nadal źle (id ≥ 126): srebrna baryłka na kremowym polu nie trafia do maski (wygląda jak cień), więc koniec baryłki jest za wcześnie i grot za krótki o 20–65 px (146, 163, 187, 201, 203, 207);
+  grot za krótki o 8–10 px na czarnym (149, 156, 176, 189); ostry grot (HI) psuje 132, 171, 215, a poprawia 128, 131, 165, 175, 220, 224.
 
 ## Okno „Popraw rzut”: jasność, lupa, siatka (od 2026.10.19u)
 - Piotr: czarny grot na czarnym polu jest prawie niewidoczny, a on sam ma ocenić miejsce wbicia na powiększeniu.

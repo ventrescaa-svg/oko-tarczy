@@ -1036,6 +1036,28 @@ input[type=range]{accent-color:var(--cream)}
       });
     }
     if (!comps.length) return null;
+    if (opts.axisAt && comps.length > 1) {
+      // A long thin piece lying across the expected dart direction (> 55 deg) is the dart's cast
+      // shadow running down the board, not the dart; it can even be the biggest change. Leave such
+      // pieces out before choosing the main one.
+      const cross = new Set(), L0 = cc.labels;
+      for (const c of comps.slice(0, 12)) {
+        let sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0, k = 0;
+        for (let y = c.miny; y <= c.maxy; y++) for (let x = c.minx; x <= c.maxx; x++) {
+          if (L0[y * w + x] !== c.id) continue;
+          sx += x; sy += y; sxx += x * x; syy += y * y; sxy += x * y; k++;
+        }
+        const mx = sx / k, my = sy / k, cxx = sxx / k - mx * mx, cyy = syy / k - my * my, cxy = sxy / k - mx * my;
+        const r = Math.hypot((cxx - cyy) / 2, cxy), e1 = (cxx + cyy) / 2 + r, e2 = Math.max((cxx + cyy) / 2 - r, 0.01);
+        if (e1 / e2 < (opts.crossElong || 3) ** 2) continue;
+        const th = opts.axisAt(mx, my);
+        if (th == null) continue;
+        let dev = Math.abs((((0.5 * Math.atan2(2 * cxy, cxx - cyy) - th) * 180 / Math.PI) % 180 + 180) % 180);
+        if (dev > 90) dev = 180 - dev;
+        if (dev > (opts.crossDeg || 55)) cross.add(c);
+      }
+      if (cross.size && cross.size < comps.length) comps = comps.filter(c => !cross.has(c));
+    }
     const main = comps[0];
     // Candidate pieces near the biggest change: a dart often splits into flight, shaft and
     // barrel when a part matches the board colour or hides behind an earlier dart.
@@ -1370,8 +1392,10 @@ input[type=range]{accent-color:var(--cream)}
       const t = cr([mx - bt[0], my - bt[1]], [ux, uy]) / den;
       if (!(t > -8 && t < 32)) continue;
       const dist = Math.hypot(bt[0] + t * ax[0] - mx, bt[1] + t * ax[1] - my);
-      if (dist > 40) continue;                                        // the streak must start near the point
-      if (!best || dist < best.dist) best = { t, dist, len, ang: Math.acos(cosA) * 180 / Math.PI, area: n };
+      // the streak must start near the point: its near end, not its middle (a long streak runs far)
+      const gap = Math.max(0, dist - len / 2);
+      if (gap > 35 || dist > 100) continue;
+      if (!best || gap < best.gap) best = { t, dist, gap, len, ang: Math.acos(cosA) * 180 / Math.PI, area: n };
     }
     return best;
   }
@@ -4034,7 +4058,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.19w';
+const APP_VERSION = '2026.10.19x';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
