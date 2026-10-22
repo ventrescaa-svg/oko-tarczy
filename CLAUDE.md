@@ -33,8 +33,8 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
    - Limit: `pointMaxMm` = 25 (zmierzony grot).
    - `det.tipBy` = `seen` albo `prior` (zgadnięty, czarne na czarnym). Tip `prior` blisko drutu (< 2,5 mm) daje rzut „niepewny” (przerywana ramka).
 4. Długość grota uczy się z poprawek stuknięciem: `learnPoint`, `localStorage` `point`, mediana z 15, w zakresie 8..23 mm.
-   Stara „Korekta grota” (`offsetMm`) jest wyłączona: przesuwała wszystko o stałą liczbę mm i pogarszała wyniki.
-5. Fallback `tipModel:'walk'` = stare `extendTip`.
+   Stara „Korekta grota” (`offsetMm`) przesuwała wszystko o stałą liczbę mm i pogarszała wyniki; usunięta w 19z.
+5. Gdy `locateTip` rzuci wyjątkiem, grotem zostaje przód baryłki (`tipBy` = `prior`). Stare `extendTip` (`tipModel:'walk'`) usunięte w 19z.
 
 ## Nauka AI (zbieranie danych)
 - Każdy rzut z kamery zapisuje się w IndexedDB jako wycinek przed i po rzucie oraz wynik ostateczny
@@ -161,6 +161,12 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - Na tych danych ostry grot nic już nie daje (bez HI 234, z HI 233); zostaje włączony, bo na sztucznych rzutach pomaga.
 - Nadal źle w nowych: 284 (grot przy drucie; 251 i 260 tylko z HI), 286 i 292 (cień lotki jako duża plama wybrany zamiast rzutki, a prawdziwa rzutka jest poza wycinkiem próbki, więc nie da się tego odtworzyć), 261 (etykieta `auto` 5 jest prawdopodobnie zła, rzutka wisi poza podwójną).
 
+## Porządki w kodzie (2026.10.19z)
+- Usunięte nieużywane funkcje rdzenia: `boardOutline`, `quickChange`, `envelopeDist2`, `motionMeasure` (zastąpione `motionMeasureHalf`), `warpAffineRGBA` (aplikacja używa canvasa), `lim.motion`.
+- Usunięte stare `extendTip` z `tipModel:'walk'` i `offsetMm`/`applyOffset` (oraz tryby `walk`/`old` w `test_rzutow.js`).
+- Usunięty przycisk „Zapisz obraz do analizy” w oknie „Popraw rzut” (`exportDebug`, PNG jednego rzutu): eksport Nauka AI (ZIP) ma to samo i więcej.
+- Sprawdzone: `test_rzutow.js` na `rz5` i `rz3` (z HI i bez) daje identyczne listy jak przed porządkami; Playwright t17/t18/t21 bez błędów.
+
 ## Okno „Popraw rzut”: jasność, lupa, siatka (od 2026.10.19u)
 - Piotr: czarny grot na czarnym polu jest prawie niewidoczny, a on sam ma ocenić miejsce wbicia na powiększeniu.
 - Nad obrazem trzy przyciski: „Jasność 0/1/2” (`brightenDark`: ciemne piksele < 90 jasności rozciągane na pełny zakres, od 2. do 92. lub 70. percentyla, więc czarne pole pokazuje fakturę), „Lupa ×1/×2/×3” (okno `fixView` wokół zielonego kółka, a bez niego wokół wykrytego grota; stuknięcie przelicza `fixMap` z uwzględnieniem lupy) i „Siatka wł./wył.” (żółte druty zasłaniały grot).
@@ -177,12 +183,14 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 python3 narzedzia/rozpakuj.py eksport.zip /tmp/rzuty
 node narzedzia/test_rzutow.js oko-tarczy.html /tmp/rzuty          # V=1: lista, NOISE=4: szum kamery
 ```
-Wynik na eksporcie z 2026-10-17 (77 rzutów, 59 da się odtworzyć):
+Wynik na eksporcie z 2026-10-17 (77 rzutów, 59 da się odtworzyć), historycznie (tryby `walk`/`old` testu usunięte w 19z):
 
 | Wersja | Dobre pole | Poprawiane stuknięciem | Z szumem kamery |
 |---|---|---|---|
-| Nowa | 43 | 15/22 | 43–44 |
+| Nowa (17.10) | 43 | 15/22 | 43–44 |
 | Stara (`walk`/`old`) | 41 | 13/22 | 39–41, wynik skacze |
+
+Obecne punkty odniesienia: `rz5` (eksport 2026-10-22, 275 rzutów) i `rz3` (60 rzutów z 2026-10-19), patrz sekcje 19x/19y.
 
 Zawsze porównuj z wersją przed zmianą i sprawdzaj z `NOISE`.
 
