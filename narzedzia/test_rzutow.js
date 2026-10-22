@@ -54,7 +54,9 @@ M.samples.forEach((s, k) => {
     const r = C.refineTipHi(hr, hcur, hc.w, hc.h, det.lastGain || 1, { tip: [bt[0] * z + ox, bt[1] * z + oy], axis: d.det.axis }, z,
       { thrLow, pxPerMm: d.det.pxPerMm * z, pointMm: det.pointMm, pointMaxMm: det.pointMaxMm });
     const tip = [(r.tip[0] - ox) / z, (r.tip[1] - oy) / z], b = C.applyH(det.Hpi, tip[0], tip[1]);
-    if (Math.hypot(b[0] - d.board[0], b[1] - d.board[1]) <= +(process.env.HIMAX || 15)) { d.board = b; d.det.tip = tip; d.det.tipBy = r.byPrior ? 'prior' : 'seen'; }
+    // te same warunki co hiRefine w aplikacji: > 8 mm albo zgadnięty zamiast widzianego o > 3 mm = odrzucony
+    const move = Math.hypot(b[0] - d.board[0], b[1] - d.board[1]), lo = d.det.tipBy;
+    if (move <= +(process.env.HIMAX || 8) && !(r.byPrior && (lo === 'seen' || lo === 'shadow') && move > 3)) { d.board = b; d.det.tip = tip; d.det.tipBy = r.byPrior ? 'prior' : 'seen'; }
     // od 2026.10.19u: cień rzutki poprawia grot "zobaczony" także po ostrym obrazie, tak jak w aplikacji
     if (!process.env.NOSHADOW && C.fuseShadowTip(d.det, 1.1 * det.pointMaxMm * d.det.pxPerMm)) d.board = C.applyH(det.Hpi, d.det.tip[0], d.det.tip[1]);
   }

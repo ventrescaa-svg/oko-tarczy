@@ -149,6 +149,18 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - Nadal źle (id ≥ 126): srebrna baryłka na kremowym polu nie trafia do maski (wygląda jak cień), więc koniec baryłki jest za wcześnie i grot za krótki o 20–65 px (146, 163, 187, 201, 203, 207);
   grot za krótki o 8–10 px na czarnym (149, 156, 176, 189); ostry grot (HI) psuje 132, 171, 215, a poprawia 128, 131, 165, 175, 220, 224.
 
+## Eksport z 2026-10-22 i wersja 2026.10.19y
+- Eksport `oko-tarczy-dane-20261022-2130.zip`: 302 próbki, w tym 69 z 19x (id 234–302, 19:04–19:23); scratchpad `rz5` (zawiera też wszystkie próbki z `rz4`). Na żywo 59/69 dobrze.
+- Najczęstszy błąd: grot o 5–9 px za krótki przy drucie 20/1/5 (`seen`, długość ≈ 0). Profil `locateTip` pokazał, że czarny grot na kremowym polu jest w małej rozdzielczości rozmyty w szare,
+  równomierne przyciemnienie, więc `isShadow` brał go za cień, a cień liczył się jak „nietknięte jasne pole” = „grota tu nie ma”.
+  Od 19y w `locateTip` piksel zmieniony (> tau), ale uznany za cień (`SH`), jest: „grot jest”, gdy ciemniejszy niż `darkK`·przed, inaczej neutralny (`opt.shadowMode`: 0 = stare, 1 = tylko neutralny, 2 = domyślne).
+- `findDart`: próg wydłużenia składowej w poprzek (`crossElong`) 3 → 2,4 (kawałki cienia stykające się z grotem, np. 288, 152, 218). 2,0 psuło 250; kąt 48° zamiast 55° dawał tylko +1, zostało 55°.
+- `test_rzutow.js` z `HI=1` przyjmuje teraz ostry grot na tych samych warunkach co aplikacja (≤ 8 mm, a zgadnięty zamiast widzianego ≤ 3 mm; wcześniej 15 mm bez drugiego warunku). Wyniki HI sprzed tej zmiany nie są porównywalne.
+- Wynik `rz5` (275 rzutów do odtworzenia): HI 224 → 233, poprawiane stuknięciem 77/108 → 84/108; bez HI 220 → 234; nowe (68 do odtworzenia): HI 59 → 62, bez HI 59 → 64.
+  Z NOISE=4 (stary warunek HI) 220/214/222 → 228/225/225. `rz3`: HI 41 → 42, bez HI 42 → 43. Sztuczne rzuty: 54/57 → 54/58.
+- Na tych danych ostry grot nic już nie daje (bez HI 234, z HI 233); zostaje włączony, bo na sztucznych rzutach pomaga.
+- Nadal źle w nowych: 284 (grot przy drucie; 251 i 260 tylko z HI), 286 i 292 (cień lotki jako duża plama wybrany zamiast rzutki, a prawdziwa rzutka jest poza wycinkiem próbki, więc nie da się tego odtworzyć), 261 (etykieta `auto` 5 jest prawdopodobnie zła, rzutka wisi poza podwójną).
+
 ## Okno „Popraw rzut”: jasność, lupa, siatka (od 2026.10.19u)
 - Piotr: czarny grot na czarnym polu jest prawie niewidoczny, a on sam ma ocenić miejsce wbicia na powiększeniu.
 - Nad obrazem trzy przyciski: „Jasność 0/1/2” (`brightenDark`: ciemne piksele < 90 jasności rozciągane na pełny zakres, od 2. do 92. lub 70. percentyla, więc czarne pole pokazuje fakturę), „Lupa ×1/×2/×3” (okno `fixView` wokół zielonego kółka, a bez niego wokół wykrytego grota; stuknięcie przelicza `fixMap` z uwzględnieniem lupy) i „Siatka wł./wył.” (żółte druty zasłaniały grot).

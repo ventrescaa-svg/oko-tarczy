@@ -1037,9 +1037,9 @@ input[type=range]{accent-color:var(--cream)}
     }
     if (!comps.length) return null;
     if (opts.axisAt && comps.length > 1) {
-      // A long thin piece lying across the expected dart direction (> 55 deg) is the dart's cast
-      // shadow running down the board, not the dart; it can even be the biggest change. Leave such
-      // pieces out before choosing the main one.
+      // An elongated piece (2.4 x longer than wide or more) lying across the expected dart direction
+      // (> 55 deg) is the dart's cast shadow running down the board, not the dart; it can even be
+      // the biggest change, or touch the point. Leave such pieces out before choosing the main one.
       const cross = new Set(), L0 = cc.labels;
       for (const c of comps.slice(0, 12)) {
         let sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0, k = 0;
@@ -1049,7 +1049,7 @@ input[type=range]{accent-color:var(--cream)}
         }
         const mx = sx / k, my = sy / k, cxx = sxx / k - mx * mx, cyy = syy / k - my * my, cxy = sxy / k - mx * my;
         const r = Math.hypot((cxx - cyy) / 2, cxy), e1 = (cxx + cyy) / 2 + r, e2 = Math.max((cxx + cyy) / 2 - r, 0.01);
-        if (e1 / e2 < (opts.crossElong || 3) ** 2) continue;
+        if (e1 / e2 < (opts.crossElong || 2.4) ** 2) continue;
         const th = opts.axisAt(mx, my);
         if (th == null) continue;
         let dev = Math.abs((((0.5 * Math.atan2(2 * cxy, cxx - cyy) - th) * 180 / Math.PI) % 180 + 180) % 180);
@@ -1435,6 +1435,9 @@ input[type=range]{accent-color:var(--cream)}
     const ns = back + fwd + 1, no = 2 * W + 1;
     // Per sample: changed (jitter-tolerant, not a shadow), luminance before/after.
     const CH = new Float32Array(ns * no), LR = new Float32Array(ns * no), LC = new Float32Array(ns * no);
+    // Changed pixels that look like a shadow (even darkening): the thin black point over a cream
+    // field blurs into exactly that, so beyond the barrel they must not count as "no point here".
+    const SH = new Uint8Array(ns * no), shMode = opt.shadowMode != null ? opt.shadowMode : 2;
     let kEnd = ns;
     for (let k = 0; k < ns; k++) {
       const s = k - back;
@@ -1450,7 +1453,7 @@ input[type=range]{accent-color:var(--cream)}
         let e = envelopeDist(ref, j, w, cr, cg, cb);
         if (e > 0 && cr < ref[j] && cg < ref[j + 1] && cb < ref[j + 2]) {
           const kr = (cr + 2) / (ref[j] + 2), kg = (cg + 2) / (ref[j + 1] + 2), kb = (cb + 2) / (ref[j + 2] + 2);
-          if (isShadow(kr, kg, kb)) e = 0; // shadow
+          if (isShadow(kr, kg, kb)) { if (e > tau) SH[at] = 1; e = 0; } // shadow
         }
         CH[at] = e;
       }
@@ -1488,6 +1491,7 @@ input[type=range]{accent-color:var(--cream)}
         if (LR[at] < 0) return; cnt++;
         const lr = LR[at], lc = LC[at];
         if (CH[at] > tau && lc < darkK * lr) dark++;                 // point over a brighter background
+        else if (SH[at] && shMode) { if (shMode > 1 && lc < darkK * lr) dark++; } // shadow-like change: point or nothing
         else if (lr > brightMin && CH[at] <= tau) bright++;           // bright background, untouched
       });
       let l = 0;
@@ -4058,7 +4062,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.19x';
+const APP_VERSION = '2026.10.19y';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
