@@ -464,6 +464,15 @@ input[type=range]{accent-color:var(--cream)}
     <label class="toggle"><span>Ignoruj cienie lotek</span><input type="checkbox" id="opt-shadow" checked></label>
     <label class="toggle"><span>Następna tura po wyjęciu lotek</span><input type="checkbox" id="opt-auto" checked></label>
     <label class="toggle"><span>Mów podpowiedź zakończenia (X01)</span><input type="checkbox" id="opt-covoice" checked></label>
+    <label class="toggle"><span>Śmieszne komentarze po turach</span><input type="checkbox" id="opt-fun"></label>
+    <div class="field">
+      <label for="opt-voicename">Głos</label>
+      <select id="opt-voicename" style="min-height:44px;border-radius:10px;border:1px solid var(--line);background:var(--panel-2);padding:0 8px"></select>
+      <label for="opt-rate">Tempo mowy: <b id="opt-rate-v" class="num">1.05</b></label>
+      <input type="range" id="opt-rate" min="0.8" max="1.5" step="0.05" value="1.05">
+      <button id="opt-voice-listen" class="btn" type="button">Posłuchaj</button>
+      <p class="hint" id="voice-info"></p>
+    </div>
     <label class="toggle"><span>Śledź tarczę (chwiejący się statyw)</span><input type="checkbox" id="opt-track" checked></label>
     <label class="toggle"><span>Grot na ostrym obrazie (pełna rozdzielczość)</span><input type="checkbox" id="opt-hitip" checked></label>
     <label class="toggle"><span>Kamera 4K (więcej szczegółów, większe obciążenie)</span><input type="checkbox" id="opt-4k"></label>
@@ -2784,13 +2793,23 @@ S.game = loadGame();
 /* ---------------- Speech ---------------- */
 let voices = [];
 function loadVoices() { try { voices = speechSynthesis.getVoices(); } catch (e) {} }
-if ('speechSynthesis' in window) { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
+if ('speechSynthesis' in window) { loadVoices(); speechSynthesis.onvoiceschanged = () => { loadVoices(); if (!$('#sh-set').hidden) fillVoices(); }; }
+// Polish voices installed on the phone (other engines, e.g. Google, RHVoice, Acapela, show up here too).
+function fillVoices() {
+  const sel = $('#opt-voicename'), pl = voices.filter(v => /^pl/i.test(v.lang));
+  sel.innerHTML = '';
+  const add = (val, txt) => { const o = document.createElement('option'); o.value = val; o.textContent = txt; sel.appendChild(o); };
+  add('', 'Domyślny polski');
+  pl.forEach(v => add(v.voiceURI, v.name + (v.localService ? '' : ' (internet)')));
+  sel.value = pl.some(v => v.voiceURI === S.settings.voiceName) ? S.settings.voiceName : '';
+  $('#voice-info').textContent = pl.length ? 'Polskie głosy w telefonie: ' + pl.length + '. Nowe dochodzą po instalacji innego silnika mowy w Androidzie.' : 'Przeglądarka nie podaje listy głosów; użyty będzie domyślny.';
+}
 function speak(text) {
   if (!S.settings.voice || !('speechSynthesis' in window)) return;
   try {
     const u = new SpeechSynthesisUtterance(text);
-    u.lang = 'pl-PL'; u.rate = 1.05;
-    const v = voices.find(v => /^pl/i.test(v.lang));
+    u.lang = 'pl-PL'; u.rate = S.settings.rate || 1.05;
+    const v = (S.settings.voiceName && voices.find(v => v.voiceURI === S.settings.voiceName)) || voices.find(v => /^pl/i.test(v.lang));
     if (v) u.voice = v;
     speechSynthesis.speak(u);
   } catch (e) {}
@@ -3660,7 +3679,8 @@ function sayRoute(g, rem, left) {
   return route ? route.map(C.sayDart).join(', ') : '';
 }
 // Spoken after a dart: end of turn / game, or the checkout for the darts still in hand.
-function turnSay(v, k) {
+function turnSay(v, k) { const t = turnSayBase(v, k), f = funSay(v, k); return f ? t + '. ' + f : t; }
+function turnSayBase(v, k) {
   const g = S.game, m = C.modeOf(g);
   if (v.state === 'bust') return '. Przerzut';
   if (v.state === 'win' || v.state === 'done') {
@@ -3672,6 +3692,46 @@ function turnSay(v, k) {
   if (m === 'x01' || m === 'score' || m === 'shanghai') return '. Razem ' + v.total;
   if (m === 'bob27') return v.total < 0 ? '. Minus ' + (-v.total) : '. Plus ' + v.total;
   if (m === 'cricket' && v.marks) return '. ' + v.marks + ' ' + plural(v.marks, 'znacznik', 'znaczniki', 'znaczników');
+  return '';
+}
+// Funny comments after a turn (option "Śmieszne komentarze"): only for notable turns, never the same line twice in a row.
+const FUN = {
+  max: ['Sto osiemdziesiąt! Tarcza prosi o litość.', 'Maksimum! Ktoś tu dzisiaj nie przyszedł się bawić.', 'Nagraj to, bo nikt nie uwierzy.', 'Phil Taylor właśnie zadzwonił z gratulacjami.'],
+  big: ['Ładnie! Prawie jak w telewizji.', 'Ta ręka jest dziś gorąca.', 'Oho, ktoś tu trenował po nocach.', 'Tak się gra, panie i panowie.'],
+  ton: ['Setka pękła. Brawo!', 'Ton! Tak trzymaj.', 'Trzycyfrowo, elegancko.'],
+  bed: ['Dwadzieścia sześć. Klasyka gatunku.', 'Dwadzieścia sześć. Każdy to zna, nikt tego nie chce.', 'Dwadzieścia sześć. Rzutki chyba się pokłóciły.'],
+  zero: ['Trzy pudła. Ściana też potrzebuje miłości.', 'Zero. Tarcza to ta okrągła rzecz z kolorowymi polami.', 'Nic. Uznajmy, że to była rozgrzewka.', 'Pudło, pudło, pudło. Ale za to jak równo!'],
+  low: ['Skromnie. Od czegoś trzeba zacząć.', 'Rozgrzewka jeszcze trwa?', 'Tarcza ledwo to poczuła.'],
+  bust: ['Za dużo entuzjazmu.', 'Matematyka nie wybacza.', 'Ups. Kalkulator płacze.'],
+  win: ['Lotki można odłożyć na honorowe miejsce.', 'Przegrany stawia kolejkę.', 'Mistrzostwo świata coraz bliżej.'],
+  all: ['Trzy z trzech. Maszyna!', 'Bezbłędnie. Robot czy człowiek?'],
+  none: ['Pole nigdzie nie ucieka, spokojnie.', 'Cel był gdzie indziej, ale styl był.'],
+  marks: ['Ale znaczniki! Robi się gorąco.', 'Tak się zamyka pola.'],
+  minus: ['Podwójne bywają złośliwe.', 'Minus boli, ale charakter rośnie.']
+};
+let funLast = '';
+function funPick(kind) {
+  const a = FUN[kind].filter(t => t !== funLast);
+  funLast = a[Math.floor(Math.random() * a.length)];
+  return funLast;
+}
+function funSay(v, k) {
+  if (!S.settings.fun) return '';
+  const m = C.modeOf(S.game);
+  if (v.state === 'bust') return funPick('bust');
+  if (v.state === 'win') return funPick('win');
+  if (k !== 3 || v.state !== 'open') return '';
+  if (m === 'x01' || m === 'score') {
+    const t = v.total;
+    return t === 180 ? funPick('max') : t >= 140 ? funPick('big') : t >= 100 ? (Math.random() < 0.6 ? funPick('ton') : '') : t === 26 ? funPick('bed')
+      : t === 0 ? funPick('zero') : t < 12 ? (Math.random() < 0.6 ? funPick('low') : '') : '';
+  }
+  if (m === 'atc' || m === 'bob27' || m === 'shanghai') {
+    const hits = v.flags.filter(f => f === 'ok').length;
+    if (m === 'bob27' && v.total < 0) return Math.random() < 0.6 ? funPick('minus') : '';
+    return hits === 3 ? funPick('all') : !hits && Math.random() < 0.5 ? funPick('none') : '';
+  }
+  if (m === 'cricket') return v.marks >= 6 ? funPick('marks') : !v.marks && Math.random() < 0.5 ? funPick('none') : '';
   return '';
 }
 // Spoken when the next player steps up.
@@ -4197,7 +4257,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.24b';
+const APP_VERSION = '2026.10.24c';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
@@ -4671,6 +4731,8 @@ function renderStats(hist) {
 function openSettings() {
   $('#opt-thr').value = S.settings.thr; $('#opt-thr-v').textContent = S.settings.thr;
   $('#opt-shadow').checked = S.settings.shadows; $('#opt-auto').checked = S.settings.autoNext; $('#opt-covoice').checked = S.settings.coVoice !== false;
+  $('#opt-fun').checked = !!S.settings.fun; fillVoices();
+  $('#opt-rate').value = S.settings.rate || 1.05; $('#opt-rate-v').textContent = (+(S.settings.rate || 1.05)).toFixed(2);
   $('#opt-lock').checked = S.settings.lock; $('#opt-mask').checked = S.settings.mask; $('#opt-diag').checked = S.settings.diag;
   $('#opt-off').textContent = S.point.mm.toFixed(1) + ' mm' + (S.point.samples.length ? ' (' + S.point.samples.length + ' popr.)' : '');
   $('#opt-collect').checked = !!S.settings.collect;
@@ -4686,6 +4748,12 @@ $('#opt-thr').addEventListener('input', (e) => { S.settings.thr = +e.target.valu
 $('#opt-shadow').addEventListener('change', (e) => { S.settings.shadows = e.target.checked; if (S.det) S.det.shadows = e.target.checked; saveSettings(); });
 $('#opt-auto').addEventListener('change', (e) => { S.settings.autoNext = e.target.checked; saveSettings(); });
 $('#opt-covoice').addEventListener('change', (e) => { S.settings.coVoice = e.target.checked; saveSettings(); });
+$('#opt-fun').addEventListener('change', (e) => { S.settings.fun = e.target.checked; saveSettings(); });
+const voiceSample = () => { const was = S.settings.voice; S.settings.voice = true; try { speechSynthesis.cancel(); } catch (e) {} speak('Potrójne 20. Razem 180. ' + funPick('max')); S.settings.voice = was; };
+$('#opt-voicename').addEventListener('change', (e) => { S.settings.voiceName = e.target.value; saveSettings(); voiceSample(); });
+$('#opt-rate').addEventListener('input', (e) => { S.settings.rate = +e.target.value; $('#opt-rate-v').textContent = (+e.target.value).toFixed(2); saveSettings(); });
+$('#opt-rate').addEventListener('change', voiceSample);
+$('#opt-voice-listen').addEventListener('click', voiceSample);
 $('#opt-mask').addEventListener('change', (e) => { S.settings.mask = e.target.checked; S.maskImg = null; saveSettings(); });
 $('#opt-diag').addEventListener('change', (e) => { S.settings.diag = e.target.checked; saveSettings(); });
 $('#opt-lock').addEventListener('change', async (e) => {
