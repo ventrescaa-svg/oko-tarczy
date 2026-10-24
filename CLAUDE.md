@@ -66,6 +66,15 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - Na S26 w przeglądarce działa: 2160×3840, kadr szerszy niż przy Full HD (tarcza ok. 56% szerokości zamiast 68%), ale na tarczy ok. 1,6× więcej pikseli. Kalibracja w 4K: błąd 0,55 mm, pierścienie 97,3/107,6/159,9.
 - Wykrywanie dalej zmniejsza wycinek tarczy do 960 px (`setupProc`), więc 4K pomaga na razie tylko kalibracji i zrzutom. Następny krok: dopracowanie grota na pełnej rozdzielczości (otwarty problem 2).
 
+## Obraz przez kartę graficzną (od 2026.10.24e)
+- Dzienniki Piotra (zgłoszenia #1, #2, Full HD): `śledzenie` ok. 45 ms i `kopiowanie klatki` ok. 45–50 ms na klatkę, a samo `wykrywanie` 20–29 ms. Czyli większość czasu to przenoszenie obrazu z kamery do procesora przez canvas 2D (`willReadFrequently`), w 4K ok. 4× więcej (stąd 2–3 kl/s).
+- Teraz (`glInit`/`glWarp`/`glRead`, WebGL2): klatka idzie raz na rundę pętli do tekstury (`S.tick`), program na karcie przesuwa ją przez macierz śledzenia i uśrednia piksele wideo pod każdym pikselem wyniku (N×N próbek, N = ceil(skala), maks. 8), odczytywany jest tylko mały wynik:
+  obraz do śledzenia (`stabGray`, cel `trk`), obraz przetwarzania (`processFrame`, `proc`), ostre zdjęcie „przed” (`hiCaptureRef`, `hiref`, zostaje na karcie, przy rzucie czytany tylko wycinek) i wycinek „po” (`hiRefine`, `hicur`).
+- Ostry grot do 3× (było 2×): w 4K to własne piksele kamery. Wykrywanie dalej na ≤ 960 px (stałe w px są pod to dobrane).
+- Ustawienia wykrywania, „Obraz przez kartę graficzną” (`S.settings.gpu`, domyślnie wł.). Błąd lub utrata kontekstu: `glFail`, wpis `!!` w dzienniku, do końca sesji stary canvas. Nagłówek dziennika: „karta graficzna tak/nie/błąd/wyłączona”.
+- Sprawdzone w Playwright (atrapa kamery ze zdjęciem tarczy Piotra 4K, SwiftShader): obraz z karty różni się od canvasa średnio o 0,75–1,25 jasności, wycinek ostrego zdjęcia o 0,5; po utracie kontekstu gra działa dalej na canvasie. Prawdziwej szybkości na S26 jeszcze nie znamy (SwiftShader liczy na procesorze); rdzeń bez zmian, więc `test_rzutow.js` daje to samo.
+- Następny krok, gdy będzie szybko: większy obraz wykrywania w 4K (np. 1280 px) albo różnica „przed/po” liczona na karcie.
+
 ## Dziennik czasów (od 2026.10.19i)
 - W grze `perfAdd`/`perfFlush` co 10 s zapisują linię: średni/najdłuższy czas (ms) i ile razy na sekundę dla kroków
   `śledzenie`, `śledzenie między`, `kopiowanie klatki`, `wyrównanie`, `wykrywanie`, `obsługa rzutu`, `rysowanie`, `odstęp klatek` (ostatnie 90 linii).

@@ -475,6 +475,7 @@ input[type=range]{accent-color:var(--cream)}
     </div>
     <label class="toggle"><span>Śledź tarczę (chwiejący się statyw)</span><input type="checkbox" id="opt-track" checked></label>
     <label class="toggle"><span>Grot na ostrym obrazie (pełna rozdzielczość)</span><input type="checkbox" id="opt-hitip" checked></label>
+    <label class="toggle"><span>Obraz przez kartę graficzną (szybciej, zwłaszcza w 4K)</span><input type="checkbox" id="opt-gpu" checked></label>
     <label class="toggle"><span>Kamera 4K (więcej szczegółów, większe obciążenie)</span><input type="checkbox" id="opt-4k"></label>
     <p class="hint" id="cam-info"></p>
     <label class="toggle"><span>Blokuj ekspozycję i ostrość aparatu</span><input type="checkbox" id="opt-lock"></label>
@@ -2768,7 +2769,7 @@ const S = {
   pts: null, cal: null, sel: 0,
   proc: null, det: null, frameData: null, resetPending: false, rebasePending: false,
   mode: 'intro', manual: false, camHidden: false,
-  settings: Object.assign({ thr: 60, shadows: true, autoNext: true, voice: true, coVoice: true, mask: false, lock: false, diag: false, view: 'board', collect: true, track: true, hiTip: true, ev: 0 }, store.get('settings', {})),
+  settings: Object.assign({ thr: 60, shadows: true, autoNext: true, voice: true, coVoice: true, mask: false, lock: false, diag: false, view: 'board', collect: true, track: true, hiTip: true, gpu: true, ev: 0 }, store.get('settings', {})),
   offset: { mm: 0, samples: [] },
   point: Object.assign({ mm: 14, samples: [], max: 25 }, store.get('point', {})),   // max = measured point (25 mm), barrel 40 mm
   game: null, status: 'idle', blockedShown: false, lastProc: 0, maskImg: null, maskCanvas: null
@@ -3196,7 +3197,7 @@ function gridShot(tag, info) {
 function logHead() {
   const st = S.track && S.track.getSettings ? S.track.getSettings() : {};
   return ['Oko Tarczy ' + APP_VERSION + '  ' + new Date().toLocaleString('pl-PL'), navigator.userAgent,
-    'Kamera: ' + S.vw + '×' + S.vh + ' ' + (st.frameRate || '?') + ' kl/s, 4K ' + (S.settings.cam4k ? 'tak' : 'nie') + ', śledzenie ' + (S.settings.track ? 'tak' : 'nie') + (S.proc ? ', przetwarzanie ' + S.proc.pw + '×' + S.proc.ph : ''),
+    'Kamera: ' + S.vw + '×' + S.vh + ' ' + (st.frameRate || '?') + ' kl/s, 4K ' + (S.settings.cam4k ? 'tak' : 'nie') + ', śledzenie ' + (S.settings.track ? 'tak' : 'nie') + ', karta graficzna ' + (G.ok ? 'tak' : (S.settings.gpu === false ? 'wyłączona' : G.failed ? 'błąd' : 'nie')) + (S.proc ? ', przetwarzanie ' + S.proc.pw + '×' + S.proc.ph : ''),
     'Każda linia: średnio/najdłużej w ms, ile razy na sekundę.', ''];
 }
 // Opens a prefilled GitHub issue. A long log does not fit in a link (GitHub answers with an error),
@@ -3271,6 +3272,104 @@ document.addEventListener('keydown', (e) => {
   updateReadout();
 });
 
+/* ---------------- Picture copy on the graphics card (WebGL2) ----------------
+   Copying the video picture to the processor through a 2D canvas took about 45 ms for the tracking copy
+   and 45 ms for the processing copy at every frame (Full HD), and about 4x that in 4K (2-3 frames a second).
+   Here the frame goes once to a texture, a small program on the graphics card moves it through the
+   tracking matrix and averages the video pixels under each output pixel, and only the small result
+   is read back. Any failure switches back to the 2D canvas for the rest of the session. */
+const G = { gl: null, ok: false, tried: false, frameAt: -1, fbs: {} };
+function glInit() {
+  if (G.tried) return G.ok;
+  G.tried = true;
+  try {
+    const c = document.createElement('canvas'); c.width = c.height = 1;
+    const gl = c.getContext('webgl2', { antialias: false, depth: false, stencil: false, alpha: true, premultipliedAlpha: false, preserveDrawingBuffer: false, powerPreference: 'high-performance' });
+    if (!gl) { logNote('karta graficzna: brak WebGL2, kopiuję przez canvas'); return false; }
+    const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
+    const pr = gl.createProgram();
+    gl.attachShader(pr, sh(gl.VERTEX_SHADER, '#version 300 es\nin vec2 p;void main(){gl_Position=vec4(p,0.,1.);}'));
+    // Output pixel o (y down, the same rows readPixels gives) -> video point Ai*o; n x n bilinear taps over the pixel.
+    gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, `#version 300 es
+precision highp float;
+uniform sampler2D T; uniform vec2 S; uniform vec3 R0; uniform vec3 R1; uniform int N;
+out vec4 o;
+void main(){
+  vec2 q = gl_FragCoord.xy; vec4 a = vec4(0.); float n = float(N);
+  for (int j = 0; j < 8; j++) { if (j >= N) break;
+    for (int i = 0; i < 8; i++) { if (i >= N) break;
+      vec3 u = vec3(q + (vec2(float(i), float(j)) + 0.5) / n - 0.5, 1.);
+      vec2 s = vec2(dot(R0, u), dot(R1, u));
+      a += (s.x < 0. || s.y < 0. || s.x > S.x || s.y > S.y) ? vec4(0.) : texture(T, s / S);
+    } }
+  o = a / (n * n);
+}`));
+    gl.linkProgram(pr);
+    if (!gl.getProgramParameter(pr, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(pr));
+    gl.useProgram(pr);
+    const vb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vb);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+    const lp = gl.getAttribLocation(pr, 'p'); gl.enableVertexAttribArray(lp); gl.vertexAttribPointer(lp, 2, gl.FLOAT, false, 0, 0);
+    const tex = gl.createTexture(); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false); gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.pixelStorei(gl.PACK_ALIGNMENT, 1);
+    gl.uniform1i(gl.getUniformLocation(pr, 'T'), 0);
+    G.u = { S: gl.getUniformLocation(pr, 'S'), R0: gl.getUniformLocation(pr, 'R0'), R1: gl.getUniformLocation(pr, 'R1'), N: gl.getUniformLocation(pr, 'N') };
+    G.gl = gl; G.canvas = c; G.tex = tex; G.ok = true;
+    c.addEventListener('webglcontextlost', (e) => { e.preventDefault(); glFail('kontekst utracony'); });
+    return true;
+  } catch (err) { glFail(err && err.message || err); return false; }
+}
+function glFail(why) {
+  if (G.ok || !G.failed) logNote('karta graficzna wyłączona (' + String(why).slice(0, 120) + '), kopiuję przez canvas');
+  G.ok = false; G.failed = true; G.gl = null; G.fbs = {}; S.hi = null;
+}
+function glOn() { return S.settings.gpu !== false && !G.failed && (G.ok || glInit()); }
+// Send the current video frame to the graphics card (once per call of the loop).
+function glUpload(tok) {
+  if (G.frameAt === tok) return;
+  const gl = G.gl;
+  gl.bindTexture(gl.TEXTURE_2D, G.tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, S.video);
+  G.frameAt = tok; G.vw = S.video.videoWidth; G.vh = S.video.videoHeight;
+}
+function glTarget(key, w, h) {
+  const gl = G.gl;
+  let f = G.fbs[key];
+  if (f && f.w === w && f.h === h) return f;
+  if (f) { gl.deleteFramebuffer(f.fb); gl.deleteTexture(f.tex); }
+  const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, w, h);
+  const fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error('bufor ' + w + '×' + h);
+  gl.bindTexture(gl.TEXTURE_2D, G.tex);
+  return (G.fbs[key] = { fb, tex, w, h });
+}
+// Draw the video through A (video px -> output px, like a canvas setTransform) into target `key` (w x h).
+function glWarp(tok, A, w, h, key) {
+  const gl = G.gl;
+  glUpload(tok);
+  const f = glTarget(key, w, h), Ai = C.affInv(A);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, f.fb); gl.viewport(0, 0, w, h);
+  gl.uniform2f(G.u.S, G.vw, G.vh);
+  gl.uniform3f(G.u.R0, Ai[0], Ai[1], Ai[2]); gl.uniform3f(G.u.R1, Ai[3], Ai[4], Ai[5]);
+  const k = Math.max(Math.hypot(Ai[0], Ai[3]), Math.hypot(Ai[1], Ai[4]));
+  gl.uniform1i(G.u.N, Math.max(1, Math.min(8, Math.ceil(k - 0.05))));
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  return f;
+}
+// Read (part of) a target back as RGBA, top row first.
+function glRead(key, x, y, w, h) {
+  const gl = G.gl, f = G.fbs[key];
+  gl.bindFramebuffer(gl.FRAMEBUFFER, f.fb);
+  const out = new Uint8Array(w * h * 4);
+  gl.readPixels(x, y, w, h, gl.RGBA, gl.UNSIGNED_BYTE, out);
+  return new Uint8ClampedArray(out.buffer);
+}
+
 /* ---------------- Processing ---------------- */
 function setupProc() {
   const H = S.cal.H;
@@ -3321,6 +3420,9 @@ const setT = (ctx, A) => ctx.setTransform(A[0], A[3], A[1], A[4], A[2], A[5]);
 function stabGray(src, k) {
   const T = S.stab;
   const A = C.affMul(affS(T.f), C.affMul(C.affInv(T.M), affS(1 / (k || 1))));
+  if (src === S.video && glOn()) {
+    try { glWarp(S.tick, A, T.lw, T.lh, 'trk'); return C.grayOf(glRead('trk', 0, 0, T.lw, T.lh), T.lw * T.lh); } catch (err) { glFail(err && err.message || err); }
+  }
   setT(T.ctx, A); T.ctx.drawImage(src, 0, 0); T.ctx.setTransform(1, 0, 0, 1, 0, 0);
   return C.grayOf(T.ctx.getImageData(0, 0, T.lw, T.lh).data, T.lw * T.lh);
 }
@@ -3387,18 +3489,26 @@ function perfFlush(now) {
 /* Sharper point: the still picture at full video resolution (up to 2x the processing picture),
    taken each time the detector takes a new reference; at a throw the same crop of the live video
    around the dart goes to C.refineTipHi. Once per throw, so detection keeps its speed. */
-function hiZoom() { const P = S.proc; return P ? Math.min(2, 1 / P.s) : 1; }
-// Draw the live video into ctx as the still (processing) picture scaled z, moved by (-ox, -oy).
-function hiDraw(ctx, z, ox, oy) {
+// Up to 3x: in 4K that is the camera's own pixels (the processing picture is about a third of them).
+function hiZoom() { const P = S.proc; return P ? Math.min(3, 1 / P.s) : 1; }
+// Live video px -> the still (processing) picture scaled z, moved by (-ox, -oy).
+function hiA(z, ox, oy) {
   const P = S.proc, T = S.stab;
   const Mi = C.affInv(T ? T.M : [1 / P.s, 0, P.x, 0, 1 / P.s, P.y]);
-  setT(ctx, C.affMul([1, 0, -ox, 0, 1, -oy], C.affMul(affS(z), Mi))); ctx.drawImage(S.video, 0, 0); ctx.setTransform(1, 0, 0, 1, 0, 0);
+  return C.affMul([1, 0, -ox, 0, 1, -oy], C.affMul(affS(z), Mi));
 }
+function hiDraw(ctx, z, ox, oy) { setT(ctx, hiA(z, ox, oy)); ctx.drawImage(S.video, 0, 0); ctx.setTransform(1, 0, 0, 1, 0, 0); }
 function hiCaptureRef() {
   const P = S.proc, z = hiZoom();
   if (!P || z < 1.3) { S.hi = null; return; }
   const cw = Math.round(P.pw * z), ch = Math.round(P.ph * z);
+  if (glOn()) {
+    // kept on the graphics card; only the crop around a dart is read back at a throw
+    try { glWarp(S.tick, hiA(z, 0, 0), cw, ch, 'hiref'); S.hi = { gl: true, canvas: { width: cw, height: ch }, z, det: S.det, ver: S.det.refVer }; return; }
+    catch (err) { glFail(err && err.message || err); }
+  }
   let H = S.hi;
+  if (H && H.gl) H = null;
   if (!H || H.canvas.width !== cw || H.canvas.height !== ch) {
     const c = document.createElement('canvas'); c.width = cw; c.height = ch;
     H = S.hi = { canvas: c, ctx: c.getContext('2d') };   // not "willReadFrequently": it is only read once per throw
@@ -3420,11 +3530,18 @@ function hiRefine(e) {
     const x1 = Math.min(H.canvas.width, Math.round(bx + R)), y1 = Math.min(H.canvas.height, Math.round(by + R));
     const cw = x1 - x0, ch = y1 - y0;
     if (cw < 40 || ch < 40) return;
-    const ref = H.ctx.getImageData(x0, y0, cw, ch).data;
-    const c = document.createElement('canvas'); c.width = cw; c.height = ch;
-    const cx = c.getContext('2d', { willReadFrequently: true });
-    hiDraw(cx, z, x0, y0);
-    const cur = cx.getImageData(0, 0, cw, ch).data;
+    let ref, cur;
+    if (H.gl) {
+      if (!G.ok) return;
+      ref = glRead('hiref', x0, y0, cw, ch);
+      glWarp(S.tick, hiA(z, x0, y0), cw, ch, 'hicur'); cur = glRead('hicur', 0, 0, cw, ch);
+    } else {
+      ref = H.ctx.getImageData(x0, y0, cw, ch).data;
+      const c = document.createElement('canvas'); c.width = cw; c.height = ch;
+      const cx = c.getContext('2d', { willReadFrequently: true });
+      hiDraw(cx, z, x0, y0);
+      cur = cx.getImageData(0, 0, cw, ch).data;
+    }
     const thrLow = Math.max(D.pointMin, D.pointK * (D.noise || 0));
     const r = C.refineTipHi(ref, cur, cw, ch, D.lastGain || 1, { tip: [bx - x0, by - y0], axis: d.axis }, z,
       { thrLow, pxPerMm: ppm, pointMm: D.pointMm, pointMaxMm: D.pointMaxMm });
@@ -3492,10 +3609,16 @@ function processFrame(now) {
     const ok = trackBoard(now) && S.stab;
     perfAdd('śledzenie', performance.now() - t); t = performance.now();
     if (!ok) return;
-    const Mi = C.affInv(T.M);
-    setT(P.ctx, Mi); P.ctx.drawImage(S.video, 0, 0); P.ctx.setTransform(1, 0, 0, 1, 0, 0);
-  } else P.ctx.drawImage(S.video, P.x, P.y, P.w, P.h, 0, 0, P.pw, P.ph);
-  const data = P.ctx.getImageData(0, 0, P.pw, P.ph).data;
+  }
+  let data = null;
+  if (glOn()) {
+    try { glWarp(S.tick, T ? C.affInv(T.M) : [P.s, 0, -P.x * P.s, 0, P.s, -P.y * P.s], P.pw, P.ph, 'proc'); data = glRead('proc', 0, 0, P.pw, P.ph); } catch (err) { glFail(err && err.message || err); data = null; }
+  }
+  if (!data) {
+    if (T) { setT(P.ctx, C.affInv(T.M)); P.ctx.drawImage(S.video, 0, 0); P.ctx.setTransform(1, 0, 0, 1, 0, 0); }
+    else P.ctx.drawImage(S.video, P.x, P.y, P.w, P.h, 0, 0, P.pw, P.ph);
+    data = P.ctx.getImageData(0, 0, P.pw, P.ph).data;
+  }
   perfAdd('kopiowanie klatki', performance.now() - t); t = performance.now();
   if (T) { S.det.stabPatch(data, T.M, S.vw, S.vh, 2); perfAdd('wyrównanie', performance.now() - t); }
   if (T && T.lost && now - T.lastOk > 8000 && !S.blockedShown && S.status !== 'blocked') {
@@ -4055,6 +4178,7 @@ function drawLoupe(cal, m) {
 
 /* ---------------- Main loop ---------------- */
 function loop(now) {
+  S.tick = (S.tick || 0) + 1;   // one video upload to the graphics card per round
   // An error in one round must not stop the loop for good (that froze the whole picture).
   try {
     watchVideo(now);
@@ -4280,7 +4404,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.24d';
+const APP_VERSION = '2026.10.24e';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
@@ -4503,6 +4627,7 @@ $('#opt-track').addEventListener('change', (e) => {
   if (S.proc) { setupStab(); S.resetPending = true; }
 });
 $('#opt-hitip').addEventListener('change', (e) => { S.settings.hiTip = e.target.checked; saveSettings(); if (!e.target.checked) S.hi = null; });
+$('#opt-gpu').addEventListener('change', (e) => { S.settings.gpu = e.target.checked; saveSettings(); S.hi = null; camInfo(); });
 $('#opt-collect').addEventListener('change', (e) => { S.settings.collect = e.target.checked; saveSettings(); syncAiPill(); });
 // What the camera really gives (the browser may give less than asked) and how fast play runs.
 function camInfo() {
@@ -4510,7 +4635,7 @@ function camInfo() {
   const st = S.track && S.track.getSettings ? S.track.getSettings() : null;
   if (!st || !S.vw) { el.textContent = 'Kamera wyłączona.'; return; }
   el.textContent = 'Obraz: ' + S.vw + '×' + S.vh + (st.frameRate ? ', kamera ' + Math.round(st.frameRate) + ' kl/s' : '') +
-    (S.fps && S.proc ? ', wykrywanie ' + S.fps.toFixed(1) + ' kl/s' : '') + '.';
+    (S.fps && S.proc ? ', wykrywanie ' + S.fps.toFixed(1) + ' kl/s' : '') + (G.ok && S.settings.gpu !== false ? ', przez kartę graficzną' : G.failed ? ', karta graficzna nie działa (canvas)' : '') + '.';
 }
 $('#opt-4k').addEventListener('change', async (e) => {
   S.settings.cam4k = e.target.checked; saveSettings();
@@ -4761,6 +4886,7 @@ function openSettings() {
   $('#opt-collect').checked = !!S.settings.collect;
   $('#opt-track').checked = !!S.settings.track;
   $('#opt-hitip').checked = S.settings.hiTip !== false;
+  $('#opt-gpu').checked = S.settings.gpu !== false;
   $('#opt-4k').checked = !!S.settings.cam4k; camInfo();
   $('#opt-ev').value = S.settings.ev || 0; $('#opt-ev-v').textContent = S.settings.ev || 0;
   refreshDsInfo();
@@ -4801,7 +4927,7 @@ renderGame();
 showScreen('intro');
 
 // Hooks for automated testing.
-window.OkoTarczy = { S, C, DS, stabD, gridShot, bitsToPng, captureSnap, openFix, fix, fixSnap, fixMap, hiRefine, hiCaptureRef, setPoints(p) { S.pts = p.map(q => q.slice()); updateReadout(); }, finishCalibration() { $('#cal-done').click(); }, startCamera, screenMap, exportDataset, dsIdle: () => dsChain, version: APP_VERSION };
+window.OkoTarczy = { S, C, DS, G, glRead, hiA, stabD, gridShot, bitsToPng, captureSnap, openFix, fix, fixSnap, fixMap, hiRefine, hiCaptureRef, setPoints(p) { S.pts = p.map(q => q.slice()); updateReadout(); }, finishCalibration() { $('#cal-done').click(); }, startCamera, screenMap, exportDataset, dsIdle: () => dsChain, version: APP_VERSION };
 })();
 </script>
 </body>
