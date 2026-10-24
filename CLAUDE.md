@@ -106,6 +106,7 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - `watchVideo`: gdy `video.currentTime` stoi 3 s, `play()`; po 7 s `restartCamera` (zatrzymuje ścieżki, `startCamera`, `resetPending`). Test Playwright: pauza i zatrzymana ścieżka wracają same.
 - Ostry grot: canvas bez `willReadFrequently`; gdy `hiCaptureRef` trwa > 150 ms trzy razy z rzędu, `S.hiOff` wyłącza go do końca sesji (wpis w dzienniku).
 - Przy kolejnym zawieszeniu poproś o „Wyślij dziennik na GitHub” (linie `!!` mówią, co się stało).
+- Od 2026.10.24d `restoreCam`: po powrocie do aplikacji (`visibilitychange`, po 0,3/1,2/3 s) i co 3 s w `watchVideo` zoom wraca do zapisanego (`localStorage` `zoom`), gdy `getSettings().zoom` się różni (Android po wyjściu z aplikacji otwierał kamerę z domyślnym zoomem; Piotr, 2026-10-24). Po przywróceniu nowe `ref` po 1,5 s; przy „Blokuj ekspozycję” blokada też jest nakładana ponownie. Sprawdzone tylko na atrapie kamery.
 
 ## Cień zamiast rzutki (od 2026.10.19p, eksport Piotra z 20:51, 38 rzutów)
 - Dwa rzuty w żywej aplikacji brały za rzutkę ciemną plamę (cień rzutki) kilkaset px od niej: 29 (D20 → T20, plama na czerwonym pierścieniu) i 32 (rzutka na 20 policzona jako 7 przez plamę przy bullu; etykieta `auto` była błędna).

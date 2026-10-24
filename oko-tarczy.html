@@ -2962,7 +2962,29 @@ let wakeLock = null;
 async function keepAwake() {
   try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
 }
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && S.stream) keepAwake(); });
+// Leaving the app (a message, another app) lets Android reopen the camera with its default zoom (and exposure):
+// put the user's settings back when we are visible again, and again a moment later, because the camera may still be reopening.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || !S.stream) return;
+  keepAwake();
+  [300, 1200, 3000].forEach(ms => setTimeout(() => restoreCam('powrót do aplikacji', ms === 1200), ms));
+});
+async function restoreCam(why, all) {
+  if (!S.track || S.track.readyState !== 'live' || document.hidden) return;
+  const want = store.get('zoom', null);
+  let fixed = false;
+  try {
+    const caps = S.track.getCapabilities ? S.track.getCapabilities() : {};
+    const now = S.track.getSettings().zoom;
+    if (want != null && caps.zoom && now != null && Math.abs(now - want) > 0.04) { await applyZoom(want); fixed = true; }
+    else if (want != null && caps.zoom && all) await applyZoom(want);   // reported value may lag behind the real one: set it once anyway
+    if (all && S.settings.lock && !(S.settings.ev > 0)) await applyLocks(true);
+  } catch (e) {}
+  if (fixed) {
+    logNote('zoom przywrócony ' + want + '× (' + why + ')');
+    if (S.det) setTimeout(() => { S.resetPending = true; }, 1500);   // the picture changed back: new reference once it is steady
+  }
+}
 
 S.video.addEventListener('resize', () => {
   if (!S.video.videoWidth) return;
@@ -3434,6 +3456,7 @@ function watchVideo(now) {
   wd.t = now;
   const v = S.video;
   if (!S.stream || v.readyState < 1 || document.hidden) { wd.at = now; return; }
+  if (now - (wd.zt || 0) > 3000) { wd.zt = now; restoreCam('zoom zmieniony'); }   // the camera can lose the zoom without us leaving the app
   if (v.currentTime !== wd.ct) {
     if (wd.stalled) logNote('kamera ruszyła po ' + ((now - wd.at) / 1000).toFixed(1) + ' s');
     wd.ct = v.currentTime; wd.at = now; wd.stalled = 0; return;
@@ -4257,7 +4280,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.24c';
+const APP_VERSION = '2026.10.24d';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
