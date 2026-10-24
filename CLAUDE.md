@@ -218,6 +218,7 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - Okno „Nowa gra” pamięta ostatnie wybory (`localStorage` `newgame`). Głos: `turnSay` (koniec tury/gry), `turnPrompt` (kto i w co celuje).
 - Od 2026.10.24b w X01 głos podpowiada zakończenie (`sayRoute` = `C.checkout` → `sayDart`): na początku tury („zostało 121. potrójne 20, potrójne 7, podwójne 20”) i po każdej lotce, jeśli da się zamknąć resztą lotek. Wyłącznik: Ustawienia wykrywania, „Mów podpowiedź zakończenia” (`S.settings.coVoice`).
 - Od 2026.10.24c Ustawienia wykrywania: „Głos” (`S.settings.voiceName` = `voiceURI` polskiego głosu z `speechSynthesis.getVoices()`, `fillVoices`), „Tempo mowy” (`S.settings.rate`), „Posłuchaj”, oraz „Śmieszne komentarze po turach” (`S.settings.fun`, domyślnie wył.; `funSay`/`FUN`: 180, 140+, 100+, 26, zero, przerzut, wygrana, trzy trafienia w treningach; bez powtórki tej samej linii). Inne silniki mowy (RHVoice, Acapela, Vocalizer, Google) instaluje się w Androidzie i pojawiają się na liście.
+- Od 2026.10.24g w „Dookoła tarczy” po każdym trafieniu głos od razu mówi następny cel („1. Teraz 2”), też przy starcie gry („cel 1”), żeby nie trzeba było podchodzić do tarczy.
 - Test: scratchpad `tgame.js` (rdzeń w Node) i `pw.js` (Playwright, liczenie ręczne we wszystkich trybach). Na prawdziwej tarczy z kamerą jeszcze nie sprawdzone.
 - Pomysły na dalej: Killer, Cricket „cut-throat”, statystyki trafień (mapa tarczy), eksport historii.
 

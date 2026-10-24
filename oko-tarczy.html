@@ -3928,7 +3928,10 @@ function turnSayBase(v, k) {
     if (g.players.length > 1) return '. Wygrywa ' + g.players[g.winner].name;
     return m === 'x01' ? '. Wygrana!' : (m === 'shanghai' && v.state === 'win' ? '. Shanghai!' : '. Koniec gry');
   }
-  if (k !== 3) { const r = m === 'x01' && v.state === 'open' ? sayRoute(g, v.rem, 3 - k) : ''; return r ? '. Zostało ' + v.rem + ': ' + r : ''; }
+  // Dookoła tarczy: after a hit say the next field at once, so nobody has to walk to the board
+  const next = m === 'atc' && v.flags[k - 1] === 'ok' ? '. Teraz ' + sayTarget(g, C.targetOf(g, v.after, 0)) : '';
+  if (k !== 3) { const r = m === 'x01' && v.state === 'open' ? sayRoute(g, v.rem, 3 - k) : ''; return r ? '. Zostało ' + v.rem + ': ' + r : next; }
+  if (next) return next;
   if (m === 'x01' || m === 'score' || m === 'shanghai') return '. Razem ' + v.total;
   if (m === 'bob27') return v.total < 0 ? '. Minus ' + (-v.total) : '. Plus ' + v.total;
   if (m === 'cricket' && v.marks) return '. ' + v.marks + ' ' + plural(v.marks, 'znacznik', 'znaczniki', 'znaczników');
@@ -4498,7 +4501,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.24f';
+const APP_VERSION = '2026.10.24g';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
@@ -4872,7 +4875,7 @@ $('#new-go').addEventListener('click', () => {
   closeSheet('#sh-new');
   if (S.det) S.resetPending = true;
   afterChange(); setStatus(S.manual ? 'manual' : 'ready');
-  speak(names[0] + ', zaczynasz. ' + (ng.mode === 'x01' ? ng.start : MODE_LABEL[ng.mode]));
+  speak(names[0] + ', zaczynasz. ' + (ng.mode === 'x01' ? ng.start : MODE_LABEL[ng.mode] + (ng.mode === 'atc' || ng.mode === 'bob27' ? '. ' + turnPrompt().replace(/^[^,]*, (?=cel|podwójne)/, '') : '')));
 });
 
 /* ---------------- Statistics sheet ---------------- */
