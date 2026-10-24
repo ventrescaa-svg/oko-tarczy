@@ -463,6 +463,7 @@ input[type=range]{accent-color:var(--cream)}
     </div>
     <label class="toggle"><span>Ignoruj cienie lotek</span><input type="checkbox" id="opt-shadow" checked></label>
     <label class="toggle"><span>Następna tura po wyjęciu lotek</span><input type="checkbox" id="opt-auto" checked></label>
+    <label class="toggle"><span>Mów podpowiedź zakończenia (X01)</span><input type="checkbox" id="opt-covoice" checked></label>
     <label class="toggle"><span>Śledź tarczę (chwiejący się statyw)</span><input type="checkbox" id="opt-track" checked></label>
     <label class="toggle"><span>Grot na ostrym obrazie (pełna rozdzielczość)</span><input type="checkbox" id="opt-hitip" checked></label>
     <label class="toggle"><span>Kamera 4K (więcej szczegółów, większe obciążenie)</span><input type="checkbox" id="opt-4k"></label>
@@ -2758,7 +2759,7 @@ const S = {
   pts: null, cal: null, sel: 0,
   proc: null, det: null, frameData: null, resetPending: false, rebasePending: false,
   mode: 'intro', manual: false, camHidden: false,
-  settings: Object.assign({ thr: 60, shadows: true, autoNext: true, voice: true, mask: false, lock: false, diag: false, view: 'board', collect: true, track: true, hiTip: true, ev: 0 }, store.get('settings', {})),
+  settings: Object.assign({ thr: 60, shadows: true, autoNext: true, voice: true, coVoice: true, mask: false, lock: false, diag: false, view: 'board', collect: true, track: true, hiTip: true, ev: 0 }, store.get('settings', {})),
   offset: { mm: 0, samples: [] },
   point: Object.assign({ mm: 14, samples: [], max: 25 }, store.get('point', {})),   // max = measured point (25 mm), barrel 40 mm
   game: null, status: 'idle', blockedShown: false, lastProc: 0, maskImg: null, maskCanvas: null
@@ -3652,7 +3653,13 @@ function sayTarget(g, t) {
   if (t.num === 25) return ring === 'd' ? 'środek bulla' : 'bull';
   return (ring === 'd' ? 'podwójne ' : ring === 't' ? 'potrójne ' : '') + t.num;
 }
-// Spoken after a dart: end of turn / game.
+// Spoken checkout route (X01), e.g. "potrójne 19, podwójne 12"; '' when there is none or the hint is off.
+function sayRoute(g, rem, left) {
+  if (C.modeOf(g) !== 'x01' || S.settings.coVoice === false || left < 1) return '';
+  const route = C.checkout(rem, left, g.doubleOut);
+  return route ? route.map(C.sayDart).join(', ') : '';
+}
+// Spoken after a dart: end of turn / game, or the checkout for the darts still in hand.
 function turnSay(v, k) {
   const g = S.game, m = C.modeOf(g);
   if (v.state === 'bust') return '. Przerzut';
@@ -3661,7 +3668,7 @@ function turnSay(v, k) {
     if (g.players.length > 1) return '. Wygrywa ' + g.players[g.winner].name;
     return m === 'x01' ? '. Wygrana!' : (m === 'shanghai' && v.state === 'win' ? '. Shanghai!' : '. Koniec gry');
   }
-  if (k !== 3) return '';
+  if (k !== 3) { const r = m === 'x01' && v.state === 'open' ? sayRoute(g, v.rem, 3 - k) : ''; return r ? '. Zostało ' + v.rem + ': ' + r : ''; }
   if (m === 'x01' || m === 'score' || m === 'shanghai') return '. Razem ' + v.total;
   if (m === 'bob27') return v.total < 0 ? '. Minus ' + (-v.total) : '. Plus ' + v.total;
   if (m === 'cricket' && v.marks) return '. ' + v.marks + ' ' + plural(v.marks, 'znacznik', 'znaczniki', 'znaczników');
@@ -3671,7 +3678,7 @@ function turnSay(v, k) {
 function turnPrompt() {
   const g = S.game, p = g.cur.p, m = C.modeOf(g), v = C.currentView(g), s = v.states[p];
   const multi = g.players.length > 1, name = multi ? g.players[p].name + ', ' : '';
-  if (m === 'x01') return multi ? name + s : 'zostało ' + s;
+  if (m === 'x01') { const r = sayRoute(g, s, 3); return (multi ? name + s : 'zostało ' + s) + (r ? '. ' + r : ''); }
   const t = C.targetOf(g, s, v.played[p]);
   if (m === 'atc') return name + 'cel ' + sayTarget(g, t);
   if (m === 'bob27') return name + 'podwójne ' + (t.num === 25 ? 'bull' : t.num) + ', masz ' + s.s;
@@ -4190,7 +4197,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.24';
+const APP_VERSION = '2026.10.24b';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
@@ -4663,7 +4670,7 @@ function renderStats(hist) {
 // Settings
 function openSettings() {
   $('#opt-thr').value = S.settings.thr; $('#opt-thr-v').textContent = S.settings.thr;
-  $('#opt-shadow').checked = S.settings.shadows; $('#opt-auto').checked = S.settings.autoNext;
+  $('#opt-shadow').checked = S.settings.shadows; $('#opt-auto').checked = S.settings.autoNext; $('#opt-covoice').checked = S.settings.coVoice !== false;
   $('#opt-lock').checked = S.settings.lock; $('#opt-mask').checked = S.settings.mask; $('#opt-diag').checked = S.settings.diag;
   $('#opt-off').textContent = S.point.mm.toFixed(1) + ' mm' + (S.point.samples.length ? ' (' + S.point.samples.length + ' popr.)' : '');
   $('#opt-collect').checked = !!S.settings.collect;
@@ -4678,6 +4685,7 @@ const saveSettings = () => store.set('settings', S.settings);
 $('#opt-thr').addEventListener('input', (e) => { S.settings.thr = +e.target.value; $('#opt-thr-v').textContent = e.target.value; if (S.det) S.det.thr = S.settings.thr; saveSettings(); });
 $('#opt-shadow').addEventListener('change', (e) => { S.settings.shadows = e.target.checked; if (S.det) S.det.shadows = e.target.checked; saveSettings(); });
 $('#opt-auto').addEventListener('change', (e) => { S.settings.autoNext = e.target.checked; saveSettings(); });
+$('#opt-covoice').addEventListener('change', (e) => { S.settings.coVoice = e.target.checked; saveSettings(); });
 $('#opt-mask').addEventListener('change', (e) => { S.settings.mask = e.target.checked; S.maskImg = null; saveSettings(); });
 $('#opt-diag').addEventListener('change', (e) => { S.settings.diag = e.target.checked; saveSettings(); });
 $('#opt-lock').addEventListener('change', async (e) => {

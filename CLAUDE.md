@@ -189,6 +189,7 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
   `recordGame` w `afterChange` zapisuje skończoną grę do `localStorage` `history` (maks. 1000), `g.rec` = id; Cofnij usuwa wpis, poprawka przelicza go.
   Menu, „Statystyki”: wybór gracza (po nazwie), kafelki dla każdego trybu, słupki średniej z ostatnich 30 legów, ostatnie 20 gier, „Usuń historię”.
 - Okno „Nowa gra” pamięta ostatnie wybory (`localStorage` `newgame`). Głos: `turnSay` (koniec tury/gry), `turnPrompt` (kto i w co celuje).
+- Od 2026.10.24b w X01 głos podpowiada zakończenie (`sayRoute` = `C.checkout` → `sayDart`): na początku tury („zostało 121. potrójne 20, potrójne 7, podwójne 20”) i po każdej lotce, jeśli da się zamknąć resztą lotek. Wyłącznik: Ustawienia wykrywania, „Mów podpowiedź zakończenia” (`S.settings.coVoice`).
 - Test: scratchpad `tgame.js` (rdzeń w Node) i `pw.js` (Playwright, liczenie ręczne we wszystkich trybach). Na prawdziwej tarczy z kamerą jeszcze nie sprawdzone.
 - Pomysły na dalej: Killer, Cricket „cut-throat”, statystyki trafień (mapa tarczy), eksport historii.
 
