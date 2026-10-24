@@ -1,6 +1,6 @@
-# Oko Tarczy – kontekst projektu (stan na 2026-10-21)
+# Oko Tarczy – kontekst projektu (stan na 2026-10-24)
 
-Aplikacja do automatycznego liczenia punktów w darta (501/301/701) kamerą telefonu, w stylu Dartsmind.
+Aplikacja do automatycznego liczenia punktów w darta (501/301/701, Cricket, tryby treningowe) kamerą telefonu, w stylu Dartsmind.
 Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej tarczy i zgłasza wyniki.
 
 ## Pliki i wdrożenie
@@ -177,6 +177,20 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - Okno „Popraw rzut” pokazywało tylko wycinek ±70 mm wokół wykrytego grota. Gdy wykrycie trafiło w cień daleko od rzutki, prawdziwego miejsca nie było na obrazie i nie dało się go zaznaczyć (Piotr, 2026-10-19).
 - `captureSnap` robi teraz też `snap.wide` (`captureWide`: cała tarcza r = 185 mm w prostokącie 600 px szerokości, proporcje z homografii; `null` przy nieprawdopodobnej kalibracji). Przycisk „Pokaż całą tarczę” / „Pokaż zbliżenie” przełącza widok; w widoku całej tarczy kreskowane czerwone kółko = miejsce wykryte przez aplikację.
 - `fixMap` ma osobne `sw/sh/cw/ch`; stuknięcie przelicza się przez wybrany widok. Test Playwright: stuknięcie w widoku całej tarczy daje poprawny wynik.
+
+## Tryby gry i statystyki (od 2026.10.24)
+- Rdzeń: `MODES` (x01, cricket, atc = Dookoła tarczy, bob27, score = Wysoki wynik, shanghai). Każdy tryb: `init`, `turn(g, st, p, darts, runda)` → widok tury
+  (`after`, `state` open/bust/win, `flags` ok/nohit/void/bust, `total`), opcjonalnie `rounds` (stała liczba rund, wtedy `modeTurn` sam kończy grę stanem `done`
+  i wybiera zwycięzcę po `score`), `out` (Bob's 27: odpada przy wyniku ≤ 0, `commitTurn` pomija go w kolejce).
+- `replay(g)` odtwarza zapisane tury (stany graczy, liczba rozegranych tur), `currentView` = replay + bieżąca tura. Gra ma `g.mode` i `g.opts`
+  (atc: `ring` any/d/t, `bull`, `skip`; score/shanghai: `rounds`). Stare zapisane gry bez `mode` to x01.
+- Tura kończąca grę (wygrana albo ostatnia runda) nie jest zatwierdzana (`winner` ustawiane już przy rzucie, jak wcześniej w 501).
+- Statystyki: `gameStats(g)` (x01: średnia, pierwsze 9, najlepsza tura, 180/140+/100+, zamknięcie; cricket: znaczniki, MPR; atc: trafienia, skuteczność; reszta: wynik).
+  `recordGame` w `afterChange` zapisuje skończoną grę do `localStorage` `history` (maks. 1000), `g.rec` = id; Cofnij usuwa wpis, poprawka przelicza go.
+  Menu, „Statystyki”: wybór gracza (po nazwie), kafelki dla każdego trybu, słupki średniej z ostatnich 30 legów, ostatnie 20 gier, „Usuń historię”.
+- Okno „Nowa gra” pamięta ostatnie wybory (`localStorage` `newgame`). Głos: `turnSay` (koniec tury/gry), `turnPrompt` (kto i w co celuje).
+- Test: scratchpad `tgame.js` (rdzeń w Node) i `pw.js` (Playwright, liczenie ręczne we wszystkich trybach). Na prawdziwej tarczy z kamerą jeszcze nie sprawdzone.
+- Pomysły na dalej: Killer, Cricket „cut-throat”, statystyki trafień (mapa tarczy), eksport historii.
 
 ## Test na prawdziwych rzutach
 ```

@@ -106,12 +106,13 @@ button{cursor:pointer;touch-action:manipulation}
 .chip[data-s="ready"] i{background:var(--green);box-shadow:0 0 0 4px rgba(60,176,109,.18)}
 .chip[data-s="motion"] i{background:var(--amber)}
 .chip[data-s="pull"] i,.chip[data-s="blocked"] i{background:var(--red)}
-.active{display:grid;grid-template-columns:1fr auto;grid-template-areas:"who rem" "co rem" "darts darts" "win win";column-gap:12px;align-items:end}
+.active{display:grid;grid-template-columns:1fr auto;grid-template-areas:"who rem" "co rem" "darts darts" "cr cr" "win win";column-gap:12px;align-items:end}
 .active .who{grid-area:who;align-self:start}
 .active .co{grid-area:co}
 .active .rem{grid-area:rem}
 .active .darts{grid-area:darts}
 .active .win{grid-area:win}
+.active .crwrap{grid-area:cr}
 .who{display:flex;align-items:baseline;flex-wrap:wrap;gap:2px 10px;font:600 1.35rem/1.1 var(--display);text-transform:uppercase;letter-spacing:.04em;min-width:0}
 .who .avg{font:500 1rem var(--body);text-transform:none;letter-spacing:0;color:var(--muted)}
 .rem{font:700 clamp(3.6rem, 19vw, 6rem)/0.86 var(--display);letter-spacing:-.01em;font-variant-numeric:tabular-nums;margin:0 0 8px;text-align:right}
@@ -196,6 +197,31 @@ button{cursor:pointer;touch-action:manipulation}
 .toggle input{width:22px;height:22px;accent-color:var(--cream)}
 input[type=range]{accent-color:var(--cream)}
 .names{display:grid;gap:6px}
+.seg.wrap{flex-wrap:wrap}
+.seg.wrap button{flex:1 0 30%;font-size:1.05rem;padding:0 4px}
+.slot.nohit{opacity:.5}
+/* Cricket marks */
+.cr{width:100%;border-collapse:collapse;margin-top:8px;font:700 1.25rem/1 var(--display);text-align:center}
+.cr th,.cr td{padding:3px 4px;border-bottom:1px solid var(--line)}
+.cr thead th{font:600 .8rem/1.1 var(--body);color:var(--muted);max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cr th.n{color:var(--cream);width:44px}
+.cr td.cur,.cr th.cur{background:rgba(233,220,186,.08)}
+.cr thead th.cur{color:var(--fg)}
+.cr td.c3{color:var(--green)}
+.cr tr.dead td,.cr tr.dead th{opacity:.35}
+.cr tfoot td{font-size:1.5rem;border-bottom:0}
+/* Statistics */
+.st-card{display:grid;gap:8px;border-top:1px solid var(--line);padding-top:12px}
+.st-card h4{margin:0;font:700 1.2rem/1 var(--display);letter-spacing:.05em;text-transform:uppercase;color:var(--cream)}
+.st-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:6px}
+.st-tile{background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:6px 8px}
+.st-tile small{display:block;font-size:.75rem;color:var(--muted);line-height:1.2}
+.st-tile b{font:700 1.5rem/1.1 var(--display);font-variant-numeric:tabular-nums}
+.st-bars{display:flex;align-items:flex-end;gap:2px;height:60px;padding:4px 0;border-bottom:1px solid var(--line)}
+.st-bars i{flex:1;background:var(--cream);opacity:.75;border-radius:2px 2px 0 0;min-height:2px}
+.st-list{display:grid;gap:4px;font-size:.92rem}
+.st-list div{display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid var(--line);padding:4px 0}
+.st-list span:first-child{color:var(--muted)}
 .ds{border-top:1px solid var(--line);padding-top:12px}
 .ds .lab{font:700 1.15rem/1 var(--display);letter-spacing:.06em;text-transform:uppercase;color:var(--cream)}
 .ds-count{margin:0}
@@ -212,7 +238,7 @@ input[type=range]{accent-color:var(--cream)}
   <div class="intro">
     <div class="brand">
       <h1>Oko <span>Tarczy</span></h1>
-      <p>Licznik 501, który patrzy na tarczę aparatem telefonu.</p>
+      <p>Licznik do darta (501, Cricket, trening), który patrzy na tarczę aparatem telefonu.</p>
     </div>
 
     <div class="diagram" aria-label="Widok z góry: telefon z boku tarczy pod kątem 45 stopni">
@@ -309,8 +335,9 @@ input[type=range]{accent-color:var(--cream)}
         <button class="slot empty" data-i="0" aria-label="Rzut 1">–</button>
         <button class="slot empty" data-i="1" aria-label="Rzut 2">–</button>
         <button class="slot empty" data-i="2" aria-label="Rzut 3">–</button>
-        <div class="sum"><div><small>Tura</small><span id="turn-sum" class="num">0</span></div></div>
+        <div class="sum"><div><small id="turn-sum-l">Tura</small><span id="turn-sum" class="num">0</span></div></div>
       </div>
+      <div id="cricket" class="crwrap" hidden></div>
       <div id="win" class="win" hidden>
         <h3 id="win-t">Wygrana</h3>
         <div class="btn-row"><button id="btn-newleg" class="btn primary">Następny leg</button><button id="btn-undo-win" class="btn">Cofnij</button></div>
@@ -375,6 +402,7 @@ input[type=range]{accent-color:var(--cream)}
     <h3 id="menu-title">Menu</h3>
     <div class="menu">
       <button class="btn" data-act="newgame">Nowa gra</button>
+      <button class="btn" data-act="stats">Statystyki</button>
       <button class="btn" data-act="calib">Kalibracja kamery</button>
       <button class="btn" data-act="settings">Ustawienia wykrywania</button>
       <button class="btn" data-act="shots">Wyślij zrzuty i dziennik</button>
@@ -390,15 +418,39 @@ input[type=range]{accent-color:var(--cream)}
 <div id="sh-new" class="backdrop" hidden>
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="new-title">
     <h3 id="new-title">Nowa gra</h3>
-    <div class="field"><span class="lab">Start</span>
+    <div class="field"><span class="lab">Gra</span>
+      <div class="seg wrap" id="seg-mode"><button data-v="x01">X01</button><button data-v="cricket">Cricket</button><button data-v="atc">Dookoła tarczy</button><button data-v="bob27">Bob's 27</button><button data-v="score">Wysoki wynik</button><button data-v="shanghai">Shanghai</button></div>
+      <p class="hint" id="mode-desc"></p>
+    </div>
+    <div class="field" data-m="x01"><span class="lab">Start</span>
       <div class="seg" id="seg-start"><button data-v="301" aria-pressed="false">301</button><button data-v="501" aria-pressed="true">501</button><button data-v="701" aria-pressed="false">701</button></div>
+    </div>
+    <div class="field" data-m="atc"><span class="lab">Które pola</span>
+      <div class="seg" id="seg-ring"><button data-v="any">Dowolne</button><button data-v="d">Podwójne</button><button data-v="t">Potrójne</button></div>
+    </div>
+    <label class="toggle" data-m="atc"><span>Na końcu bull</span><input type="checkbox" id="opt-atc-bull" checked></label>
+    <label class="toggle" data-m="atc" id="row-atc-skip"><span>Podwójne przeskakuje o 2, potrójne o 3</span><input type="checkbox" id="opt-atc-skip"></label>
+    <div class="field" data-m="score"><span class="lab">Liczba rund</span>
+      <div class="seg" id="seg-rounds-score"><button data-v="5">5</button><button data-v="8">8</button><button data-v="10">10</button></div>
+    </div>
+    <div class="field" data-m="shanghai"><span class="lab">Liczba rund</span>
+      <div class="seg" id="seg-rounds-shanghai"><button data-v="7">7 (pola 1–7)</button><button data-v="20">20 (1–20)</button></div>
     </div>
     <div class="field"><span class="lab">Liczba graczy</span>
       <div class="seg" id="seg-players"><button data-v="1" aria-pressed="true">1</button><button data-v="2" aria-pressed="false">2</button><button data-v="3" aria-pressed="false">3</button><button data-v="4" aria-pressed="false">4</button></div>
     </div>
     <div class="names" id="names"></div>
-    <label class="toggle"><span>Kończenie na podwójnym (double out)</span><input type="checkbox" id="opt-dout" checked></label>
+    <label class="toggle" data-m="x01"><span>Kończenie na podwójnym (double out)</span><input type="checkbox" id="opt-dout" checked></label>
     <div class="btn-row"><button id="new-go" class="btn primary">Zacznij</button><button id="new-cancel" class="btn ghost">Anuluj</button></div>
+  </div>
+</div>
+
+<div id="sh-stats" class="backdrop" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="stats-title">
+    <h3 id="stats-title">Statystyki</h3>
+    <div class="seg wrap" id="stats-who"></div>
+    <div id="stats-body" style="display:grid;gap:14px"></div>
+    <div class="btn-row"><button id="stats-clear" class="btn warn">Usuń historię</button><button id="stats-close" class="btn primary">Zamknij</button></div>
   </div>
 </div>
 
@@ -2100,7 +2152,7 @@ input[type=range]{accent-color:var(--cream)}
     return { ok, H: Hc, radii: G.slice(9, 15), rms, nRad, nRing, n: meas.length, move, reason: ok ? '' : 'quality', meas: opts.keepMeas ? meas.map(m => [m[0] * sc + ox, m[1] * sc + oy, m[2]]) : undefined };
   }
 
-  /* ---------- 501 game ---------- */
+  /* ---------- Games: X01, Cricket and training modes ---------- */
   function evalTurn(startRem, darts, doubleOut) {
     let rem = startRem, state = 'open', bustAt = -1;
     const flags = [];
@@ -2119,13 +2171,148 @@ input[type=range]{accent-color:var(--cream)}
     };
   }
 
+  // Every mode: init(g) = a player's state at the start, turn(g, st, p, darts, round) = view of one turn
+  // ({after, state: open|bust|win, flags, total}), rounds(g) = fixed number of rounds (game ends after the last one),
+  // out(state) = player dropped out (Bob's 27), score(state) = what decides the winner when the rounds run out.
+  const CRICKET_NUMS = [20, 19, 18, 17, 16, 15, 25];
+  function atcTargets(g) {
+    const t = []; for (let n = 1; n <= 20; n++) t.push(n);
+    if (!g.opts || g.opts.bull !== false) t.push(25);
+    return t;
+  }
+  function atcHit(g, target, d) {
+    if (d.num !== target || !d.mult) return false;
+    const ring = (g.opts && g.opts.ring) || 'any';
+    if (ring === 'd') return d.mult === 2;
+    if (ring === 't') return target === 25 ? true : d.mult === 3;
+    return true;
+  }
+  const bobTarget = (round) => round < 20 ? round + 1 : 25;
+  const MODES = {
+    x01: {
+      init: (g) => g.start,
+      turn(g, st, p, darts) { const v = evalTurn(st[p], darts, g.doubleOut); v.after = v.rem; return v; }
+    },
+    cricket: {
+      init: () => ({ m: { 20: 0, 19: 0, 18: 0, 17: 0, 16: 0, 15: 0, 25: 0 }, s: 0 }),
+      turn(g, st, p, darts) {
+        const a = { m: Object.assign({}, st[p].m), s: st[p].s }, others = st.filter((_, q) => q !== p);
+        let state = 'open', marks = 0, total = 0;
+        const flags = [];
+        for (const d of darts) {
+          if (state !== 'open') { flags.push('void'); continue; }
+          if (!d.mult || !(d.num in a.m)) { flags.push('nohit'); continue; }
+          const use = Math.min(d.mult, 3 - a.m[d.num]), extra = d.mult - use;
+          a.m[d.num] += use;
+          let counted = use;
+          if (extra > 0 && others.some(o => o.m[d.num] < 3)) { a.s += extra * d.num; total += extra * d.num; counted = d.mult; }
+          marks += counted;
+          flags.push(counted ? 'ok' : 'nohit');
+          if (CRICKET_NUMS.every(n => a.m[n] >= 3) && others.every(o => a.s >= o.s)) state = 'win';
+        }
+        return { after: a, state, flags, total, marks };
+      },
+      score: (s) => s.s
+    },
+    atc: {
+      init: () => ({ i: 0 }),
+      turn(g, st, p, darts) {
+        const T = atcTargets(g), skip = g.opts && g.opts.skip && (!g.opts.ring || g.opts.ring === 'any');
+        const a = { i: st[p].i };
+        let state = 'open', hits = 0;
+        const flags = [];
+        for (const d of darts) {
+          if (state !== 'open') { flags.push('void'); continue; }
+          const tg = T[a.i];
+          if (atcHit(g, tg, d)) { a.i = Math.min(T.length, a.i + (skip && tg !== 25 ? d.mult : 1)); hits++; flags.push('ok'); }
+          else flags.push('nohit');
+          if (a.i >= T.length) state = 'win';
+        }
+        return { after: a, state, flags, total: hits, hits };
+      },
+      score: (s) => s.i
+    },
+    bob27: {
+      init: () => ({ s: 27, out: false }),
+      rounds: () => 21,
+      turn(g, st, p, darts, round) {
+        const tg = bobTarget(round), val = tg === 25 ? 50 : tg * 2;
+        const flags = darts.map(d => d.num === tg && d.mult === 2 ? 'ok' : 'nohit');
+        const hits = flags.filter(f => f === 'ok').length;
+        let total = hits * val;
+        if (darts.length >= 3 && !hits) total = -val;
+        const s = st[p].s + total;
+        return { after: { s, out: s <= 0 }, state: 'open', flags, total, hits, target: tg };
+      },
+      out: (s) => s.out,
+      score: (s) => s.s
+    },
+    score: {
+      init: () => ({ s: 0 }),
+      rounds: (g) => (g.opts && g.opts.rounds) || 8,
+      turn(g, st, p, darts) {
+        const total = darts.reduce((a, d) => a + d.pts, 0);
+        return { after: { s: st[p].s + total }, state: 'open', flags: darts.map(() => 'ok'), total };
+      },
+      score: (s) => s.s
+    },
+    shanghai: {
+      init: () => ({ s: 0 }),
+      rounds: (g) => (g.opts && g.opts.rounds) || 7,
+      turn(g, st, p, darts, round) {
+        const tg = round + 1, flags = darts.map(d => d.num === tg && d.mult ? 'ok' : 'nohit');
+        const total = darts.reduce((a, d, k) => a + (flags[k] === 'ok' ? d.pts : 0), 0);
+        const ms = new Set(darts.filter(d => d.num === tg).map(d => d.mult));
+        return { after: { s: st[p].s + total }, state: ms.has(1) && ms.has(2) && ms.has(3) ? 'win' : 'open', flags, total, target: tg, shanghai: ms.size === 3 };
+      },
+      score: (s) => s.s
+    }
+  };
+  const modeOf = (g) => MODES[g.mode] ? g.mode : 'x01';
+
+  // One turn of player p, with the end of the game for modes with a fixed number of rounds.
+  function modeTurn(g, st, played, p, darts) {
+    const M = MODES[modeOf(g)];
+    const v = M.turn(g, st, p, darts, played[p]);
+    v.before = st[p]; v.round = played[p];
+    const out = (s) => !!(M.out && M.out(s));
+    if (v.state === 'open' && M.rounds && (darts.length >= 3 || out(v.after))) {
+      const R = M.rounds(g);
+      let left = 0;
+      g.players.forEach((_, q) => { const s = q === p ? v.after : st[q]; if (!out(s)) left += Math.max(0, R - played[q] - (q === p ? 1 : 0)); });
+      if (!left) v.state = 'done';
+    }
+    if (v.state === 'win') v.winner = p;
+    else if (v.state === 'done') {
+      let best = -Infinity, w = 0, tie = false;
+      g.players.forEach((_, q) => { const sc = M.score(q === p ? v.after : st[q]); if (sc > best) { best = sc; w = q; tie = false; } else if (sc === best) tie = true; });
+      v.winner = w; v.tie = tie;
+    }
+    return v;
+  }
+
+  // Replays the committed turns: each player's state, how many turns each has played, and the view of every turn.
+  function replay(g) {
+    const M = MODES[modeOf(g)];
+    const st = g.players.map(() => M.init(g)), played = g.players.map(() => 0), views = [];
+    for (const t of g.turns) {
+      const v = modeTurn(g, st, played, t.p, t.darts);
+      v.p = t.p; v.darts = t.darts; views.push(v);
+      st[t.p] = v.after; played[t.p]++;
+    }
+    return { st, played, views };
+  }
+
   function createGame(opts) {
-    const names = (opts && opts.players && opts.players.length) ? opts.players : ['Gracz 1'];
+    opts = opts || {};
+    const names = (opts.players && opts.players.length) ? opts.players : ['Gracz 1'];
+    const mode = MODES[opts.mode] ? opts.mode : 'x01';
     return {
-      start: (opts && opts.start) || 501,
-      doubleOut: opts && 'doubleOut' in opts ? !!opts.doubleOut : true,
+      mode, opts: Object.assign({}, opts.opts || {}),
+      start: opts.start || 501,
+      doubleOut: 'doubleOut' in opts ? !!opts.doubleOut : true,
       players: names.map(n => ({ name: n })),
-      turns: [], cur: { p: (opts && opts.starter) || 0, darts: [] }, winner: null, legs: (opts && opts.legs) || names.map(() => 0)
+      turns: [], cur: { p: opts.starter || 0, darts: [] }, winner: null, legs: opts.legs || names.map(() => 0)
     };
   }
 
@@ -2136,8 +2323,14 @@ input[type=range]{accent-color:var(--cream)}
   }
 
   function currentView(g) {
-    return evalTurn(remainingOf(g, g.cur.p), g.cur.darts, g.doubleOut);
+    const r = replay(g);
+    const v = modeTurn(g, r.st, r.played, g.cur.p, g.cur.darts);
+    v.states = r.st; v.played = r.played;
+    return v;
   }
+
+  const isOver = (v) => v.state === 'win' || v.state === 'done';
+  function setWinner(g, v) { g.winner = isOver(v) ? v.winner : null; g.tie = isOver(v) && !!v.tie; }
 
   function turnOpen(g) {
     if (g.winner != null) return false;
@@ -2149,7 +2342,7 @@ input[type=range]{accent-color:var(--cream)}
     if (!turnOpen(g)) return null;
     g.cur.darts.push(d);
     const v = currentView(g);
-    if (v.state === 'win') g.winner = g.cur.p;
+    setWinner(g, v);
     return v;
   }
 
@@ -2157,7 +2350,7 @@ input[type=range]{accent-color:var(--cream)}
     if (i < 0 || i >= g.cur.darts.length) return null;
     g.cur.darts[i] = d;
     const v = currentView(g);
-    g.winner = v.state === 'win' ? g.cur.p : null;
+    setWinner(g, v);
     return v;
   }
 
@@ -2165,28 +2358,34 @@ input[type=range]{accent-color:var(--cream)}
     if (i < 0 || i >= g.cur.darts.length) return null;
     g.cur.darts.splice(i, 1);
     const v = currentView(g);
-    g.winner = v.state === 'win' ? g.cur.p : null;
+    setWinner(g, v);
     return v;
   }
 
   function commitTurn(g) {
     const v = currentView(g);
-    g.turns.push({ p: g.cur.p, darts: g.cur.darts.slice(), before: v.before, after: v.rem, state: v.state, total: v.total });
-    if (v.state === 'win') { g.winner = g.cur.p; return v; }
-    g.cur = { p: (g.cur.p + 1) % g.players.length, darts: [] };
+    g.turns.push({ p: g.cur.p, darts: g.cur.darts.slice(), before: v.before, after: v.after, state: v.state, total: v.total });
+    if (isOver(v)) { setWinner(g, v); return v; }
+    // next player; in Bob's 27 the ones who dropped out are skipped
+    const M = MODES[modeOf(g)], st = v.states.slice(), n = g.players.length;
+    st[g.cur.p] = v.after;
+    let q = g.cur.p;
+    for (let k = 0; k < n; k++) { q = (q + 1) % n; if (!(M.out && M.out(st[q]))) break; }
+    g.cur = { p: q, darts: [] };
     return v;
   }
 
   function undo(g) {
-    if (g.cur.darts.length) { g.cur.darts.pop(); g.winner = null; return 'dart'; }
+    if (g.cur.darts.length) { g.cur.darts.pop(); setWinner(g, currentView(g)); return 'dart'; }
     const t = g.turns.pop();
     if (!t) return null;
     g.cur = { p: t.p, darts: t.darts.slice() };
-    const v = currentView(g);
-    g.winner = v.state === 'win' ? g.cur.p : null;
+    setWinner(g, currentView(g));
     return 'turn';
   }
 
+  // Darts used in a turn: 3, unless the turn ended the game before the third dart.
+  const turnDarts = (v) => v.state === 'win' ? v.darts.length : 3;
   function playerStats(g, p) {
     let pts = 0, darts = 0;
     for (const t of g.turns) {
@@ -2196,6 +2395,55 @@ input[type=range]{accent-color:var(--cream)}
     }
     return { pts, darts, avg: darts ? pts / darts * 3 : 0 };
   }
+
+  // Summary of a game for the statistics (the turn that ended it counts, although it is not committed).
+  function gameStats(g) {
+    const r = replay(g), views = r.views.slice(), mode = modeOf(g);
+    if (g.winner != null && g.cur.darts.length) { const v = currentView(g); v.p = g.cur.p; v.darts = g.cur.darts.slice(); views.push(v); }
+    const fin = r.st.slice();
+    views.forEach(v => { fin[v.p] = v.after; });
+    return g.players.map((pl, p) => {
+      const my = views.filter(v => v.p === p);
+      const darts = my.reduce((a, v) => a + turnDarts(v), 0);
+      const o = { name: pl.name, turns: my.length, darts, won: g.winner === p && !g.tie };
+      if (mode === 'x01') {
+        const pts = my.reduce((a, v) => a + v.total, 0), f9 = my.slice(0, 3);
+        o.pts = pts; o.avg = darts ? pts / darts * 3 : 0;
+        o.f9 = f9.length ? f9.reduce((a, v) => a + v.total, 0) / f9.reduce((a, v) => a + turnDarts(v), 0) * 3 : 0;
+        o.best = my.reduce((a, v) => Math.max(a, v.total), 0);
+        o.n180 = my.filter(v => v.total === 180).length;
+        o.n140 = my.filter(v => v.total >= 140 && v.total < 180).length;
+        o.n100 = my.filter(v => v.total >= 100 && v.total < 140).length;
+        const w = my.find(v => v.state === 'win');
+        if (w) o.co = w.before;
+        o.rem = fin[p];
+      } else if (mode === 'cricket') {
+        o.marks = my.reduce((a, v) => a + v.marks, 0); o.mpr = my.length ? o.marks / darts * 3 : 0; o.score = fin[p].s;
+      } else if (mode === 'atc') {
+        o.hits = my.reduce((a, v) => a + v.hits, 0); o.rate = darts ? o.hits / darts : 0; o.pos = fin[p].i; o.done = fin[p].i >= atcTargets(g).length;
+      } else {
+        o.score = fin[p].s;
+        if (mode === 'bob27') { o.out = !!fin[p].out; o.hits = my.reduce((a, v) => a + v.hits, 0); }
+        if (mode === 'score') o.ppr = my.length ? o.score / my.length : 0;
+      }
+      return o;
+    });
+  }
+
+  // What player p aims at now (training modes), as a dart-like label, or null.
+  function targetOf(g, state, round) {
+    const m = modeOf(g);
+    if (m === 'atc') {
+      const T = atcTargets(g), tg = T[state.i];
+      if (tg == null) return null;
+      const ring = (g.opts && g.opts.ring) || 'any';
+      return { num: tg, label: tg === 25 ? 'BULL' : (ring === 'd' ? 'D' : ring === 't' ? 'T' : '') + tg, n: state.i + 1, of: T.length };
+    }
+    if (m === 'bob27') { const tg = bobTarget(round); return { num: tg, label: tg === 25 ? 'BULL' : 'D' + tg }; }
+    if (m === 'shanghai') return { num: round + 1, label: String(round + 1) };
+    return null;
+  }
+  const roundsOf = (g) => { const M = MODES[modeOf(g)]; return M.rounds ? M.rounds(g) : 0; };
 
   /* ---------- Checkouts ---------- */
   const THROWS = (() => {
@@ -2488,7 +2736,7 @@ input[type=range]{accent-color:var(--cream)}
     buildRoi, meanLum, diffMap, cameraFromH, camProject, heightStep, locateTip, refineTipHi, shadowLine, fuseShadowTip, envelopeDist, thresholdMap, motionMeasureHalf, halfRes, estimateShift, shiftRGBA, components, findDart, regionDiff, markOcclusion, Detector,
     autoCalibrate, refineGrid, setRings, classifyColors,
     Tracker, affMul, affInv, affApply, grayOf,
-    evalTurn, createGame, remainingOf, currentView, turnOpen, addDart, setDart, removeDart, commitTurn, undo, playerStats,
+    evalTurn, MODES, CRICKET_NUMS, modeOf, replay, createGame, remainingOf, currentView, turnOpen, addDart, setDart, removeDart, commitTurn, undo, playerStats, gameStats, targetOf, roundsOf,
     checkout, sayDart
   };
 });
@@ -3288,12 +3536,8 @@ function onDart(e) {
   if (!v) return;
   hideStageMsg();
   const k = S.game.cur.darts.length;
-  let say = C.sayDart(d);
-  if (v.state === 'bust') say += '. Przerzut';
-  else if (v.state === 'win') say += '. Wygrana!';
-  else if (k === 3) say += '. Razem ' + v.total;
-  speak(say);
-  setStatus(v.state === 'win' ? 'win' : (C.turnOpen(S.game) ? 'ready' : 'pull'));
+  speak(C.sayDart(d) + turnSay(v, k));
+  setStatus(S.game.winner != null ? 'win' : (C.turnOpen(S.game) ? 'ready' : 'pull'));
   afterChange();
 }
 
@@ -3339,13 +3583,31 @@ function nextTurn(manual) {
   trimMemory();
   if (manual && S.det) S.resetPending = true;
   afterChange();
-  const p = S.game.cur.p, rem = C.remainingOf(S.game, p);
-  const name = S.game.players[p].name;
-  if (S.game.players.length > 1) speak(name + ', ' + rem);
-  else speak('zostało ' + rem);
+  speak(turnPrompt());
 }
 
-function afterChange() { saveGame(); renderGame(); }
+function afterChange() { recordGame(); saveGame(); renderGame(); }
+
+/* ---------------- History of finished games (statistics) ---------------- */
+// A finished game is written once; Cofnij or a correction that changes the result rewrites or removes it.
+function loadHistory() { const h = store.get('history', []); return Array.isArray(h) ? h : []; }
+function recordGame() {
+  const g = S.game;
+  if (g.winner == null && !g.rec) return;
+  const hist = loadHistory();
+  const at = g.rec ? hist.findIndex(r => r.id === g.rec) : -1;
+  if (g.winner == null) {
+    if (at >= 0) hist.splice(at, 1);
+    g.rec = null;
+  } else {
+    const players = C.gameStats(g);
+    const rec = { id: g.rec || Date.now().toString(36) + Math.random().toString(36).slice(2, 6), t: at >= 0 ? hist[at].t : Date.now(), mode: C.modeOf(g), label: gameLabel(g), start: g.start, opts: g.opts || {}, winner: g.tie ? null : g.winner, players, cam: !S.manual };
+    if (at >= 0) hist[at] = rec; else hist.push(rec);
+    while (hist.length > 1000) hist.shift();
+    g.rec = rec.id;
+  }
+  store.set('history', hist);
+}
 
 /* ---------------- Rendering the scoreboard ---------------- */
 function slotClass(d) {
@@ -3354,48 +3616,160 @@ function slotClass(d) {
   if (d.num === 25) return d.mult === 2 ? 't' : 'd';
   return d.mult === 3 ? 't' : d.mult === 2 ? 'd' : '';
 }
+/* ---------------- Game modes: labels, speech ---------------- */
+const MODE_LABEL = { x01: 'X01', cricket: 'Cricket', atc: 'Dookoła tarczy', bob27: "Bob's 27", score: 'Wysoki wynik', shanghai: 'Shanghai' };
+const MODE_DESC = {
+  x01: 'Klasyka: od 501 (albo 301, 701) do zera. Z „double out” ostatnia lotka musi trafić w podwójne pole.',
+  cricket: 'Zamknij pola 15–20 i bull: każde trzema trafieniami (pojedyncze = 1, podwójne = 2, potrójne = 3). Dalsze trafienia w pole, które Ty zamknąłeś, a rywal jeszcze nie, dają punkty. Wygrywa ten, kto zamknie wszystko i ma najwięcej punktów. W grze solo liczy się tylko zamykanie.',
+  atc: 'Trening: trafiaj po kolei 1, 2, 3… aż do 20 (i bulla). Liczą się tylko trafienia w aktualne pole. Wynik to liczba lotek.',
+  bob27: 'Trening podwójnych: start z 27 punktami, w rundzie 1 celujesz w D1, w rundzie 2 w D2… na końcu bull. Trafienie dodaje wartość podwójnego, runda bez trafienia ją odejmuje. Przy 0 lub mniej koniec gry.',
+  score: 'Trening punktowania: ustalona liczba rund, liczy się suma punktów (jak najwięcej w T20).',
+  shanghai: 'Runda 1 = pole 1, runda 2 = pole 2 itd. Liczą się tylko trafienia w pole rundy. Pojedyncze, podwójne i potrójne tego pola w jednej turze („Shanghai”) od razu wygrywa.'
+};
+function gameLabel(g) {
+  const m = C.modeOf(g), o = g.opts || {};
+  if (m === 'x01') return String(g.start);
+  if (m === 'atc') return MODE_LABEL.atc + (o.ring === 'd' ? ' · podwójne' : o.ring === 't' ? ' · potrójne' : '') + (o.bull === false ? ' · bez bulla' : '') + (o.skip && (!o.ring || o.ring === 'any') ? ' · z przeskokiem' : '');
+  if (m === 'score') return MODE_LABEL.score + ' · ' + C.roundsOf(g) + ' rund';
+  if (m === 'shanghai') return MODE_LABEL.shanghai + (C.roundsOf(g) !== 7 ? ' · ' + C.roundsOf(g) + ' rund' : '');
+  return MODE_LABEL[m];
+}
+const fmt1 = (x) => x.toFixed(1);
+const lotek = (n) => n + ' ' + plural(n, 'lotka', 'lotki', 'lotek');
+// Small line next to the player's name: the number this mode is judged by.
+function statLine(m, o) {
+  if (!o || !o.turns) return '';
+  if (m === 'x01') return 'śr. ' + fmt1(o.avg);
+  if (m === 'cricket') return 'MPR ' + o.mpr.toFixed(2);
+  if (m === 'atc') return 'trafienia ' + Math.round(o.rate * 100) + '%';
+  if (m === 'score') return 'śr. ' + Math.round(o.ppr) + ' na turę';
+  if (m === 'bob27') return 'trafienia ' + o.hits;
+  return '';
+}
+function sayTarget(g, t) {
+  if (!t) return '';
+  const ring = (g.opts && g.opts.ring) || 'any';
+  if (t.num === 25) return ring === 'd' ? 'środek bulla' : 'bull';
+  return (ring === 'd' ? 'podwójne ' : ring === 't' ? 'potrójne ' : '') + t.num;
+}
+// Spoken after a dart: end of turn / game.
+function turnSay(v, k) {
+  const g = S.game, m = C.modeOf(g);
+  if (v.state === 'bust') return '. Przerzut';
+  if (v.state === 'win' || v.state === 'done') {
+    if (g.tie) return '. Remis';
+    if (g.players.length > 1) return '. Wygrywa ' + g.players[g.winner].name;
+    return m === 'x01' ? '. Wygrana!' : (m === 'shanghai' && v.state === 'win' ? '. Shanghai!' : '. Koniec gry');
+  }
+  if (k !== 3) return '';
+  if (m === 'x01' || m === 'score' || m === 'shanghai') return '. Razem ' + v.total;
+  if (m === 'bob27') return v.total < 0 ? '. Minus ' + (-v.total) : '. Plus ' + v.total;
+  if (m === 'cricket' && v.marks) return '. ' + v.marks + ' ' + plural(v.marks, 'znacznik', 'znaczniki', 'znaczników');
+  return '';
+}
+// Spoken when the next player steps up.
+function turnPrompt() {
+  const g = S.game, p = g.cur.p, m = C.modeOf(g), v = C.currentView(g), s = v.states[p];
+  const multi = g.players.length > 1, name = multi ? g.players[p].name + ', ' : '';
+  if (m === 'x01') return multi ? name + s : 'zostało ' + s;
+  const t = C.targetOf(g, s, v.played[p]);
+  if (m === 'atc') return name + 'cel ' + sayTarget(g, t);
+  if (m === 'bob27') return name + 'podwójne ' + (t.num === 25 ? 'bull' : t.num) + ', masz ' + s.s;
+  if (m === 'shanghai') return name + 'runda ' + t.num + ', masz ' + s.s;
+  if (m === 'score') return name + 'runda ' + (v.played[p] + 1) + ', masz ' + s.s;
+  if (m === 'cricket') return multi ? name + s.s + ' punktów' : 'dalej';
+  return name;
+}
+function winText(g, stats) {
+  const m = C.modeOf(g), solo = g.players.length === 1, o = stats[g.winner];
+  if (g.tie) return 'Remis';
+  if (!solo) return 'Wygrywa ' + g.players[g.winner].name + (o.score != null && m !== 'cricket' ? ' · ' + o.score : '');
+  if (m === 'x01') return 'Leg w ' + o.darts + ' lotkach · śr. ' + fmt1(o.avg);
+  if (m === 'cricket') return 'Zamknięte w ' + o.darts + ' lotkach · MPR ' + o.mpr.toFixed(2);
+  if (m === 'atc') return 'Koniec: ' + lotek(o.darts) + ' · trafienia ' + Math.round(o.rate * 100) + '%';
+  if (m === 'bob27') return (o.out ? 'Koniec w rundzie ' + o.turns : 'Do końca!') + ' · wynik ' + o.score;
+  if (m === 'shanghai' && C.currentView(g).state === 'win') return 'Shanghai! Wynik ' + o.score;
+  return 'Wynik ' + o.score;
+}
+const MARK = ['', '/', 'X', '⊗'];
+function renderCricket(g, live, p) {
+  const host = $('#cricket');
+  const names = g.players.map((pl, i) => `<th class="${i === p ? 'cur' : ''}">${escapeHtml(pl.name)}</th>`).join('');
+  const rows = C.CRICKET_NUMS.map(n => {
+    const dead = live.every(s => s.m[n] >= 3);
+    return `<tr class="${dead ? 'dead' : ''}"><th class="n">${n === 25 ? 'B' : n}</th>` + live.map((s, i) => `<td class="${i === p ? 'cur ' : ''}${s.m[n] >= 3 ? 'c3' : ''}">${MARK[Math.min(3, s.m[n])]}</td>`).join('') + '</tr>';
+  }).join('');
+  const foot = g.players.length > 1 ? '<tfoot><tr><th class="n"></th>' + live.map((s, i) => `<td class="num ${i === p ? 'cur' : ''}">${s.s}</td>`).join('') + '</tr></tfoot>' : '';
+  host.innerHTML = `<table class="cr"><thead><tr><th class="n"></th>${names}</tr></thead><tbody>${rows}</tbody>${foot}</table>`;
+}
+function escapeHtml(t) { return String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]); }
+// Big number of a player: what is left (X01), points, or the field to hit (Dookoła tarczy).
+function bigOf(g, s, round) {
+  const m = C.modeOf(g);
+  if (m === 'x01') return String(s);
+  if (m === 'atc') { const t = C.targetOf(g, s, round); return t ? t.label : '✓'; }
+  if (m === 'cricket' && g.players.length === 1) return C.CRICKET_NUMS.filter(n => s.m[n] >= 3).length + '/7';
+  return String(s.s);
+}
 function renderGame() {
-  const g = S.game, p = g.cur.p;
+  const g = S.game, p = g.cur.p, m = C.modeOf(g);
   const v = C.currentView(g);
-  const st = C.playerStats(g, p);
+  const live = v.states.slice(); live[p] = v.after;   // standings with the darts of this turn
+  const stats = C.gameStats(g);
   $('#cur-name').textContent = g.players[p].name;
-  $('#cur-avg').textContent = st.darts ? 'śr. ' + st.avg.toFixed(1) : '';
-  const round = g.turns.filter(t => t.p === p).length + 1;
+  $('#cur-avg').textContent = statLine(m, stats[p]);
+  const round = v.played[p] + 1, R = C.roundsOf(g);
   const legNo = (g.legs || []).reduce((a, b) => a + b, 0) + 1;
-  $('#hud-round').textContent = g.start + ' · Runda ' + round + (legNo > 1 ? ' · Leg ' + legNo : '');
+  $('#hud-round').textContent = gameLabel(g) + ' · Runda ' + Math.min(round, R || round) + (R ? '/' + R : '') + (legNo > 1 ? ' · ' + (m === 'x01' || m === 'cricket' ? 'Leg ' : 'Gra ') + legNo : '');
   const rem = $('#cur-rem');
   rem.classList.toggle('bust', v.state === 'bust');
-  rem.innerHTML = v.state === 'bust' ? v.before + '<small>PRZERZUT</small>' : String(v.rem);
+  rem.innerHTML = v.state === 'bust' ? v.before + '<small>PRZERZUT</small>' : escapeHtml(bigOf(g, live[p], v.played[p] + (g.cur.darts.length >= 3 ? 1 : 0)));
   $$('.slot').forEach((el, i) => {
-    const d = g.cur.darts[i];
-    el.className = 'slot ' + slotClass(d) + (d && d.unsure ? ' unsure' : '') + (v.flags[i] === 'void' ? ' void' : '') + (v.flags[i] === 'bust' ? ' bust' : '');
+    const d = g.cur.darts[i], f = v.flags[i];
+    el.className = 'slot ' + slotClass(d) + (d && d.unsure ? ' unsure' : '') + (f === 'void' ? ' void' : '') + (f === 'bust' ? ' bust' : '') + (f === 'nohit' ? ' nohit' : '');
     el.innerHTML = d ? (d.pts === 0 ? '0' : d.label) + (!d.auto ? '<span class="src">ręcznie</span>' : d.fixed ? '<span class="src">poprawka</span>' : '') : '–';
     el.setAttribute('aria-label', 'Rzut ' + (i + 1) + (d ? ': ' + d.label : ''));
   });
-  $('#turn-sum').textContent = v.state === 'bust' ? '0' : String(v.total);
+  const sumL = m === 'cricket' ? 'Znaczn.' : m === 'atc' ? 'Traf.' : 'Tura';
+  $('#turn-sum-l').textContent = sumL;
+  $('#turn-sum').textContent = v.state === 'bust' ? '0' : m === 'cricket' ? String(v.marks) : m === 'bob27' && v.total > 0 ? '+' + v.total : String(v.total);
   const co = $('#checkout');
   co.innerHTML = '';
   if (v.state === 'open' && g.winner == null) {
-    const left = 3 - g.cur.darts.length;
-    const route = C.checkout(v.rem, left, g.doubleOut);
-    if (route) co.innerHTML = 'Zamknij: <b>' + route.map(d => d.label).join(' &nbsp;') + '</b>';
-    else if (v.rem <= 170 && g.doubleOut && left === 3) co.textContent = 'Brak zamknięcia trzema lotkami';
+    if (m === 'x01') {
+      const left = 3 - g.cur.darts.length;
+      const route = C.checkout(v.rem, left, g.doubleOut);
+      if (route) co.innerHTML = 'Zamknij: <b>' + route.map(d => d.label).join(' &nbsp;') + '</b>';
+      else if (v.rem <= 170 && g.doubleOut && left === 3) co.textContent = 'Brak zamknięcia trzema lotkami';
+    } else if (m === 'atc') {
+      const t = C.targetOf(g, live[p], 0);
+      if (t) co.innerHTML = 'Cel: <b>' + escapeHtml(sayTarget(g, t)) + '</b> · ' + t.n + ' z ' + t.of;
+    } else if (m === 'bob27' || m === 'shanghai') {
+      const t = C.targetOf(g, v.before, v.played[p]);
+      co.innerHTML = 'Cel: <b>' + t.label + '</b>' + (m === 'bob27' ? ' · trafienie ' + (t.num === 25 ? 50 : t.num * 2) : '');
+    } else if (m === 'score') co.textContent = 'Punkty';
+    else if (m === 'cricket') co.textContent = g.players.length > 1 ? 'Punkty' : 'Zamknięte pola';
   }
+  const crk = $('#cricket');
+  crk.hidden = m !== 'cricket';
+  if (m === 'cricket') renderCricket(g, live, p);
   const others = $('#others'); others.innerHTML = '';
-  if (g.players.length > 1) {
+  if (g.players.length > 1 && m !== 'cricket') {
     g.players.forEach((pl, i) => {
       if (i === p) return;
-      const s2 = C.playerStats(g, i);
       const el = document.createElement('div'); el.className = 'other';
-      el.innerHTML = `<div class="n"></div><div class="r num">${C.remainingOf(g, i)}</div>`;
-      el.querySelector('.n').textContent = pl.name + (s2.darts ? ' · ' + s2.avg.toFixed(1) : '') + (g.legs && g.legs[i] ? ' · legi ' + g.legs[i] : '');
+      el.innerHTML = `<div class="n"></div><div class="r num"></div>`;
+      const sl = statLine(m, stats[i]);
+      el.querySelector('.n').textContent = pl.name + (sl ? ' · ' + sl : '') + (g.legs && g.legs[i] ? ' · wygrane ' + g.legs[i] : '');
+      el.querySelector('.r').textContent = bigOf(g, live[i], v.played[i]);
       others.appendChild(el);
     });
   }
   const win = $('#win');
   if (g.winner != null) {
     win.hidden = false;
-    $('#win-t').textContent = 'Wygrywa ' + g.players[g.winner].name;
+    $('#win-t').textContent = winText(g, stats);
+    $('#btn-newleg').textContent = m === 'x01' || (m === 'cricket' && g.players.length > 1) ? 'Następny leg' : 'Jeszcze raz';
     co.textContent = '';
   } else win.hidden = true;
   $('#btn-next').disabled = g.winner != null;
@@ -3653,10 +4027,7 @@ function manualDart(d) {
     d.proc0 = procSnap(); d.cal0 = S.cal;
   }
   const v = C.addDart(S.game, d);
-  let say = C.sayDart(d);
-  if (v.state === 'bust') say += '. Przerzut'; else if (v.state === 'win') say += '. Wygrana!';
-  else if (S.game.cur.darts.length === 3) say += '. Razem ' + v.total;
-  speak(say);
+  speak(C.sayDart(d) + turnSay(v, S.game.cur.darts.length));
   if (S.det) S.rebasePending = true;
   afterChange();
 }
@@ -3819,7 +4190,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.19z';
+const APP_VERSION = '2026.10.24';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
@@ -4095,11 +4466,11 @@ $('#btn-newleg').addEventListener('click', () => {
   const legs = (g.legs || g.players.map(() => 0)).slice();
   if (g.winner != null) legs[g.winner]++;
   const starter = ((g.starter || 0) + 1) % g.players.length;
-  S.game = C.createGame({ start: g.start, doubleOut: g.doubleOut, players: g.players.map(p => p.name), starter, legs });
+  S.game = C.createGame({ mode: C.modeOf(g), opts: g.opts, start: g.start, doubleOut: g.doubleOut, players: g.players.map(p => p.name), starter, legs });
   S.game.starter = starter;
   if (S.det) S.resetPending = true;
   afterChange(); setStatus(S.manual ? 'manual' : 'ready');
-  speak(S.game.players[S.game.cur.p].name + ', zaczynasz');
+  speak(S.game.players.length > 1 ? S.game.players[S.game.cur.p].name + ', zaczynasz' : 'Nowa gra');
 });
 const voiceBtn = $('#btn-voice');
 function syncVoice() { voiceBtn.setAttribute('aria-pressed', String(!!S.settings.voice)); }
@@ -4128,6 +4499,7 @@ $('#sh-menu').addEventListener('click', async (e) => {
   const act = e.target.dataset && e.target.dataset.act; if (!act) return;
   closeSheet('#sh-menu');
   if (act === 'newgame') openNew();
+  else if (act === 'stats') openStats();
   else if (act === 'calib') {
     if (S.manual || !S.stream) { const ok = await startCamera(); if (!ok) { showScreen('intro'); return; } S.manual = false; S.pts = loadPoints(); }
     selectPoint(0); showScreen('cal'); autoCalSoon();
@@ -4140,16 +4512,28 @@ $('#sh-menu').addEventListener('click', async (e) => {
   else if (act === 'intro') showScreen('intro');
 });
 
-// New game
-let ng = { start: 501, n: 1 };
+// New game (the last choices are remembered)
+let ng = Object.assign({ mode: 'x01', start: 501, n: 1, ring: 'any', bull: true, skip: false, rScore: 8, rShanghai: 7 }, store.get('newgame', {}));
 function openNew() {
-  ng = { start: S.game.start || 501, n: S.game.players.length };
-  syncSeg('#seg-start', ng.start); syncSeg('#seg-players', ng.n);
-  $('#opt-dout').checked = S.game.doubleOut !== false;
-  renderNames(S.game.players.map(p => p.name));
+  const g = S.game, m = C.modeOf(g), o = g.opts || {};
+  ng = Object.assign(ng, { mode: m, start: g.start || 501, n: g.players.length });
+  if (m === 'atc') Object.assign(ng, { ring: o.ring || 'any', bull: o.bull !== false, skip: !!o.skip });
+  if (m === 'score') ng.rScore = C.roundsOf(g);
+  if (m === 'shanghai') ng.rShanghai = C.roundsOf(g);
+  $('#opt-dout').checked = g.doubleOut !== false;
+  $('#opt-atc-bull').checked = ng.bull; $('#opt-atc-skip').checked = ng.skip;
+  syncNew();
+  renderNames(g.players.map(p => p.name));
   openSheet('#sh-new');
 }
-function syncSeg(id, v) { $$(id + ' button').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.v === +v))); }
+function syncSeg(id, v) { $$(id + ' button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === String(v)))); }
+function syncNew() {
+  syncSeg('#seg-mode', ng.mode); syncSeg('#seg-start', ng.start); syncSeg('#seg-players', ng.n);
+  syncSeg('#seg-ring', ng.ring); syncSeg('#seg-rounds-score', ng.rScore); syncSeg('#seg-rounds-shanghai', ng.rShanghai);
+  $$('#sh-new [data-m]').forEach(el => { el.hidden = el.dataset.m !== ng.mode; });
+  if (ng.mode === 'atc') $('#row-atc-skip').hidden = ng.ring !== 'any';
+  $('#mode-desc').textContent = MODE_DESC[ng.mode];
+}
 function renderNames(existing) {
   const host = $('#names'); const cur = existing || $$('#names input').map(i => i.value);
   host.innerHTML = '';
@@ -4160,18 +4544,121 @@ function renderNames(existing) {
     host.appendChild(f);
   }
 }
-$('#seg-start').addEventListener('click', (e) => { const v = e.target.dataset.v; if (v) { ng.start = +v; syncSeg('#seg-start', v); } });
-$('#seg-players').addEventListener('click', (e) => { const v = e.target.dataset.v; if (v) { ng.n = +v; syncSeg('#seg-players', v); renderNames(); } });
+const segPick = (id, fn) => $(id).addEventListener('click', (e) => { const v = e.target.closest('button'); if (v && v.dataset.v) { fn(v.dataset.v); syncNew(); } });
+segPick('#seg-mode', (v) => { ng.mode = v; });
+segPick('#seg-start', (v) => { ng.start = +v; });
+segPick('#seg-players', (v) => { ng.n = +v; renderNames(); });
+segPick('#seg-ring', (v) => { ng.ring = v; });
+segPick('#seg-rounds-score', (v) => { ng.rScore = +v; });
+segPick('#seg-rounds-shanghai', (v) => { ng.rShanghai = +v; });
 $('#new-cancel').addEventListener('click', () => closeSheet('#sh-new'));
 $('#new-go').addEventListener('click', () => {
   const names = $$('#names input').map((i, k) => i.value.trim() || 'Gracz ' + (k + 1));
+  ng.bull = $('#opt-atc-bull').checked; ng.skip = $('#opt-atc-skip').checked;
+  store.set('newgame', ng);
+  const opts = ng.mode === 'atc' ? { ring: ng.ring, bull: ng.bull, skip: ng.ring === 'any' && ng.skip }
+    : ng.mode === 'score' ? { rounds: ng.rScore } : ng.mode === 'shanghai' ? { rounds: ng.rShanghai } : {};
   harvestTurn(S.game.cur.darts);
-  S.game = C.createGame({ start: ng.start, players: names, doubleOut: $('#opt-dout').checked });
+  S.game = C.createGame({ mode: ng.mode, opts, start: ng.start, players: names, doubleOut: $('#opt-dout').checked });
   closeSheet('#sh-new');
   if (S.det) S.resetPending = true;
   afterChange(); setStatus(S.manual ? 'manual' : 'ready');
-  speak(names[0] + ', zaczynasz. ' + ng.start);
+  speak(names[0] + ', zaczynasz. ' + (ng.mode === 'x01' ? ng.start : MODE_LABEL[ng.mode]));
 });
+
+/* ---------------- Statistics sheet ---------------- */
+let statsWho = null;
+function openStats() {
+  const hist = loadHistory(), cnt = new Map();
+  for (const r of hist) for (const o of r.players) cnt.set(o.name, (cnt.get(o.name) || 0) + 1);
+  const names = Array.from(cnt.keys()).sort((a, b) => cnt.get(b) - cnt.get(a));
+  if (!names.includes(statsWho)) statsWho = names.includes(S.game.players[0].name) ? S.game.players[0].name : names[0];
+  const who = $('#stats-who');
+  who.innerHTML = '';
+  who.hidden = names.length < 2;
+  names.forEach(n => { const b = document.createElement('button'); b.dataset.v = n; b.textContent = n; who.appendChild(b); });
+  syncSeg('#stats-who', statsWho);
+  renderStats(hist);
+  openSheet('#sh-stats');
+}
+$('#stats-who').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; statsWho = b.dataset.v; syncSeg('#stats-who', statsWho); renderStats(loadHistory()); });
+$('#stats-close').addEventListener('click', () => closeSheet('#sh-stats'));
+$('#stats-clear').addEventListener('click', () => {
+  if (!confirm('Usunąć całą historię gier i statystyki? Tego nie da się cofnąć.')) return;
+  store.set('history', []); S.game.rec = null; saveGame(); openStats();
+});
+const tile = (label, value) => `<div class="st-tile"><small>${label}</small><b>${value}</b></div>`;
+const dateOf = (t) => { const d = new Date(t), z = (n) => String(n).padStart(2, '0'); return z(d.getDate()) + '.' + z(d.getMonth() + 1) + ' ' + z(d.getHours()) + ':' + z(d.getMinutes()); };
+const sum = (a, f) => a.reduce((s, x) => s + f(x), 0);
+const max = (a, f) => a.length ? Math.max(...a.map(f)) : 0;
+function resultOf(r, o) {
+  const won = r.players.length > 1 ? (r.winner == null ? ' · remis' : o.won ? ' · wygrana' : '') : '';
+  if (r.mode === 'x01') return 'śr. ' + fmt1(o.avg) + (o.co ? ' · zamknięcie ' + o.co : ' · zostało ' + o.rem) + won;
+  if (r.mode === 'cricket') return 'MPR ' + o.mpr.toFixed(2) + won;
+  if (r.mode === 'atc') return (o.done ? lotek(o.darts) : 'doszedł do ' + (o.pos + 1)) + ' · ' + Math.round(o.rate * 100) + '%' + won;
+  return 'wynik ' + o.score + won;
+}
+function renderStats(hist) {
+  const body = $('#stats-body');
+  const mine = hist.map(r => ({ r, o: r.players.find(o => o.name === statsWho) })).filter(x => x.o);
+  if (!mine.length) { body.innerHTML = '<p class="hint">Tu pojawią się statystyki skończonych gier: średnie, najlepsze wyniki, ostatnie gry. Zagraj pierwszą grę do końca.</p>'; return; }
+  const multi = (x) => x.r.players.length > 1;
+  const winsLine = (list) => { const m = list.filter(multi); return m.length ? tile('Wygrane z rywalem', m.filter(x => x.o.won).length + ' z ' + m.length) : ''; };
+  let html = '';
+  const x01 = mine.filter(x => x.r.mode === 'x01');
+  if (x01.length) {
+    const darts = sum(x01, x => x.o.darts), pts = sum(x01, x => x.o.pts);
+    const fin = x01.filter(x => x.o.co);
+    const starts = Array.from(new Set(fin.map(x => x.r.start))).sort((a, b) => b - a);
+    const bestLeg = starts.map(st => st + ' w ' + Math.min(...fin.filter(x => x.r.start === st).map(x => x.o.darts))).join(', ');
+    const last = x01.slice(-30), top = Math.max(1, ...last.map(x => x.o.avg));
+    html += `<div class="st-card"><h4>X01 (501/301/701)</h4><div class="st-grid">`
+      + tile('Legi', x01.length) + winsLine(x01)
+      + tile('Średnia', darts ? fmt1(pts / darts * 3) : '–')
+      + tile('Najlepsza średnia', fmt1(max(x01, x => x.o.avg)))
+      + tile('Pierwsze 9 lotek', fmt1(sum(x01, x => x.o.f9) / x01.length))
+      + tile('Najwyższe zamknięcie', fin.length ? max(fin, x => x.o.co) : '–')
+      + tile('Najlepsza tura', max(x01, x => x.o.best))
+      + tile('180', sum(x01, x => x.o.n180)) + tile('140+', sum(x01, x => x.o.n140)) + tile('100+', sum(x01, x => x.o.n100))
+      + `</div>` + (bestLeg ? `<p class="hint">Najkrótszy leg (lotki): ${bestLeg}</p>` : '')
+      + (last.length > 1 ? `<p class="hint">Średnia w ostatnich ${last.length} legach</p><div class="st-bars">${last.map(x => `<i style="height:${Math.max(3, x.o.avg / top * 100).toFixed(0)}%" title="${fmt1(x.o.avg)}"></i>`).join('')}</div>` : '')
+      + `</div>`;
+  }
+  const cr = mine.filter(x => x.r.mode === 'cricket');
+  if (cr.length) {
+    const d = sum(cr, x => x.o.darts);
+    html += `<div class="st-card"><h4>Cricket</h4><div class="st-grid">` + tile('Gry', cr.length) + winsLine(cr)
+      + tile('MPR (znaczniki na turę)', d ? (sum(cr, x => x.o.marks) / d * 3).toFixed(2) : '–') + tile('Najlepszy MPR', max(cr, x => x.o.mpr).toFixed(2)) + `</div></div>`;
+  }
+  const atc = mine.filter(x => x.r.mode === 'atc');
+  if (atc.length) {
+    const vars = Array.from(new Set(atc.map(x => x.r.label)));
+    html += `<div class="st-card"><h4>Dookoła tarczy</h4>` + vars.map(lb => {
+      const l = atc.filter(x => x.r.label === lb), done = l.filter(x => x.o.done), d = sum(l, x => x.o.darts);
+      return `<p class="hint">${escapeHtml(lb.replace(MODE_LABEL.atc + ' · ', '').replace(MODE_LABEL.atc, 'dowolne pola'))}</p><div class="st-grid">` + tile('Gry', l.length)
+        + tile('Najmniej lotek', done.length ? Math.min(...done.map(x => x.o.darts)) : '–')
+        + tile('Średnio lotek', done.length ? Math.round(sum(done, x => x.o.darts) / done.length) : '–')
+        + tile('Trafienia', d ? Math.round(sum(l, x => x.o.hits) / d * 100) + '%' : '–') + `</div>`;
+    }).join('') + `</div>`;
+  }
+  const scored = (mode, title, key) => {
+    const l = mine.filter(x => x.r.mode === mode);
+    if (!l.length) return '';
+    const vars = Array.from(new Set(l.map(key)));
+    return `<div class="st-card"><h4>${title}</h4>` + vars.map(k => {
+      const v = l.filter(x => key(x) === k);
+      return (vars.length > 1 || k ? `<p class="hint">${escapeHtml(k)}</p>` : '') + `<div class="st-grid">` + tile('Gry', v.length) + winsLine(v)
+        + tile('Najlepszy wynik', max(v, x => x.o.score)) + tile('Średni wynik', Math.round(sum(v, x => x.o.score) / v.length))
+        + (mode === 'bob27' ? tile('Do końca', v.filter(x => !x.o.out).length + ' z ' + v.length) : '') + `</div>`;
+    }).join('') + `</div>`;
+  };
+  html += scored('bob27', "Bob's 27", () => '');
+  html += scored('score', 'Wysoki wynik', (x) => C.roundsOf(x.r) + ' rund');
+  html += scored('shanghai', 'Shanghai', (x) => C.roundsOf(x.r) + ' rund');
+  html += `<div class="st-card"><h4>Ostatnie gry</h4><div class="st-list">` + mine.slice(-20).reverse().map(x =>
+    `<div><span>${dateOf(x.r.t)} · ${escapeHtml(x.r.label)}</span><span>${escapeHtml(resultOf(x.r, x.o))}</span></div>`).join('') + `</div></div>`;
+  body.innerHTML = html;
+}
 
 // Settings
 function openSettings() {
