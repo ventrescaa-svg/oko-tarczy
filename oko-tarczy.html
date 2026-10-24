@@ -997,6 +997,81 @@ input[type=range]{accent-color:var(--cream)}
     return sorted[i];
   }
 
+  /* ---------- Shadow below, dart above ----------
+     Under a ceiling lamp the dart's cast shadow runs down the board from the point: a thin line,
+     then the flight's shadow, a solid blob some 8-12 cm below the point. That blob can be the
+     biggest change in the picture (the dart itself is thin and splits up on black). Two readings
+     of the main piece are compared:
+       as the dart: a dart-long line from its front end, the way a dart looks here (heightStep);
+       as the shadow: the dart is up the board from it (straight up or up to 30 deg aside), its
+       point 8-200 mm above the piece's top, and a dart-long line from there over other change.
+     Each reading scores the share of the line covered by change (best of tilts -20..20 deg).
+     g: { Hp, Hpi, cam }. Returns { cover, own, upMm, ang, del, T, per (piece -> px of the line) } or null. */
+  function castSource(cc, w, h, main, comps, g, occ) {
+    const L = cc.labels;
+    const pts = [];
+    for (let y = main.miny; y <= main.maxy; y++) for (let x = main.minx; x <= main.maxx; x++) if (L[y * w + x] === main.id) pts.push(x, y);
+    if (!pts.length) return null;
+    const lab = new Int32Array(w * h);   // labels of the pieces still in play, not of earlier darts
+    for (const c of comps) for (let y = c.miny; y <= c.maxy; y++) for (let x = c.minx; x <= c.maxx; x++) {
+      const i = y * w + x;
+      if (L[i] === c.id && !(occ && occ[i])) lab[i] = c.id;
+    }
+    // label under the line at step a (band of 5 px across it), 0 = none; skip = the main piece
+    const at = (T, ax, ay, a, skip) => {
+      const x0 = T[0] + ax * a, y0 = T[1] + ay * a;
+      for (let o = -2; o <= 2; o++) {
+        const x = Math.round(x0 - ay * o), y = Math.round(y0 + ax * o);
+        if (x < 0 || y < 0 || x >= w || y >= h) continue;
+        const l = lab[y * w + x];
+        if (l && l !== skip) return l;
+      }
+      return 0;
+    };
+    const line = (T, Tb, skip) => {
+      const F = camProject(g.cam, Tb[0], Tb[1], 150);
+      const dx0 = F[0] - T[0], dy0 = F[1] - T[1], len = Math.hypot(dx0, dy0);
+      if (len < 20) return null;
+      let best = null;
+      for (const del of [-20, -10, 0, 10, 20]) {
+        const c = Math.cos(del * Math.PI / 180), s = Math.sin(del * Math.PI / 180);
+        const ax = (dx0 * c - dy0 * s) / len, ay = (dx0 * s + dy0 * c) / len;
+        let cov = 0, n = 0;
+        for (let a = 0; a <= len; a++, n++) if (at(T, ax, ay, a, skip)) cov++;
+        if (!best || cov / n > best.cover) best = { cover: cov / n, del, ax, ay, len };
+      }
+      return best;
+    };
+    // the main piece as the dart
+    let cx = 0, cy = 0;
+    for (let k = 0; k < pts.length; k += 2) { cx += pts[k]; cy += pts[k + 1]; }
+    cx /= pts.length / 2; cy /= pts.length / 2;
+    const J = heightStep(g.cam, g.Hpi, cx, cy), jl = Math.hypot(J[0], J[1]);
+    if (!(jl > 0.3)) return null;
+    let fr = -Infinity, fp = null;
+    for (let k = 0; k < pts.length; k += 2) { const v = -(pts[k] * J[0] + pts[k + 1] * J[1]) / jl; if (v > fr) { fr = v; fp = [pts[k], pts[k + 1]]; } }
+    const own = line(fp, applyH(g.Hpi, fp[0], fp[1]), 0);
+    // the main piece as the shadow
+    const mb = [];
+    for (let k = 0; k < pts.length; k += 2) mb.push(applyH(g.Hpi, pts[k], pts[k + 1]));
+    let best = null;
+    for (const ang of [-30, -15, 0, 15, 30]) {
+      const ux = Math.sin(ang * Math.PI / 180), uy = Math.cos(ang * Math.PI / 180);   // up the board (y up), tilted
+      let top = -Infinity, tb = null;
+      for (const b of mb) { const v = b[0] * ux + b[1] * uy; if (v > top) { top = v; tb = b; } }
+      for (let up = 8; up <= 200; up += 4) {
+        const Tb = [tb[0] + ux * up, tb[1] + uy * up], T = applyH(g.Hp, Tb[0], Tb[1]);
+        const r = line(T, Tb, main.id);
+        if (r && (!best || r.cover > best.cover)) best = Object.assign(r, { upMm: up, ang, T });
+      }
+    }
+    if (!best) return null;
+    best.own = own ? own.cover : 0;
+    best.per = new Map();   // how much of the line each piece covers
+    for (let a = 0; a <= best.len; a++) { const l = at(best.T, best.ax, best.ay, a, main.id); if (l) best.per.set(l, (best.per.get(l) || 0) + 1); }
+    return best;
+  }
+
   /* Find the newest dart in a change mask.
      opts: { nearDir:[x,y], minComp, minDartArea, gap, occ (Uint8Array|null) } */
   function findDart(mask, w, h, opts, cc) {
@@ -1045,7 +1120,22 @@ input[type=range]{accent-color:var(--cream)}
       }
       if (cross.size && cross.size < comps.length) comps = comps.filter(c => !cross.has(c));
     }
-    const main = comps[0];
+    let main = comps[0], cast = null;
+    if (opts.cast && comps.length > 1) {
+      // The biggest piece may be the flight's cast shadow; then take the dart above it (measured:
+      // the shadow reading covers 0.69 of its line against 0.24 for the blob as a dart, while
+      // every other throw stays below 0.3).
+      const r = castSource(cc, w, h, main, comps, opts.cast, opts.occ);
+      if (r && r.cover >= (opts.castCover || 0.5) && r.cover >= r.own + 0.15) {
+        let bl = 0, bn = 0;
+        for (const [l, k] of r.per) if (k > bn) { bn = k; bl = l; }
+        const nm = comps.find(c => c.id === bl);
+        if (nm) {
+          cast = { cover: +r.cover.toFixed(2), own: +r.own.toFixed(2), upMm: r.upMm, ang: r.ang, shadowArea: main.area };
+          comps = comps.filter(c => c !== main); main = nm;
+        }
+      }
+    }
     // Candidate pieces near the biggest change: a dart often splits into flight, shaft and
     // barrel when a part matches the board colour or hides behind an earlier dart.
     const radius = opts.mergeRadius || opts.gap * 3.5;
@@ -1056,6 +1146,9 @@ input[type=range]{accent-color:var(--cream)}
       // cases). A far piece that sits in another direction from the main one is the dart's cast
       // shadow (thin line from the point, then the flight's blob) or something else, never the
       // dart: it used to drag the axis, and the "point", to the far end of the shadow.
+      // Signed (positive = turned towards the bottom of the picture): whole darts -35..+15 deg on
+      // 400 throws, their pieces up to +34; the flight's shadow under a ceiling lamp sits +40..+47
+      // from the flight, so the window is narrower on that side.
       const cen = (c) => {
         let sx = 0, sy = 0, k = 0;
         for (let y = c.miny; y <= c.maxy; y++) for (let x = c.minx; x <= c.maxx; x++) if (cc.labels[y * w + x] === c.id) { sx += x; sy += y; k++; }
@@ -1063,7 +1156,7 @@ input[type=range]{accent-color:var(--cream)}
       };
       const cm = cen(main), th = opts.axisAt(cm[0], cm[1]);
       if (th != null) {
-        const win = opts.axisWin || [-35, 45];
+        const win = opts.axisWin || [-35, 35];
         cand = cand.filter(c => {
           if (c === main) return true;
           const q = cen(c), dx = q[0] - cm[0], dy = q[1] - cm[1];
@@ -1226,7 +1319,7 @@ input[type=range]{accent-color:var(--cream)}
     return {
       tip, axis: [fx, fy], centroid: [P.cx, P.cy], length, area: n,
       elongation: Math.sqrt(P.l1 / P.l2), tipWidth: tipW, tailWidth: tailW,
-      tipNearOcc, pixels: pix.subarray(0, n), bbox: box
+      tipNearOcc, pixels: pix.subarray(0, n), bbox: box, cast
     };
   }
 
@@ -1627,6 +1720,7 @@ input[type=range]{accent-color:var(--cream)}
       nearDir: this.nearDir, minComp: this.lim.minComp, minDartArea: this.lim.minDartArea,
       gap: this.lim.gap, occ: this.dartsInTurn ? this.occ : null, weights: this.useBarrel ? this.buf2 : null,
       seed: th.seed, seedThr: th.T, occDrop: this.occDrop,
+      cast: this.cam && this.castShadow !== false ? { Hp: this.Hp, Hpi: this.Hpi, cam: this.cam } : null,
       axisAt: this.cam && this.dirPrior !== false ? (x, y) => {
         const J = heightStep(this.cam, this.Hpi, x, y);
         return Math.hypot(J[0], J[1]) > 0.3 ? Math.atan2(-J[1], -J[0]) : null;
@@ -1743,7 +1837,7 @@ input[type=range]{accent-color:var(--cream)}
     }
     return { x0, y0, w: cw, h: ch, ref, cur, mask: mk, occ: occ0 ? oc : null, tip: det.tip.slice(), barrel: (det.barrelTip || det.tip).slice(), axis: det.axis.slice(),
       ext: det.ext, area: det.area, hidden: det.hidden, nearOcc: det.tipNearOcc, noise: this.noise, shift: this.diag.shift || [0, 0], dartsInTurn: this.dartsInTurn,
-      nose: det.nose ? det.nose.slice() : null, pointPx: det.pointPx, pxPerMm: det.pxPerMm, tipBy: det.tipBy, pointMm: this.pointMm };
+      nose: det.nose ? det.nose.slice() : null, pointPx: det.pointPx, pxPerMm: det.pxPerMm, tipBy: det.tipBy, pointMm: this.pointMm, cast: det.cast || null };
   };
 
   /* ---------- Automatic calibration ----------
@@ -2744,7 +2838,7 @@ input[type=range]{accent-color:var(--cream)}
     SECTORS, RING, CAL_ANGLES, CAL_LABELS, calBoardPoints,
     makeDart, scoreAt, wireDistance,
     homography, applyH, invertH, mulH, localScale, makeCalibration,
-    buildRoi, meanLum, diffMap, cameraFromH, camProject, heightStep, locateTip, refineTipHi, shadowLine, fuseShadowTip, envelopeDist, thresholdMap, motionMeasureHalf, halfRes, estimateShift, shiftRGBA, components, findDart, regionDiff, markOcclusion, Detector,
+    buildRoi, meanLum, diffMap, cameraFromH, camProject, heightStep, locateTip, refineTipHi, shadowLine, fuseShadowTip, castSource, envelopeDist, thresholdMap, motionMeasureHalf, halfRes, estimateShift, shiftRGBA, components, findDart, regionDiff, markOcclusion, Detector,
     autoCalibrate, refineGrid, setRings, classifyColors,
     Tracker, affMul, affInv, affApply, grayOf,
     evalTurn, MODES, CRICKET_NUMS, modeOf, replay, createGame, remainingOf, currentView, turnOpen, addDart, setDart, removeDart, commitTurn, undo, playerStats, gameStats, targetOf, roundsOf,
@@ -4404,7 +4498,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.24e';
+const APP_VERSION = '2026.10.24f';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
@@ -4479,7 +4573,7 @@ function harvestTurn(darts) {
         id: d.sid, ts: Date.now(), app: APP_VERSION, kind: D.kind || 'dart', label,
         det: det ? { label: det.label, num: det.num, mult: det.mult, unsure: det.unsure, board: det.board.map(r2), tip: toCrop(det.tip, P, cr), raw: toCrop(det.raw, P, cr),
           seen: pc(D.tip), barrel: pc(D.barrel), axis: D.axis, ext: D.ext, area: D.area, hidden: D.hidden, nearOcc: D.nearOcc,
-          nose: pc(D.nose), pointPx: D.pointPx, pxPerMm: D.pxPerMm != null ? r2(D.pxPerMm) : null, tipBy: D.tipBy,
+          nose: pc(D.nose), pointPx: D.pointPx, pxPerMm: D.pxPerMm != null ? r2(D.pxPerMm) : null, tipBy: D.tipBy, cast: D.cast || null,
           hi: D.hi ? { tip: pc(D.hi.tip), lo: pc(D.hi.lo), by: D.hi.by, move: D.hi.move, shift: D.hi.shift, used: D.hi.used } : null } : null,
         hiCrop: D.hiCrop ? { x0: D.hiCrop.x0, y0: D.hiCrop.y0, w: D.hiCrop.w, h: D.hiCrop.h, z: D.hiCrop.z, note: 'hi px = proc px * z - x0/y0' } : null,
         crop: { x0: D.x0, y0: D.y0, k: cr.k },

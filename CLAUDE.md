@@ -129,7 +129,7 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 ## Kierunek rzutki z geometrii kamery (od 2026.10.19t, eksport Piotra z 21:26, 60 rzutów)
 - Cień rzutki to nie plama obok, tylko długi cień rzucony na tarczę: cienka linia od grota w dół, potem plama (cień lotki) ok. 100–120 px od grota, aż do bulla. Bywa bardzo ciemny (k ≈ 0,15 na kremowym), więc `isShadow` go nie łapie (czarna lotka też ma k ≈ 0,1).
 - Przyczyna błędu: oś PCA po złączeniu głównej składowej z plamą robiła się pionowa (plama dominuje rozrzut), a grot lądował na dalekim końcu cienia (52, 55, 60, też 41, 54, 36, 44, 50).
-- `findDart` dostaje `opts.axisAt(x, y)` z `Detector` (kierunek odwrotny do `heightStep`, czyli od lotki do grota). Daleka składowa (> 0,3·`gap` od środka głównej), której środek leży w kierunku poza oknem `axisWin` = [−35°, +45°] względem tej osi (mod 180°), jest odrzucana jeszcze przed PCA. Prawdziwe rzutki na eksporcie leżą 6–24° od przewidywanej osi, cienie 44–89°.
+- `findDart` dostaje `opts.axisAt(x, y)` z `Detector` (kierunek odwrotny do `heightStep`, czyli od lotki do grota). Daleka składowa (> 0,3·`gap` od środka głównej), której środek leży w kierunku poza oknem `axisWin` = [−35°, +45°] względem tej osi (mod 180°), jest odrzucana jeszcze przed PCA (od 24f okno [−35°, +35°], patrz niżej). Prawdziwe rzutki na eksporcie leżą 6–24° od przewidywanej osi, cienie 44–89°.
 - Przewidywana oś ma sens tylko przy kamerze z boku (|J| > 0,3 px/mm), inaczej `axisAt` zwraca `null` i nic się nie zmienia. Wyłączenie: `det.dirPrior = false`.
 - Wynik na 60 rzutach z `HI=1`: dobre pole 38 → 40, poprawiane stuknięciem 14/23 → 18/23, z szumem 40–41. Część etykiet `auto` w eksporcie jest błędna (cień zaakceptowany po cichu), więc prawdziwa poprawa jest większa niż w liczbach.
 - Nadal nie obsługiwane: rzutka, której główna składowa to sam cień (większy od rzutki), oraz dwie rzutki, gdy lotka drugiej zasłania baryłkę pierwszej (próbka 30).
@@ -170,6 +170,23 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
   Z NOISE=4 (stary warunek HI) 220/214/222 → 228/225/225. `rz3`: HI 41 → 42, bez HI 42 → 43. Sztuczne rzuty: 54/57 → 54/58.
 - Na tych danych ostry grot nic już nie daje (bez HI 234, z HI 233); zostaje włączony, bo na sztucznych rzutach pomaga.
 - Nadal źle w nowych: 284 (grot przy drucie; 251 i 260 tylko z HI), 286 i 292 (cień lotki jako duża plama wybrany zamiast rzutki, a prawdziwa rzutka jest poza wycinkiem próbki, więc nie da się tego odtworzyć), 261 (etykieta `auto` 5 jest prawdopodobnie zła, rzutka wisi poza podwójną).
+
+## Cień od lampy pod sufitem (2026.10.24f, eksport z 2026-10-24, 434 próbki)
+- Piotr: „cień zamiast grota” zdarza się głównie przy sztucznym świetle, które u niego pada z góry. Pomiar na eksporcie (`rz6` w scratchpadzie, zawiera wszystkie wcześniejsze próbki):
+  cień rzutki leży na tarczy prosto w dół od grota (−95…−115° w układzie tarczy, tak samo 21.10, 22.10 i 24.10): cienka kreska, potem plama cienia lotki ok. 90–120 mm pod grotem.
+  Od 19w 21 z 309 rzutów na żywo trafiło właśnie w tę plamę (punkt 50–140 mm pod prawdziwym grotem); drugi częsty błąd to grot za krótki wzdłuż rzutki.
+- Plama wygrywała na dwa sposoby:
+  1. Główna składowa to lotka (dobrze), ale plama leżała w oknie kierunku z 19t (od lotki +40…+47°, okno sięgało +45°), więc była doklejana i grot szedł w plamę (146, 197, 390).
+     Teraz `axisWin` = [−35°, +35°] (+ = w stronę dołu obrazu). Całe rzutki leżą −35…+15°, ich kawałki do +34° (przy +25° psuło `rz3` #58, kawałek baryłki pod +28°).
+  2. Główna składowa to sama plama (rzutka cienka, rozbita na czarnym). `castSource` porównuje dwa odczytania głównej składowej: jako rzutka (linia długości rzutki od jej przodu, kierunek z `heightStep`)
+     i jako cień (grot 8–200 mm wyżej na tarczy, prosto w górę albo do 30° w bok, od niego linia rzutki przez inne zmiany). Miara: część linii pokryta zmianą, najlepsze z przechyleń −20…+20°.
+     Gdy cień ≥ 0,5 i o ≥ 0,15 lepszy, główną staje się składowa na tej linii, a plama wypada. `det.cast` (też w próbkach Nauka AI); wyłączenie `det.castShadow = false`.
+- Wynik `test_rzutow.js` na `rz6` (405 do odtworzenia): HI 343 → 347, bez HI 344 → 348, poprawiane stuknięciem 92 → 96 / 94 → 98 ze 129 (146, 197, 390, 423); z NOISE=4 SEED=1: 335 → 339.
+  `rz3` bez zmian (42/43). `castSource` zadziałał tylko na 423 (0,69 wobec 0,24); u każdego innego rzutu odczytanie „cień” ≤ 0,29.
+- Większość plam z 24.10 (411, 414, 418, 427, też 292) ma prawdziwą rzutkę poza wycinkiem próbki, więc offline ich nie widać. Dlatego sztuczne rzuty z cieniem
+  (`synth2.js` w scratchpadzie: `synth.js` + cień od lampy, 0,8 mm przesunięcia na mm wysokości pod −105°, lotka cienia r = 18 mm): ciemna rzutka (czarny shaft i lotka, cień 70%) dobre pole 36/57 → 55/59, średni błąd 31,9 → 5,2 mm.
+  Zwykłe sztuczne rzuty bez cienia bez zmian (54/58).
+- Nie zrobione: uczenie kierunku światła z rzutów (na danych Piotra stały, więc niepotrzebne) i sprawdzanie kierunku kreski w `shadowLine`.
 
 ## Porządki w kodzie (2026.10.19z)
 - Usunięte nieużywane funkcje rdzenia: `boardOutline`, `quickChange`, `envelopeDist2`, `motionMeasure` (zastąpione `motionMeasureHalf`), `warpAffineRGBA` (aplikacja używa canvasa), `lim.motion`.
@@ -216,7 +233,7 @@ Wynik na eksporcie z 2026-10-17 (77 rzutów, 59 da się odtworzyć), historyczni
 | Nowa (17.10) | 43 | 15/22 | 43–44 |
 | Stara (`walk`/`old`) | 41 | 13/22 | 39–41, wynik skacze |
 
-Obecne punkty odniesienia: `rz5` (eksport 2026-10-22, 275 rzutów) i `rz3` (60 rzutów z 2026-10-19), patrz sekcje 19x/19y.
+Obecne punkty odniesienia: `rz6` (eksport 2026-10-24, 405 rzutów do odtworzenia, zawiera `rz5`) i `rz3` (60 rzutów z 2026-10-19), patrz sekcje 19x/19y i 24f.
 
 Zawsze porównuj z wersją przed zmianą i sprawdzaj z `NOISE`.
 
