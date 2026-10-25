@@ -40,6 +40,7 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - Każdy rzut z kamery zapisuje się w IndexedDB jako wycinek przed i po rzucie oraz wynik ostateczny
   (`auto`, `confirmed`, `tap` = poprawiony stuknięciem, `deleted`, `keypad`).
   Eksport ZIP: Menu, Ustawienia wykrywania, Nauka AI. ZIP zawiera `manifest.json` i JPEG-i.
+  Od 2026.10.25a eksport dzieli się na części po ok. 25 MB (`-cz1z3` itd., każda z własnym `manifest.json`), bo czat przyjmuje maks. 30 MB; `rozpakuj.py a.zip b.zip … katalog` łączy części.
 - Naprawione 2026.10.17: zdjęcie „przed” bywało kopią „po”, bo `refA` aliasował `this.ref`. Dotyczyło 17 z 77 starych próbek.
 - Nowe próbki mają też `det.nose`, `pointPx`, `pxPerMm`, `tipBy`, `pointMm`.
 
