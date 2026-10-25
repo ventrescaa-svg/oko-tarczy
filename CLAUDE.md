@@ -226,6 +226,8 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 ## Model AI grota (od 2026.10.25b)
 - Próba na eksporcie z 2026-10-25 (691 próbek, 624 do nauki), sprawdzian po czasie w 5 częściach (każdy rzut ocenia model, który go nie widział):
   model 90% dobrych pól wobec 86% aplikacji na żywo; poprawiane stuknięciem 82% wobec 41%; najnowsze (24e–24g) 227 vs 229 z 247. Model naprawia 61, psuje 40, więc najlepsze będzie łączenie z regułami.
+- Łączenie (2026.10.25c, `AI_TRUST` = 0,6): weź model, gdy jego pole różni się od reguł, a pewność ≥ 0,6. Na sprawdzianie 569/624 (91%) wobec reguł 539 i samego modelu 560 (naprawia 54, psuje 24); próg 0,5: 566, 0,7: 566, 0,8: 556.
+  Ale na najnowszych rzutach (24e–24g) prawie bez zysku: 230 wobec 229 z 247. Dlatego domyślnie `bg`; korzyść ma przyjść z bardziej różnorodnych danych.
 - Wycinek próbki jest ustawiony wokół wykrycia reguł (`debugCrop`), więc model to drugi etap po obecnym wykrywaniu, nie samodzielny detektor.
 - Aplikacja: Ustawienia wykrywania, „Model AI grota” (`S.settings.ai`: `off`, `bg` = domyślnie, tylko zapisuje odpowiedź w próbce jako `ai`, `on` = zastępuje wynik reguł, gdy pewność ≥ `AI_TRUST` i gracz nie ruszał rzutki; mówi „Poprawka: …”).
   `aiForDart` po `addDart`, kolejka jednego naraz; `labelOf` liczy przesunięcie od `d.aiTip`, więc zmiana przez model nie jest „tap”. Dziennik: nagłówek „model AI …”, wpisy `!!` przy błędzie wczytania.
