@@ -405,7 +405,6 @@ input[type=range]{accent-color:var(--cream)}
       <button class="btn" data-act="stats">Statystyki</button>
       <button class="btn" data-act="calib">Kalibracja kamery</button>
       <button class="btn" data-act="settings">Ustawienia wykrywania</button>
-      <button class="btn" data-act="shots">Wyślij zrzuty i dziennik</button>
       <button class="btn" data-act="ghlog">Wyślij dziennik na GitHub</button>
       <button class="btn" data-act="cam">Ukryj obraz z kamery</button>
       <button class="btn" data-act="full">Pełny ekran</button>
@@ -3256,45 +3255,31 @@ $('#cal-done').addEventListener('click', () => {
   S.shotTimer = setTimeout(() => { if (S.mode === 'game' && S.cal && !S.manual) gridShot('gra', S.stab && S.stab.tracker ? 'śledzenie tarczy włączone' : 'bez śledzenia'); }, 6000);
 });
 
-/* ---------- Grid snapshots (to check calibration against the wires) ----------
-   Taken by themselves (after automatic calibration and a few seconds into play), so the phone
-   is not touched. Menu, "Wyślij zrzuty siatki" shares or saves the last ones. */
-S.gridShots = [];
+/* ---------- Calibration pictures for Nauka AI (since 2026.10.25d) ----------
+   Taken by themselves (after automatic calibration and a few seconds into play), so the phone is
+   not touched, and kept silently with the dart samples: the full camera picture without the grid plus
+   the board -> video homography, so the grid can be drawn and checked against the wires later.
+   Only the newest CAL_KEEP are kept; they go out with "Eksportuj (ZIP)". */
+const CAL_KEEP = 12;
 function gridShot(tag, info) {
   try {
-    if (!S.vw || S.video.readyState < 2) return;
+    if (!S.settings.collect || !S.vw || S.video.readyState < 2) return;
     let H = null;
     if (S.mode === 'game' && S.cal) { const D = stabD(); H = C.mulH([D[0], D[1], D[2], D[3], D[4], D[5], 0, 0, 1], S.cal.H); }
     else { const cal = (S.pts && C.makeCalibration(S.pts)) || S.cal; H = cal && cal.H; }
     if (!H) return;
     const c = document.createElement('canvas'); c.width = S.vw; c.height = S.vh;
-    const x = c.getContext('2d');
-    x.drawImage(S.video, 0, 0, S.vw, S.vh);
-    const ts = new Date(), stamp = ts.toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '-');
-    const head = 'Oko Tarczy ' + APP_VERSION + '  ' + tag + '  ' + ts.toLocaleString('pl-PL') + (info ? '  ' + info : '');
-    const plain = new Promise(r => c.toBlob(r, 'image/jpeg', 0.95));
-    plain.then(() => {
-      drawBoard(x, H, (q) => q, { color: 'rgba(0,255,255,.8)', width: 1.4, halo: false });
-      const fz = Math.round(28 * Math.max(1, Math.min(c.width, c.height) / 1080)); // same look in 4K
-      x.font = '600 ' + fz + 'px sans-serif'; x.textBaseline = 'top';
-      // wrap the info into as many lines as the picture width needs
-      const lines = [''];
-      for (const word of head.split('  ')) {
-        const t = lines[lines.length - 1] ? lines[lines.length - 1] + '  ' + word : word;
-        if (x.measureText(t).width > c.width - fz && lines[lines.length - 1]) lines.push(word); else lines[lines.length - 1] = t;
-      }
-      const lh = Math.round(fz * 1.3);
-      x.fillStyle = 'rgba(0,0,0,.6)'; x.fillRect(0, 0, c.width, lh * lines.length + fz * 0.4);
-      x.fillStyle = '#fff'; lines.forEach((l, i) => x.fillText(l, fz * 0.45, fz * 0.3 + lh * i));
-      return Promise.all([plain, new Promise(r => c.toBlob(r, 'image/jpeg', 0.92))]);
-    }).then(([a, b]) => {
-      if (!a || !b) return;
-      const base = 'oko-siatka-' + stamp + '-' + tag;
-      S.gridShots.push({ tag, files: [new File([b], base + '.jpg', { type: 'image/jpeg' }), new File([a], base + '-bez.jpg', { type: 'image/jpeg' })] });
-      while (S.gridShots.length > 4) S.gridShots.shift();
-      // Short notice; after calibration it waits for the 'found the board' message to go away.
-      setTimeout(() => toast('Zrobiłem zrzut siatki (' + (tag === 'gra' ? 'gra' : 'kalibracja') + '). Wyślesz go z Menu.', 2500), tag === 'gra' ? 0 : 4300);
-    }).catch(() => {});
+    c.getContext('2d').drawImage(S.video, 0, 0, S.vw, S.vh);
+    c.toBlob(async (img) => {
+      if (!img) return;
+      try {
+        await dsChain;
+        await DS.put({ id: 'cal-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6), kind: 'cal', ts: Date.now(), app: APP_VERSION, tag, info: info || '',
+          H: Array.from(H).map(v => +v.toPrecision(9)), video: [S.vw, S.vh], rings: [C.RING.trebleIn, C.RING.trebleOut, C.RING.doubleIn].map(r2), img, bytes: img.size });
+        const cals = (await DS.all()).filter(r => r.kind === 'cal').sort((p, q) => p.ts - q.ts);
+        for (const r of cals.slice(0, Math.max(0, cals.length - CAL_KEEP))) await DS.del(r.id);
+      } catch (e) {}
+    }, 'image/jpeg', 0.92);
   } catch (e) {}
 }
 function logHead() {
@@ -3321,19 +3306,6 @@ function sendLogGithub() {
     else toast(copied ? 'Otwieram GitHub. Pełny dziennik jest w schowku (wklej pod tekstem), potem „Submit new issue”.' : 'Otwieram GitHub. Stuknij „Submit new issue”.', 5000);
   } catch (e) { toast('Nie udało się otworzyć zgłoszenia: ' + (e && e.message ? e.message : e), 5000); }
 }
-async function shareGridShots() {
-  const files = [].concat(...S.gridShots.map(g => g.files));
-  if (S.perf.log.length) {
-    files.push(new File([logHead().concat(S.perf.log).join('\n')], 'oko-dziennik-' + Date.now() + '.txt', { type: 'text/plain' }));
-  }
-  if (!files.length) { toast('Nie ma jeszcze zrzutów ani dziennika. Zrobią się same po kalibracji i w trakcie gry.', 4000); return; }
-  try {
-    if (navigator.canShare && navigator.canShare({ files })) { await navigator.share({ files, title: 'Oko Tarczy: zrzuty siatki' }); return; }
-  } catch (e) { if (e && e.name === 'AbortError') return; }
-  files.forEach((f, i) => setTimeout(() => download(f, f.name), i * 400));
-  toast('Zapisano ' + files.length + ' zdjęć w Pobranych. Wyślij je w rozmowie.', 4000);
-}
-
 // Dragging: touch anywhere, the selected point follows at half speed (precise, finger never covers it).
 let drag = null;
 const ovEl = $('#ov');
@@ -4602,7 +4574,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.25c';
+const APP_VERSION = '2026.10.25d';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
@@ -4629,10 +4601,11 @@ const DS = {
   get(id) { return this.run('readonly', st => st.get(id)); },
   count() { return this.run('readonly', st => st.count()); },
   all() { return this.run('readonly', st => st.getAll()); },
+  del(id) { return this.run('readwrite', st => st.delete(id)); },
   clear() { return this.run('readwrite', st => st.clear()); }
 };
 S.dsCount = 0;
-DS.count().then(n => { S.dsCount = n || 0; syncAiPill(); }).catch(() => {});
+DS.all().then(a => { S.dsCount = a.filter(r => r.kind !== 'cal').length; syncAiPill(); }).catch(() => {});
 
 function procSnap() { const P = S.proc; return P ? { x: P.x, y: P.y, s: P.s, w: P.pw, h: P.ph, Hp: P.Hp.slice() } : null; }
 function keepMeta(o) { return o ? { snap: o.snap, debug: o.debug, det0: o.det0, proc0: o.proc0, cal0: o.cal0, sid: o.sid, sLabel: o.sLabel, crop0: o.crop0, ai: o.ai, aiTip: o.aiTip } : {}; }
@@ -4742,12 +4715,12 @@ const rzut = (n) => n + ' ' + plural(n, 'rzut', 'rzuty', 'rzutów');
 const mb = (n) => (n / 1048576).toFixed(n < 10485760 ? 1 : 0).replace('.', ',') + ' MB';
 async function refreshDsInfo() {
   try {
-    const all = await DS.all();
+    const recs = await DS.all(), all = recs.filter(r => r.kind !== 'cal'), cals = recs.length - all.length;
     S.dsCount = all.length; syncAiPill();
-    const bytes = all.reduce((a, r) => a + (r.bytes || 0), 0);
+    const bytes = recs.reduce((a, r) => a + (r.bytes || 0), 0);
     const tap = all.filter(r => r.label && r.label.source === 'tap').length;
     $('#ds-n').textContent = rzut(all.length);
-    $('#ds-detail').textContent = all.length ? '(' + mb(bytes) + ', poprawionych stuknięciem: ' + tap + ')' : '';
+    $('#ds-detail').textContent = recs.length ? '(' + mb(bytes) + ', poprawionych stuknięciem: ' + tap + (cals ? ', zdjęć z kalibracji: ' + cals : '') + ')' : '';
   } catch (e) { $('#ds-n').textContent = '–'; $('#ds-detail').textContent = '(pamięć niedostępna)'; }
 }
 
@@ -4785,21 +4758,22 @@ async function exportDataset() {
   btn.disabled = true; btn.textContent = 'Pakuję…';
   try {
     await dsChain;
-    const recs = await DS.all();
-    if (!recs.length) { toast('Nie ma jeszcze zebranych rzutów.'); return; }
-    recs.sort((a, b) => a.ts - b.ts);
+    const every = await DS.all();
+    const recs = every.filter(r => r.kind !== 'cal'), cals = every.filter(r => r.kind === 'cal');
+    if (!every.length) { toast('Nie ma jeszcze zebranych rzutów.'); return; }
+    recs.sort((a, b) => a.ts - b.ts); cals.sort((a, b) => a.ts - b.ts);
     // Split into parts of about 25 MB: a chat upload takes at most 30 MB. Each part is a
     // complete export (own manifest); sample numbers run on across parts.
     const PART = 25 * 1024 * 1024, parts = [];
-    let files = [], meta = [], size = 0;
+    let files = [], meta = [], cmeta = [], size = 0;
     const flush = () => {
-      if (!meta.length) return;
+      if (!files.length) return;
       const manifest = { app: APP_VERSION, exported: new Date().toISOString(), ua: navigator.userAgent, count: meta.length,
-        part: parts.length + 1, total: recs.length,
+        part: parts.length + 1, total: recs.length, cals: cmeta,
         note: 'crop px = (proc px - crop.x0/y0) * crop.k; proc px = (video px - proc.x/y) * proc.s; board mm -> proc px via proc.Hp', samples: meta };
       files.unshift({ name: 'manifest.json', data: new TextEncoder().encode(JSON.stringify(manifest)) });
       parts.push({ blob: makeZip(files), n: meta.length });
-      files = []; meta = []; size = 0;
+      files = []; meta = []; cmeta = []; size = 0;
     };
     for (let k = 0; k < recs.length; k++) {
       const r = recs[k], base = 'samples/' + String(k + 1).padStart(5, '0');
@@ -4818,6 +4792,15 @@ async function exportDataset() {
       size = files.reduce((a, f) => a + f.data.length + 80, 0);
       if (size > PART) flush();
     }
+    // calibration pictures (full camera picture + board -> video homography) and the time log
+    for (let k = 0; k < cals.length; k++) {
+      const r = cals[k], name = 'cal/' + String(k + 1).padStart(3, '0') + '-' + r.tag + '.jpg';
+      const m = Object.assign({}, r); delete m.img; m.file = name;
+      files.push({ name, data: new Uint8Array(await r.img.arrayBuffer()) }); cmeta.push(m);
+      size = files.reduce((a, f) => a + f.data.length + 80, 0);
+      if (size > PART) flush();
+    }
+    if (S.perf.log.length) files.push({ name: 'dziennik.txt', data: new TextEncoder().encode(logHead().concat(S.perf.log).join('\n')) });
     flush();
     const d = new Date(), pad = (n) => String(n).padStart(2, '0');
     const stem = 'oko-tarczy-dane-' + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '-' + pad(d.getHours()) + pad(d.getMinutes());
@@ -4939,7 +4922,6 @@ $('#sh-menu').addEventListener('click', async (e) => {
     selectPoint(0); showScreen('cal'); autoCalSoon();
   }
   else if (act === 'settings') openSettings();
-  else if (act === 'shots') shareGridShots();
   else if (act === 'ghlog') sendLogGithub();
   else if (act === 'cam') { S.camHidden = !S.camHidden; showScreen('game'); }
   else if (act === 'full') { try { await document.documentElement.requestFullscreen(); if (screen.orientation && screen.orientation.lock) screen.orientation.lock(screen.orientation.type).catch(() => {}); } catch (err) { toast('Pełny ekran niedostępny.'); } }

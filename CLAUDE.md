@@ -44,9 +44,12 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - Naprawione 2026.10.17: zdjęcie „przed” bywało kopią „po”, bo `refA` aliasował `this.ref`. Dotyczyło 17 z 77 starych próbek.
 - Nowe próbki mają też `det.nose`, `pointPx`, `pxPerMm`, `tipBy`, `pointMm`.
 
-## Zrzuty siatki (od 2026.10.19)
-- Same się robią po automatycznej kalibracji i 6 s po „Gotowe, gramy” (bez dotykania statywu), z krótkim komunikatem. Pełna rozdzielczość, siatka cienką turkusową linią + to samo zdjęcie bez siatki.
-- Menu, „Wyślij zrzuty siatki”: udostępnia (lub zapisuje) ostatnie 4. Służą do sprawdzania, czy siatka leży na drutach.
+## Zdjęcia z kalibracji w Nauka AI (od 2026.10.25d; wcześniej „zrzuty siatki” od 19)
+- `gridShot` robi się sam po automatycznej kalibracji (`kalibracja`) i 6 s po „Gotowe, gramy” (`gra`), bez komunikatu. Zapisuje do IndexedDB (ten sam magazyn co rzuty, `kind: 'cal'`):
+  pełne zdjęcie z kamery bez siatki (JPEG), `H` (tarcza mm → px wideo, w grze z macierzą śledzenia), `info` (rms, wzór, druty), `rings`. Trzymane ostatnie `CAL_KEEP` = 12 (`DS.del`).
+- Eksport ZIP: `cal/NNN-tag.jpg` + `manifest.cals`, plus `dziennik.txt` (dziennik czasów). `rozpakuj.py` kopiuje je do `katalog/cal/` i `katalog/dziennik.txt`. Siatkę rysuje się z `H` przy sprawdzaniu.
+- Usunięte (prośba Piotra, 2026-10-25): komunikat o zrzucie, `shareGridShots` i przycisk Menu „Wyślij zrzuty i dziennik”. Licznik Nauka AI liczy tylko rzuty.
+- Piotr chciał, żeby dziennik sam szedł na GitHub; bez tokenu w publicznej stronie się nie da, więc dziennik jedzie w eksporcie (przycisk „Wyślij dziennik na GitHub” został).
 
 ## Dociąganie siatki do drutów (`refineGrid`, od 2026.10.19c)
 - `autoCalibrate` dopasowuje tylko okręgi (krawędzie kolorów na zdjęciu 800 px); obrót bierze z wzoru pól, więc linie sektorów potrafiły być 2–4 mm obok drutów.
@@ -79,7 +82,7 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 ## Dziennik czasów (od 2026.10.19i)
 - W grze `perfAdd`/`perfFlush` co 10 s zapisują linię: średni/najdłuższy czas (ms) i ile razy na sekundę dla kroków
   `śledzenie`, `śledzenie między`, `kopiowanie klatki`, `wyrównanie`, `wykrywanie`, `obsługa rzutu`, `rysowanie`, `odstęp klatek` (ostatnie 90 linii).
-- Wysyłany jako .txt razem ze zrzutami (Menu, „Wyślij zrzuty i dziennik”).
+- Od 2026.10.25d wysyłany jako `dziennik.txt` w eksporcie Nauka AI.
 - Od 2026.10.19k Menu, „Wyślij dziennik na GitHub” (`sendLogGithub`): otwiera gotowe zgłoszenie (issue). Od 19o link ma ≤ 3500 znaków (nagłówek + najnowsze linie; dłuższy dawał Piotrowi błąd), a pełny dziennik idzie do schowka (wkleić pod tekstem). Bez etykiety, bez tokenu w stronie (świadomie).
 - `processFrame` jest celowo ograniczone do ok. 10 kl/s (co 95 ms), więc 8–9 kl/s w Full HD to prawie maksimum. W 4K Piotr miał 2–3 kl/s.
 
