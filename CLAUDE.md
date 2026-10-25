@@ -223,6 +223,15 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - Test: scratchpad `tgame.js` (rdzeń w Node) i `pw.js` (Playwright, liczenie ręczne we wszystkich trybach). Na prawdziwej tarczy z kamerą jeszcze nie sprawdzone.
 - Pomysły na dalej: Killer, Cricket „cut-throat”, statystyki trafień (mapa tarczy), eksport historii.
 
+## Model AI grota (od 2026.10.25b)
+- Próba na eksporcie z 2026-10-25 (691 próbek, 624 do nauki), sprawdzian po czasie w 5 częściach (każdy rzut ocenia model, który go nie widział):
+  model 90% dobrych pól wobec 86% aplikacji na żywo; poprawiane stuknięciem 82% wobec 41%; najnowsze (24e–24g) 227 vs 229 z 247. Model naprawia 61, psuje 40, więc najlepsze będzie łączenie z regułami.
+- Wycinek próbki jest ustawiony wokół wykrycia reguł (`debugCrop`), więc model to drugi etap po obecnym wykrywaniu, nie samodzielny detektor.
+- Aplikacja: Ustawienia wykrywania, „Model AI grota” (`S.settings.ai`: `off`, `bg` = domyślnie, tylko zapisuje odpowiedź w próbce jako `ai`, `on` = zastępuje wynik reguł, gdy pewność ≥ `AI_TRUST` i gracz nie ruszał rzutki; mówi „Poprawka: …”).
+  `aiForDart` po `addDart`, kolejka jednego naraz; `labelOf` liczy przesunięcie od `d.aiTip`, więc zmiana przez model nie jest „tap”. Dziennik: nagłówek „model AI …”, wpisy `!!` przy błędzie wczytania.
+- onnxruntime-web 1.29.0 z jsdelivr (`ort.all.min.js`), najpierw `webgl`, potem `wasm`. W Playwright (SwiftShader) ok. 5 s na rzut i wynik identyczny z Pythonem; prawdziwej szybkości na S26 jeszcze nie znamy.
+- Narzędzia i opis nauki: `narzedzia/model_ai/README.md`. Nie ma tu sztucznych rzutów ani danych z innych tarcz (plan: różne światło, strona kamery, groty, tarcze znajomych).
+
 ## Test na prawdziwych rzutach
 ```
 python3 narzedzia/rozpakuj.py eksport.zip /tmp/rzuty

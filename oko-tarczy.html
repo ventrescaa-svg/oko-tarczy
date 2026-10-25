@@ -475,6 +475,15 @@ input[type=range]{accent-color:var(--cream)}
     </div>
     <label class="toggle"><span>Śledź tarczę (chwiejący się statyw)</span><input type="checkbox" id="opt-track" checked></label>
     <label class="toggle"><span>Grot na ostrym obrazie (pełna rozdzielczość)</span><input type="checkbox" id="opt-hitip" checked></label>
+    <div class="field">
+      <label for="opt-ai">Model AI grota</label>
+      <select id="opt-ai" style="min-height:44px;border-radius:10px;border:1px solid var(--line);background:var(--panel-2);padding:0 8px">
+        <option value="off">Wyłączony</option>
+        <option value="bg">W tle (tylko zapisuje swoją odpowiedź do nauki)</option>
+        <option value="on">Poprawia wynik, gdy jest pewny</option>
+      </select>
+      <p class="hint" id="ai-info"></p>
+    </div>
     <label class="toggle"><span>Obraz przez kartę graficzną (szybciej, zwłaszcza w 4K)</span><input type="checkbox" id="opt-gpu" checked></label>
     <label class="toggle"><span>Kamera 4K (więcej szczegółów, większe obciążenie)</span><input type="checkbox" id="opt-4k"></label>
     <p class="hint" id="cam-info"></p>
@@ -2863,7 +2872,7 @@ const S = {
   pts: null, cal: null, sel: 0,
   proc: null, det: null, frameData: null, resetPending: false, rebasePending: false,
   mode: 'intro', manual: false, camHidden: false,
-  settings: Object.assign({ thr: 60, shadows: true, autoNext: true, voice: true, coVoice: true, mask: false, lock: false, diag: false, view: 'board', collect: true, track: true, hiTip: true, gpu: true, ev: 0 }, store.get('settings', {})),
+  settings: Object.assign({ thr: 60, shadows: true, autoNext: true, voice: true, coVoice: true, mask: false, lock: false, diag: false, view: 'board', collect: true, track: true, hiTip: true, gpu: true, ev: 0, ai: 'bg' }, store.get('settings', {})),
   offset: { mm: 0, samples: [] },
   point: Object.assign({ mm: 14, samples: [], max: 25 }, store.get('point', {})),   // max = measured point (25 mm), barrel 40 mm
   game: null, status: 'idle', blockedShown: false, lastProc: 0, maskImg: null, maskCanvas: null
@@ -3291,7 +3300,7 @@ function gridShot(tag, info) {
 function logHead() {
   const st = S.track && S.track.getSettings ? S.track.getSettings() : {};
   return ['Oko Tarczy ' + APP_VERSION + '  ' + new Date().toLocaleString('pl-PL'), navigator.userAgent,
-    'Kamera: ' + S.vw + '×' + S.vh + ' ' + (st.frameRate || '?') + ' kl/s, 4K ' + (S.settings.cam4k ? 'tak' : 'nie') + ', śledzenie ' + (S.settings.track ? 'tak' : 'nie') + ', karta graficzna ' + (G.ok ? 'tak' : (S.settings.gpu === false ? 'wyłączona' : G.failed ? 'błąd' : 'nie')) + (S.proc ? ', przetwarzanie ' + S.proc.pw + '×' + S.proc.ph : ''),
+    'Kamera: ' + S.vw + '×' + S.vh + ' ' + (st.frameRate || '?') + ' kl/s, 4K ' + (S.settings.cam4k ? 'tak' : 'nie') + ', śledzenie ' + (S.settings.track ? 'tak' : 'nie') + ', karta graficzna ' + (G.ok ? 'tak' : (S.settings.gpu === false ? 'wyłączona' : G.failed ? 'błąd' : 'nie')) + ', model AI ' + (S.settings.ai || 'bg') + (AI.sess ? ' ' + AI.backend + (AI.n ? ' ' + Math.round(AI.ms / AI.n) + ' ms' : '') : AI.err ? ' błąd' : '') + (S.proc ? ', przetwarzanie ' + S.proc.pw + '×' + S.proc.ph : ''),
     'Każda linia: średnio/najdłużej w ms, ile razy na sekundę.', ''];
 }
 // Opens a prefilled GitHub issue. A long log does not fit in a link (GitHub answers with an error),
@@ -3779,6 +3788,97 @@ function handleEvent(e) {
   if (e.type === 'removed' || e.type === 'rebased' || e.type === 'shifted') { hideStageMsg(); setStatus(S.game.winner != null ? 'win' : (C.turnOpen(S.game) ? 'ready' : 'pull')); }
 }
 
+/* ---------------- AI model of the point (since 2026.10.25b) ----------------
+   A small network (narzedzia/model_ai/) looks at the detector's crop before/after the throw (the same crop the
+   Nauka AI samples keep) and points at the tip. Runs with onnxruntime-web (loaded from the CDN on first use),
+   once per dart, after the dart has already been counted. 'bg': the answer only goes into the sample;
+   'on': it replaces the rules' answer when the network is sure (AI_TRUST) and the player has not touched the dart. */
+const AI_MODEL = 'model/grot.onnx?v=1', AI_ORT = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/';
+const AI_W = 384, AI_H = 256, AI_S = 2, AI_TRUST = 0.5;
+const AI = { p: null, sess: null, backend: null, err: null, n: 0, ms: 0, q: Promise.resolve() };
+function aiLoadScript(src) {
+  return new Promise((res, rej) => { const el = document.createElement('script'); el.src = src; el.onload = res; el.onerror = () => rej(new Error('nie wczytano ' + src)); document.head.appendChild(el); });
+}
+function aiLoad() {
+  if (AI.p) return AI.p;
+  AI.p = (async () => {
+    if (!window.ort) await aiLoadScript(AI_ORT + 'ort.all.min.js');
+    ort.env.wasm.wasmPaths = AI_ORT;
+    ort.env.wasm.numThreads = 1;
+    const buf = await (await fetch(AI_MODEL)).arrayBuffer();
+    for (const ep of ['webgl', 'wasm']) {
+      try { AI.sess = await ort.InferenceSession.create(buf, { executionProviders: [ep] }); AI.backend = ep; break; }
+      catch (e) { AI.err = String(e && e.message || e).slice(0, 120); }
+    }
+    if (!AI.sess) throw new Error(AI.err || 'brak silnika');
+    logNote('model AI gotowy (' + AI.backend + ')'); aiInfo();
+    return AI.sess;
+  })().catch((e) => { AI.err = String(e && e.message || e).slice(0, 160); logNote('model AI: ' + AI.err); aiInfo(); AI.p = null; AI.failAt = Date.now(); throw e; });
+  return AI.p;
+}
+function aiInfo() {
+  const el = $('#ai-info'); if (!el) return;
+  const m = S.settings.ai || 'bg';
+  el.textContent = m === 'off' ? 'Wyłączony.' : AI.sess ? 'Działa (' + AI.backend + (AI.n ? ', średnio ' + Math.round(AI.ms / AI.n) + ' ms na rzut, rzutów ' + AI.n : '') + ').'
+    : AI.err ? 'Nie działa: ' + AI.err : 'Wczyta się przy pierwszym rzucie (ok. 1–3 MB z internetu, potem z pamięci przeglądarki).';
+}
+// Crop before/after (RGBA, w x h, processing-picture px) -> { tip: [x, y] crop px, conf 0..1, ms }.
+async function aiRun(D) {
+  const w = D.w, h = D.h;
+  if (w > AI_W || h > AI_H) return null;
+  const sess = await aiLoad();
+  const t0 = performance.now(), n = AI_W * AI_H, x = new Float32Array(9 * n);
+  for (let y = 0; y < h; y++) for (let xx = 0; xx < w; xx++) {
+    const j = (y * w + xx) * 4, o = y * AI_W + xx;
+    for (let c = 0; c < 3; c++) {
+      const r = D.ref[j + c] / 255, q = D.cur[j + c] / 255;
+      x[c * n + o] = r; x[(3 + c) * n + o] = q; x[(6 + c) * n + o] = q - r;
+    }
+  }
+  const out = await sess.run({ x: new ort.Tensor('float32', x, [1, 9, AI_H, AI_W]) });
+  const L = out.heat.data, OW = AI_W / AI_S, mw = Math.floor(w / AI_S), mh = Math.floor(h / AI_S);
+  let best = -Infinity, bi = 0, bj = 0;
+  for (let i = 0; i < mh; i++) for (let j = 0; j < mw; j++) { const v = L[i * OW + j]; if (v > best) { best = v; bi = i; bj = j; } }
+  let Z = 0, near = 0, sx = 0, sy = 0, sw = 0;
+  for (let i = 0; i < mh; i++) for (let j = 0; j < mw; j++) {
+    const e = Math.exp(L[i * OW + j] - best); Z += e;
+    if (Math.abs(i - bi) <= 3 && Math.abs(j - bj) <= 3) near += e;
+    if (Math.abs(i - bi) <= 2 && Math.abs(j - bj) <= 2) { sw += e; sx += e * (j * AI_S + (AI_S - 1) / 2); sy += e * (i * AI_S + (AI_S - 1) / 2); }
+  }
+  const ms = performance.now() - t0;
+  AI.n++; AI.ms += ms;
+  return { tip: [sx / sw, sy / sw], conf: near / Z, ms };
+}
+// After onDart: ask the network about this dart and keep (or use) its answer.
+function aiForDart(d, e) {   // one at a time, in order; the board mapping is the one of this moment
+  const Hpi = S.det && S.det.Hpi ? S.det.Hpi.slice() : null, g = S.game;
+  AI.q = AI.q.then(() => aiDart(d, e, Hpi, g)).catch(() => {});
+}
+async function aiDart(d, e, Hpi, g) {
+  const mode = S.settings.ai || 'bg', D = e.debug;
+  if (mode === 'off' || !D || !D.ref || D.kind === 'missed' || !Hpi) return;
+  if (AI.failAt && Date.now() - AI.failAt < 60000) return;     // failed a moment ago: do not retry on every dart
+  try {
+    const r = await aiRun(D);
+    if (!r) { d.ai = { skip: 'crop ' + D.w + 'x' + D.h }; return; }
+    const tp = [D.x0 + r.tip[0], D.y0 + r.tip[1]], b = C.applyH(Hpi, tp[0], tp[1]), sc = C.scoreAt(b[0], b[1]);
+    d.ai = { tip: tp.map(r2), crop: r.tip.map(r2), board: b.map(r2), label: sc.label, conf: r2(r.conf), ms: Math.round(r.ms), backend: AI.backend, mode, used: false };
+    aiInfo();
+    const i = g === S.game ? g.cur.darts.indexOf(d) : -1;
+    // only a dart the player has not corrected, still in the open turn
+    if (mode === 'on' && r.conf >= AI_TRUST && sc.label !== d.label && i >= 0 && !d.fixed && !d.confirmed && d.tip && d.det0 &&
+        d.tip[0] === d.det0.tip[0] && d.tip[1] === d.det0.tip[1]) {
+      const tipV = toVideo(tp);
+      d.ai.used = true;
+      const nd = Object.assign({}, d, sc, { tip: tipV, board: b.slice(), aiTip: tipV.slice(), unsure: false });
+      if (C.setDart(g, i, nd)) {
+        speak('Poprawka: ' + C.sayDart(nd));
+        afterChange();
+      }
+    }
+  } catch (err) { if (d) d.ai = { err: String(err && err.message || err).slice(0, 80) }; }
+}
+
 function onDart(e) {
   if (S.game.winner != null) return;
   hiRefine(e);
@@ -3794,6 +3894,7 @@ function onDart(e) {
   d.proc0 = procSnap(); d.cal0 = S.cal;
   const v = C.addDart(S.game, d);
   if (!v) return;
+  aiForDart(d, e);
   hideStageMsg();
   const k = S.game.cur.darts.length;
   speak(C.sayDart(d) + turnSay(v, k));
@@ -4501,7 +4602,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.25a';
+const APP_VERSION = '2026.10.25b';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
@@ -4534,13 +4635,14 @@ S.dsCount = 0;
 DS.count().then(n => { S.dsCount = n || 0; syncAiPill(); }).catch(() => {});
 
 function procSnap() { const P = S.proc; return P ? { x: P.x, y: P.y, s: P.s, w: P.pw, h: P.ph, Hp: P.Hp.slice() } : null; }
-function keepMeta(o) { return o ? { snap: o.snap, debug: o.debug, det0: o.det0, proc0: o.proc0, cal0: o.cal0, sid: o.sid, sLabel: o.sLabel, crop0: o.crop0 } : {}; }
+function keepMeta(o) { return o ? { snap: o.snap, debug: o.debug, det0: o.det0, proc0: o.proc0, cal0: o.cal0, sid: o.sid, sLabel: o.sLabel, crop0: o.crop0, ai: o.ai, aiTip: o.aiTip } : {}; }
 const r2 = (n) => Math.round(n * 100) / 100;
 // Video pixel -> pixel of the saved crop.
 function toCrop(v, P, cr) { return v && P && cr ? [r2(((v[0] - P.x) * P.s - cr.x0) * cr.k), r2(((v[1] - P.y) * P.s - cr.y0) * cr.k)] : null; }
 function labelOf(d) {
   const det = d.det0;
-  const moved = d.tip && det && (Math.abs(d.tip[0] - det.tip[0]) > 0.01 || Math.abs(d.tip[1] - det.tip[1]) > 0.01);
+  const base = d.aiTip || (det && det.tip);   // the model may have moved the tip: that is not a tap
+  const moved = d.tip && base && (Math.abs(d.tip[0] - base[0]) > 0.01 || Math.abs(d.tip[1] - base[1]) > 0.01);
   const source = d.deleted ? d.deleted : moved ? 'tap' : (d.tip && det) ? (d.confirmed ? 'confirmed' : 'auto') : 'keypad';
   const board = d.tip && d.cal0 ? C.applyH(d.cal0.Hi, d.tip[0], d.tip[1]).map(r2) : null;
   return { num: d.num, mult: d.mult, pts: d.pts, label: d.label, source, tip: d.tip ? toCrop(d.tip, d.proc0, d.crop0) : null, board };
@@ -4582,6 +4684,7 @@ function harvestTurn(darts) {
         crop: { x0: D.x0, y0: D.y0, k: cr.k },
         proc: P, cal: cal ? { H: cal.H, viewAngle: r2(cal.viewAngle), side: cal.side, pxPerMm: r2(cal.pxPerMm) } : null,
         video: [S.vw, S.vh], noise: D.noise, shift: D.shift, dartsInTurn: D.dartsInTurn, pointMm: r2(D.pointMm || S.point.mm),
+        ai: d.ai || null,
         turn: { i, labels: darts.map(x => x && x.label) }
       };
       dsChain = dsChain.then(() => saveSample(rec, D)).catch(() => {});
@@ -4742,6 +4845,7 @@ $('#opt-track').addEventListener('change', (e) => {
   if (S.proc) { setupStab(); S.resetPending = true; }
 });
 $('#opt-hitip').addEventListener('change', (e) => { S.settings.hiTip = e.target.checked; saveSettings(); if (!e.target.checked) S.hi = null; });
+$('#opt-ai').addEventListener('change', (e) => { S.settings.ai = e.target.value; saveSettings(); AI.failAt = 0; aiInfo(); if (e.target.value !== 'off') aiLoad().catch(() => {}); });
 $('#opt-gpu').addEventListener('change', (e) => { S.settings.gpu = e.target.checked; saveSettings(); S.hi = null; camInfo(); });
 $('#opt-collect').addEventListener('change', (e) => { S.settings.collect = e.target.checked; saveSettings(); syncAiPill(); });
 // What the camera really gives (the browser may give less than asked) and how fast play runs.
@@ -5001,6 +5105,7 @@ function openSettings() {
   $('#opt-collect').checked = !!S.settings.collect;
   $('#opt-track').checked = !!S.settings.track;
   $('#opt-hitip').checked = S.settings.hiTip !== false;
+  $('#opt-ai').value = S.settings.ai || 'bg'; aiInfo();
   $('#opt-gpu').checked = S.settings.gpu !== false;
   $('#opt-4k').checked = !!S.settings.cam4k; camInfo();
   $('#opt-ev').value = S.settings.ev || 0; $('#opt-ev-v').textContent = S.settings.ev || 0;
@@ -5043,6 +5148,8 @@ showScreen('intro');
 
 // Hooks for automated testing.
 window.OkoTarczy = { S, C, DS, G, glRead, hiA, stabD, gridShot, bitsToPng, captureSnap, openFix, fix, fixSnap, fixMap, hiRefine, hiCaptureRef, setPoints(p) { S.pts = p.map(q => q.slice()); updateReadout(); }, finishCalibration() { $('#cal-done').click(); }, startCamera, screenMap, exportDataset, dsIdle: () => dsChain, version: APP_VERSION };
+// the AI model loads in the background a moment after start, so the first dart does not wait for it
+setTimeout(() => { if ((S.settings.ai || 'bg') !== 'off') aiLoad().catch(() => {}); }, 4000);
 })();
 </script>
 </body>
