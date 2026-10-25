@@ -4501,7 +4501,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.24g';
+const APP_VERSION = '2026.10.25a';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
@@ -4685,7 +4685,19 @@ async function exportDataset() {
     const recs = await DS.all();
     if (!recs.length) { toast('Nie ma jeszcze zebranych rzutów.'); return; }
     recs.sort((a, b) => a.ts - b.ts);
-    const files = [], meta = [];
+    // Split into parts of about 25 MB: a chat upload takes at most 30 MB. Each part is a
+    // complete export (own manifest); sample numbers run on across parts.
+    const PART = 25 * 1024 * 1024, parts = [];
+    let files = [], meta = [], size = 0;
+    const flush = () => {
+      if (!meta.length) return;
+      const manifest = { app: APP_VERSION, exported: new Date().toISOString(), ua: navigator.userAgent, count: meta.length,
+        part: parts.length + 1, total: recs.length,
+        note: 'crop px = (proc px - crop.x0/y0) * crop.k; proc px = (video px - proc.x/y) * proc.s; board mm -> proc px via proc.Hp', samples: meta };
+      files.unshift({ name: 'manifest.json', data: new TextEncoder().encode(JSON.stringify(manifest)) });
+      parts.push({ blob: makeZip(files), n: meta.length });
+      files = []; meta = []; size = 0;
+    };
     for (let k = 0; k < recs.length; k++) {
       const r = recs[k], base = 'samples/' + String(k + 1).padStart(5, '0');
       const m = Object.assign({}, r); delete m.ref; delete m.cur; delete m.hiRef; delete m.hiCur; delete m.maskImg; delete m.occImg;
@@ -4700,14 +4712,20 @@ async function exportDataset() {
         files.push({ name: m.files.hiCur, data: new Uint8Array(await r.hiCur.arrayBuffer()) });
       }
       meta.push(m);
+      size = files.reduce((a, f) => a + f.data.length + 80, 0);
+      if (size > PART) flush();
     }
-    const manifest = { app: APP_VERSION, exported: new Date().toISOString(), ua: navigator.userAgent, count: meta.length,
-      note: 'crop px = (proc px - crop.x0/y0) * crop.k; proc px = (video px - proc.x/y) * proc.s; board mm -> proc px via proc.Hp', samples: meta };
-    files.unshift({ name: 'manifest.json', data: new TextEncoder().encode(JSON.stringify(manifest)) });
-    const blob = makeZip(files);
+    flush();
     const d = new Date(), pad = (n) => String(n).padStart(2, '0');
-    download(blob, 'oko-tarczy-dane-' + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '-' + pad(d.getHours()) + pad(d.getMinutes()) + '.zip');
-    toast('Zapisano ' + rzut(meta.length) + ' w Pobranych (' + mb(blob.size) + '). Wyślij ten plik w rozmowie.', 5000);
+    const stem = 'oko-tarczy-dane-' + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '-' + pad(d.getHours()) + pad(d.getMinutes());
+    for (let k = 0; k < parts.length; k++) {
+      if (k) await new Promise(r => setTimeout(r, 1200)); // one download at a time, or the browser drops some
+      download(parts[k].blob, stem + (parts.length > 1 ? '-cz' + (k + 1) + 'z' + parts.length : '') + '.zip');
+    }
+    const total = parts.reduce((a, q) => a + q.blob.size, 0);
+    toast(parts.length > 1
+      ? 'Zapisano ' + rzut(recs.length) + ' w Pobranych w ' + parts.length + ' plikach (razem ' + mb(total) + '). Wyślij wszystkie w rozmowie.'
+      : 'Zapisano ' + rzut(recs.length) + ' w Pobranych (' + mb(total) + '). Wyślij ten plik w rozmowie.', 6000);
   } catch (e) { toast('Nie udało się wyeksportować danych.'); }
   finally { btn.disabled = false; btn.textContent = old; }
 }
