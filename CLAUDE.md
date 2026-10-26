@@ -41,6 +41,9 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
   (`auto`, `confirmed`, `tap` = poprawiony stuknięciem, `deleted`, `keypad`).
   Eksport ZIP: Menu, Ustawienia wykrywania, Nauka AI. ZIP zawiera `manifest.json` i JPEG-i.
   Od 2026.10.25a eksport dzieli się na części po ok. 25 MB (`-cz1z3` itd., każda z własnym `manifest.json`), bo czat przyjmuje maks. 30 MB; `rozpakuj.py a.zip b.zip … katalog` łączy części.
+- Od 2026.10.26a wysyłanie na GitHub (`ghSync`): Ustawienia wykrywania, Nauka AI, „Wysyłaj rzuty na GitHub” (+ „też przez dane komórkowe”, `navigator.connection.type`), token i repozytorium (domyślnie prywatne `ventrescaa-svg/oko-tarczy-dane`), „Sprawdź połączenie”, „Wyślij teraz”.
+  Token (fine-grained, tylko Contents tego repozytorium) wpisuje gracz; trzymany w `localStorage` `ghsync`, nigdy w kodzie strony. Co `GH_BATCH` = 15 nowych próbek (sprawdzane po `saveSample`) paczka `paczki/RRRRMMDD-GGMM-xxxx.zip` (to samo co eksport, `packDataset`, maks. 60 rzutów, części po 15 MB) przez API contents (PUT).
+  Wysłane mają `r.up`; poprawka starego rzutu (`relabeled`) czyści `up`, więc rzut idzie jeszcze raz. `rozpakuj.py` bierze wiele plików i zostawia najnowszą wersję każdego `id`, rzuty układa według czasu.
 - Naprawione 2026.10.17: zdjęcie „przed” bywało kopią „po”, bo `refA` aliasował `this.ref`. Dotyczyło 17 z 77 starych próbek.
 - Nowe próbki mają też `det.nose`, `pointPx`, `pxPerMm`, `tipBy`, `pointMm`.
 

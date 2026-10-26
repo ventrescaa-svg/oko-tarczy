@@ -504,6 +504,14 @@ input[type=range]{accent-color:var(--cream)}
       <p class="ds-count">Zebrane: <b id="ds-n" class="num">0 rzutów</b> <span id="ds-detail" class="hint"></span></p>
       <p class="hint">Każdy rzut zapisuje się na telefonie jako mały wycinek obrazu z wynikiem. Źle policzone rzuty popraw stuknięciem w grot na zdjęciu, bo to najlepsza nauka. Po około 300 rzutach wyeksportuj plik i wyślij go w rozmowie.</p>
       <div class="btn-row"><button id="ds-export" class="btn">Eksportuj (ZIP)</button><button id="ds-clear" class="btn warn">Usuń dane</button></div>
+      <label class="toggle"><span>Wysyłaj rzuty na GitHub (co 15 rzutów)</span><input type="checkbox" id="gh-on"></label>
+      <label class="toggle"><span>Wysyłaj też przez dane komórkowe (ok. 1–2 MB na paczkę)</span><input type="checkbox" id="gh-cell"></label>
+      <label for="gh-token">Token GitHub (zostaje tylko w tym telefonie)</label>
+      <input type="password" id="gh-token" autocomplete="off" spellcheck="false" placeholder="github_pat_…">
+      <label for="gh-repo">Repozytorium na dane</label>
+      <input type="text" id="gh-repo" autocomplete="off" spellcheck="false">
+      <div class="btn-row"><button id="gh-test" class="btn" type="button">Sprawdź połączenie</button><button id="gh-now" class="btn" type="button">Wyślij teraz</button></div>
+      <p class="hint" id="gh-info"></p>
     </div>
     <button id="set-close" class="btn primary">Gotowe</button>
   </div>
@@ -4574,7 +4582,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.25d';
+const APP_VERSION = '2026.10.26a';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
@@ -4665,7 +4673,7 @@ function harvestTurn(darts) {
       const label = labelOf(d), js = JSON.stringify(label);
       if (js === d.sLabel) return;
       d.sLabel = js;
-      dsChain = dsChain.then(async () => { const r = await DS.get(d.sid); if (r) { r.label = label; r.relabeled = Date.now(); await DS.put(r); } }).catch(() => {});
+      dsChain = dsChain.then(async () => { const r = await DS.get(d.sid); if (r) { r.label = label; r.relabeled = Date.now(); r.up = 0; await DS.put(r); } }).catch(() => {});
     }
   });
 }
@@ -4696,6 +4704,7 @@ async function saveSample(rec, D) {
   }
   await DS.put(rec);
   S.dsCount++; syncAiPill();
+  setTimeout(() => ghSync(false), 3000);
   if (S.dsCount % 100 === 0) toast('Zebrano ' + rzut(S.dsCount) + ' do nauki AI.', 3500);
   if (!persistAsked) { persistAsked = true; try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {} }
 }
@@ -4753,6 +4762,48 @@ function makeZip(files) {
   e.setUint32(12, cdSize, true); e.setUint32(16, off, true);
   return new Blob([...parts, ...central, new Uint8Array(e.buffer)], { type: 'application/zip' });
 }
+// Samples (and calibration pictures) -> ZIP parts of about `part` bytes, each a complete export with its own manifest.
+async function packDataset(recs, cals, part, withLog) {
+  const parts = [];
+  let files = [], meta = [], cmeta = [], size = 0;
+  const flush = () => {
+    if (!files.length) return;
+    const manifest = { app: APP_VERSION, exported: new Date().toISOString(), ua: navigator.userAgent, count: meta.length,
+      part: parts.length + 1, total: recs.length, cals: cmeta,
+      note: 'crop px = (proc px - crop.x0/y0) * crop.k; proc px = (video px - proc.x/y) * proc.s; board mm -> proc px via proc.Hp', samples: meta };
+    files.unshift({ name: 'manifest.json', data: new TextEncoder().encode(JSON.stringify(manifest)) });
+    parts.push({ blob: makeZip(files), n: meta.length });
+    files = []; meta = []; cmeta = []; size = 0;
+  };
+  const add = (f) => { files.push(f); size += f.data.length + 80; };
+  for (let k = 0; k < recs.length; k++) {
+    const r = recs[k], base = 'samples/' + String(k + 1).padStart(5, '0');
+    const m = Object.assign({}, r); delete m.ref; delete m.cur; delete m.hiRef; delete m.hiCur; delete m.maskImg; delete m.occImg; delete m.up;
+    m.files = { ref: base + '_ref.jpg', cur: base + '_cur.jpg' };
+    add({ name: m.files.ref, data: new Uint8Array(await r.ref.arrayBuffer()) });
+    add({ name: m.files.cur, data: new Uint8Array(await r.cur.arrayBuffer()) });
+    if (r.maskImg) { m.files.mask = base + '_mask.png'; add({ name: m.files.mask, data: new Uint8Array(await r.maskImg.arrayBuffer()) }); }
+    if (r.occImg) { m.files.occ = base + '_occ.png'; add({ name: m.files.occ, data: new Uint8Array(await r.occImg.arrayBuffer()) }); }
+    if (r.hiRef && r.hiCur) {
+      m.files.hiRef = base + '_hiref.jpg'; m.files.hiCur = base + '_hicur.jpg';
+      add({ name: m.files.hiRef, data: new Uint8Array(await r.hiRef.arrayBuffer()) });
+      add({ name: m.files.hiCur, data: new Uint8Array(await r.hiCur.arrayBuffer()) });
+    }
+    meta.push(m);
+    if (size > part) flush();
+  }
+  // calibration pictures (full camera picture + board -> video homography) and the time log
+  for (let k = 0; k < cals.length; k++) {
+    const r = cals[k], name = 'cal/' + String(k + 1).padStart(3, '0') + '-' + r.tag + '.jpg';
+    const m = Object.assign({}, r); delete m.img; delete m.up; m.file = name;
+    add({ name, data: new Uint8Array(await r.img.arrayBuffer()) }); cmeta.push(m);
+    if (size > part) flush();
+  }
+  if (withLog && S.perf.log.length) add({ name: 'dziennik.txt', data: new TextEncoder().encode(logHead().concat(S.perf.log).join('\n')) });
+  flush();
+  return parts;
+}
+const stamp = (d) => { const pad = (n) => String(n).padStart(2, '0'); return d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '-' + pad(d.getHours()) + pad(d.getMinutes()); };
 async function exportDataset() {
   const btn = $('#ds-export'), old = btn.textContent;
   btn.disabled = true; btn.textContent = 'Pakuję…';
@@ -4762,48 +4813,9 @@ async function exportDataset() {
     const recs = every.filter(r => r.kind !== 'cal'), cals = every.filter(r => r.kind === 'cal');
     if (!every.length) { toast('Nie ma jeszcze zebranych rzutów.'); return; }
     recs.sort((a, b) => a.ts - b.ts); cals.sort((a, b) => a.ts - b.ts);
-    // Split into parts of about 25 MB: a chat upload takes at most 30 MB. Each part is a
-    // complete export (own manifest); sample numbers run on across parts.
-    const PART = 25 * 1024 * 1024, parts = [];
-    let files = [], meta = [], cmeta = [], size = 0;
-    const flush = () => {
-      if (!files.length) return;
-      const manifest = { app: APP_VERSION, exported: new Date().toISOString(), ua: navigator.userAgent, count: meta.length,
-        part: parts.length + 1, total: recs.length, cals: cmeta,
-        note: 'crop px = (proc px - crop.x0/y0) * crop.k; proc px = (video px - proc.x/y) * proc.s; board mm -> proc px via proc.Hp', samples: meta };
-      files.unshift({ name: 'manifest.json', data: new TextEncoder().encode(JSON.stringify(manifest)) });
-      parts.push({ blob: makeZip(files), n: meta.length });
-      files = []; meta = []; cmeta = []; size = 0;
-    };
-    for (let k = 0; k < recs.length; k++) {
-      const r = recs[k], base = 'samples/' + String(k + 1).padStart(5, '0');
-      const m = Object.assign({}, r); delete m.ref; delete m.cur; delete m.hiRef; delete m.hiCur; delete m.maskImg; delete m.occImg;
-      m.files = { ref: base + '_ref.jpg', cur: base + '_cur.jpg' };
-      files.push({ name: m.files.ref, data: new Uint8Array(await r.ref.arrayBuffer()) });
-      files.push({ name: m.files.cur, data: new Uint8Array(await r.cur.arrayBuffer()) });
-      if (r.maskImg) { m.files.mask = base + '_mask.png'; files.push({ name: m.files.mask, data: new Uint8Array(await r.maskImg.arrayBuffer()) }); }
-      if (r.occImg) { m.files.occ = base + '_occ.png'; files.push({ name: m.files.occ, data: new Uint8Array(await r.occImg.arrayBuffer()) }); }
-      if (r.hiRef && r.hiCur) {
-        m.files.hiRef = base + '_hiref.jpg'; m.files.hiCur = base + '_hicur.jpg';
-        files.push({ name: m.files.hiRef, data: new Uint8Array(await r.hiRef.arrayBuffer()) });
-        files.push({ name: m.files.hiCur, data: new Uint8Array(await r.hiCur.arrayBuffer()) });
-      }
-      meta.push(m);
-      size = files.reduce((a, f) => a + f.data.length + 80, 0);
-      if (size > PART) flush();
-    }
-    // calibration pictures (full camera picture + board -> video homography) and the time log
-    for (let k = 0; k < cals.length; k++) {
-      const r = cals[k], name = 'cal/' + String(k + 1).padStart(3, '0') + '-' + r.tag + '.jpg';
-      const m = Object.assign({}, r); delete m.img; m.file = name;
-      files.push({ name, data: new Uint8Array(await r.img.arrayBuffer()) }); cmeta.push(m);
-      size = files.reduce((a, f) => a + f.data.length + 80, 0);
-      if (size > PART) flush();
-    }
-    if (S.perf.log.length) files.push({ name: 'dziennik.txt', data: new TextEncoder().encode(logHead().concat(S.perf.log).join('\n')) });
-    flush();
-    const d = new Date(), pad = (n) => String(n).padStart(2, '0');
-    const stem = 'oko-tarczy-dane-' + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '-' + pad(d.getHours()) + pad(d.getMinutes());
+    // parts of about 25 MB: a chat upload takes at most 30 MB
+    const parts = await packDataset(recs, cals, 25 * 1024 * 1024, true);
+    const stem = 'oko-tarczy-dane-' + stamp(new Date());
     for (let k = 0; k < parts.length; k++) {
       if (k) await new Promise(r => setTimeout(r, 1200)); // one download at a time, or the browser drops some
       download(parts[k].blob, stem + (parts.length > 1 ? '-cz' + (k + 1) + 'z' + parts.length : '') + '.zip');
@@ -4815,6 +4827,78 @@ async function exportDataset() {
   } catch (e) { toast('Nie udało się wyeksportować danych.'); }
   finally { btn.disabled = false; btn.textContent = old; }
 }
+
+/* ---------------- Sending samples to a private GitHub repository (since 2026.10.26a) ----------------
+   The player's own fine-grained token (only Contents of the data repository) is typed in on the phone and kept
+   in localStorage 'ghsync', never in the page. Every GH_BATCH new samples (over Wi-Fi, or also mobile data when chosen)
+   the samples not sent yet (r.up) go out as one ZIP, same format as the export, to paczki/<time>-<rand>.zip.
+   A sample corrected later is sent again (relabel clears r.up); the newer package wins. */
+const GH_BATCH = 15, GH_MAX = 60, GH_DEF = 'ventrescaa-svg/oko-tarczy-dane';
+const GH = { busy: false, sent: 0, msg: '', err: '' };
+function ghCfg() { const c = store.get('ghsync', {}) || {}; return { token: (c.token || '').trim(), repo: (c.repo || GH_DEF).trim(), on: !!c.on, cell: !!c.cell }; }
+function ghSave(o) { store.set('ghsync', Object.assign(ghCfg(), o)); ghInfo(); }
+function ghWifi() { const c = navigator.connection; return !c || !c.type || c.type === 'wifi' || c.type === 'ethernet' || c.type === 'unknown'; }
+function ghInfo() {
+  const el = $('#gh-info'); if (!el) return;
+  const c = ghCfg();
+  el.textContent = !c.token ? 'Wpisz token, potem „Sprawdź połączenie”.' : GH.busy ? 'Wysyłam…' : GH.err ? 'Błąd: ' + GH.err : GH.msg || (c.on ? 'Włączone.' : 'Wyłączone.');
+}
+async function ghApi(c, path, opt) {
+  const r = await fetch('https://api.github.com/repos/' + c.repo + path, Object.assign({}, opt, {
+    headers: { Authorization: 'Bearer ' + c.token, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' } }));
+  if (!r.ok) {
+    let t = ''; try { t = (await r.json()).message || ''; } catch (e) {}
+    throw new Error(r.status === 401 ? 'zły albo wygasły token' : r.status === 404 ? 'brak repozytorium albo token go nie widzi' : r.status === 403 ? 'token nie ma prawa zapisu (Contents: Read and write)' : r.status + ' ' + t);
+  }
+  return r.json();
+}
+function blobB64(b) { return new Promise((res, rej) => { const f = new FileReader(); f.onload = () => res(String(f.result).split(',')[1] || ''); f.onerror = () => rej(f.error); f.readAsDataURL(b); }); }
+async function ghTest() {
+  const c = ghCfg(); GH.err = ''; GH.msg = '';
+  if (!c.token) { ghInfo(); return; }
+  try {
+    const r = await ghApi(c, '', { method: 'GET' });
+    GH.msg = 'Połączono z ' + r.full_name + (r.private ? ' (prywatne)' : ' (UWAGA: publiczne!)') + (r.permissions && r.permissions.push === false ? ', ale bez prawa zapisu' : '') + '.';
+  } catch (e) { GH.err = e.message; }
+  ghInfo();
+}
+async function ghSync(force) {
+  const c = ghCfg();
+  if (GH.busy || !c.token || !(c.on || force) || (!force && !c.cell && !ghWifi())) return;
+  GH.busy = true; GH.err = ''; ghInfo();
+  let more = false;
+  try {
+    await dsChain;
+    const every = await DS.all();
+    const recs = every.filter(r => r.kind !== 'cal' && !r.up).sort((a, b) => a.ts - b.ts), cals = every.filter(r => r.kind === 'cal' && !r.up);
+    if (!force && recs.length < GH_BATCH) return;
+    if (!recs.length && !cals.length) { GH.msg = 'Wszystko już wysłane (' + new Date().toLocaleTimeString('pl-PL') + ').'; return; }
+    const take = recs.slice(0, GH_MAX); more = recs.length > take.length;
+    const parts = await packDataset(take, cals, 15 * 1024 * 1024, true);
+    const tag = Math.random().toString(36).slice(2, 6);
+    for (let k = 0; k < parts.length; k++) {
+      const name = 'paczki/' + stamp(new Date()) + '-' + tag + (parts.length > 1 ? '-cz' + (k + 1) : '') + '.zip';
+      await ghApi(c, '/contents/' + name, { method: 'PUT', body: JSON.stringify({ message: 'Paczka ' + APP_VERSION + ': ' + rzut(parts[k].n), content: await blobB64(parts[k].blob) }) });
+    }
+    const now = Date.now();
+    await (dsChain = dsChain.then(async () => { for (const r of take.concat(cals)) { const q = await DS.get(r.id); if (q && (q.relabeled || 0) === (r.relabeled || 0)) { q.up = now; await DS.put(q); } } }).catch(() => {}));
+    GH.sent += take.length;
+    GH.msg = 'Wysłano ' + rzut(take.length) + (cals.length ? ' i ' + cals.length + ' zdjęć z kalibracji' : '') + ' (' + new Date().toLocaleTimeString('pl-PL') + ').';
+    if (force) toast(GH.msg, 3500);
+  } catch (e) {
+    GH.err = String(e && e.message || e).slice(0, 120); logNote('GitHub: ' + GH.err);
+    if (force) toast('Nie udało się wysłać: ' + GH.err, 5000);
+  } finally {
+    GH.busy = false; ghInfo();
+    if (more && !GH.err) setTimeout(() => ghSync(force), 1500);
+  }
+}
+$('#gh-on').addEventListener('change', (e) => { ghSave({ on: e.target.checked }); if (e.target.checked) ghSync(false); });
+$('#gh-cell').addEventListener('change', (e) => { ghSave({ cell: e.target.checked }); if (e.target.checked) ghSync(false); });
+$('#gh-token').addEventListener('change', (e) => { ghSave({ token: e.target.value.trim() }); });
+$('#gh-repo').addEventListener('change', (e) => { ghSave({ repo: e.target.value.trim() || GH_DEF }); });
+$('#gh-test').addEventListener('click', () => { ghSave({ token: $('#gh-token').value.trim(), repo: $('#gh-repo').value.trim() || GH_DEF }); ghTest(); });
+$('#gh-now').addEventListener('click', () => { ghSave({ token: $('#gh-token').value.trim(), repo: $('#gh-repo').value.trim() || GH_DEF }); ghSync(true); });
 $('#ds-export').addEventListener('click', exportDataset);
 let clearArmed = 0;
 $('#ds-clear').addEventListener('click', async (e) => {
@@ -5092,6 +5176,7 @@ function openSettings() {
   $('#opt-4k').checked = !!S.settings.cam4k; camInfo();
   $('#opt-ev').value = S.settings.ev || 0; $('#opt-ev-v').textContent = S.settings.ev || 0;
   refreshDsInfo();
+  { const c = ghCfg(); $('#gh-on').checked = c.on; $('#gh-cell').checked = c.cell; $('#gh-token').value = c.token; $('#gh-repo').value = c.repo; ghInfo(); }
   openSheet('#sh-set');
 }
 const saveSettings = () => store.set('settings', S.settings);
