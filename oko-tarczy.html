@@ -487,6 +487,8 @@ input[type=range]{accent-color:var(--cream)}
     <label class="toggle"><span>Kamera 4K (więcej szczegółów, większe obciążenie)</span><input type="checkbox" id="opt-4k"></label>
     <p class="hint" id="cam-info"></p>
     <label class="toggle"><span>Blokuj ekspozycję i ostrość aparatu</span><input type="checkbox" id="opt-lock"></label>
+    <label class="toggle"><span>Latarka telefonu (światło od strony aparatu, mniej cieni)</span><input type="checkbox" id="opt-torch"></label>
+    <p class="hint" id="torch-info"></p>
     <div class="field" id="ev-row">
       <label for="opt-ev">Jaśniejszy obraz z kamery (czarny grot): <b id="opt-ev-v" class="num">0</b> <span class="hint">(0 = bez zmian)</span></label>
       <input type="range" id="opt-ev" min="0" max="3" step="1" value="0">
@@ -2983,6 +2985,7 @@ async function startCamera() {
     setupZoom();
     S.evManual = false;   // a new camera starts in automatic exposure
     if (S.settings.ev > 0) applyEv();
+    if (S.settings.torch) setTimeout(() => applyTorch(true), 500);
     keepAwake();
     return true;
   } catch (e) {
@@ -3080,6 +3083,17 @@ document.addEventListener('visibilitychange', () => {
   keepAwake();
   [300, 1200, 3000].forEach(ms => setTimeout(() => restoreCam('powrót do aplikacji', ms === 1200), ms));
 });
+// The phone's torch through the camera track: Android does not let the system torch on while the browser holds the camera.
+// Light from the camera's side hides the dart's shadow behind the dart (since 2026.10.26b).
+async function applyTorch(on) {
+  try {
+    if (!S.track || S.track.readyState !== 'live') return 'kamera nie działa';
+    const caps = S.track.getCapabilities ? S.track.getCapabilities() : {};
+    if (!caps.torch) return 'ta kamera nie ma latarki dostępnej dla przeglądarki';
+    await S.track.applyConstraints({ advanced: [{ torch: !!on }] });
+    return on ? 'latarka włączona' : 'latarka wyłączona';
+  } catch (e) { return 'nie udało się: ' + String(e && e.message || e).slice(0, 80); }
+}
 async function restoreCam(why, all) {
   if (!S.track || S.track.readyState !== 'live' || document.hidden) return;
   const want = store.get('zoom', null);
@@ -3090,6 +3104,7 @@ async function restoreCam(why, all) {
     if (want != null && caps.zoom && now != null && Math.abs(now - want) > 0.04) { await applyZoom(want); fixed = true; }
     else if (want != null && caps.zoom && all) await applyZoom(want);   // reported value may lag behind the real one: set it once anyway
     if (all && S.settings.lock && !(S.settings.ev > 0)) await applyLocks(true);
+    if (all && S.settings.torch) await applyTorch(true);   // reopening the camera switches the torch off
   } catch (e) {}
   if (fixed) {
     logNote('zoom przywrócony ' + want + '× (' + why + ')');
@@ -3293,7 +3308,7 @@ function gridShot(tag, info) {
 function logHead() {
   const st = S.track && S.track.getSettings ? S.track.getSettings() : {};
   return ['Oko Tarczy ' + APP_VERSION + '  ' + new Date().toLocaleString('pl-PL'), navigator.userAgent,
-    'Kamera: ' + S.vw + '×' + S.vh + ' ' + (st.frameRate || '?') + ' kl/s, 4K ' + (S.settings.cam4k ? 'tak' : 'nie') + ', śledzenie ' + (S.settings.track ? 'tak' : 'nie') + ', karta graficzna ' + (G.ok ? 'tak' : (S.settings.gpu === false ? 'wyłączona' : G.failed ? 'błąd' : 'nie')) + ', model AI ' + (S.settings.ai || 'bg') + (AI.sess ? ' ' + AI.backend + (AI.n ? ' ' + Math.round(AI.ms / AI.n) + ' ms' : '') : AI.err ? ' błąd' : '') + (S.proc ? ', przetwarzanie ' + S.proc.pw + '×' + S.proc.ph : ''),
+    'Kamera: ' + S.vw + '×' + S.vh + ' ' + (st.frameRate || '?') + ' kl/s, 4K ' + (S.settings.cam4k ? 'tak' : 'nie') + ', latarka ' + (S.settings.torch ? 'tak' : 'nie') + ', śledzenie ' + (S.settings.track ? 'tak' : 'nie') + ', karta graficzna ' + (G.ok ? 'tak' : (S.settings.gpu === false ? 'wyłączona' : G.failed ? 'błąd' : 'nie')) + ', model AI ' + (S.settings.ai || 'bg') + (AI.sess ? ' ' + AI.backend + (AI.n ? ' ' + Math.round(AI.ms / AI.n) + ' ms' : '') : AI.err ? ' błąd' : '') + (S.proc ? ', przetwarzanie ' + S.proc.pw + '×' + S.proc.ph : ''),
     'Każda linia: średnio/najdłużej w ms, ile razy na sekundę.', ''];
 }
 // Opens a prefilled GitHub issue. A long log does not fit in a link (GitHub answers with an error),
@@ -4582,7 +4597,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.26a';
+const APP_VERSION = '2026.10.26b';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
@@ -5166,6 +5181,7 @@ function openSettings() {
   $('#opt-shadow').checked = S.settings.shadows; $('#opt-auto').checked = S.settings.autoNext; $('#opt-covoice').checked = S.settings.coVoice !== false;
   $('#opt-fun').checked = !!S.settings.fun; fillVoices();
   $('#opt-rate').value = S.settings.rate || 1.05; $('#opt-rate-v').textContent = (+(S.settings.rate || 1.05)).toFixed(2);
+  $('#opt-torch').checked = !!S.settings.torch; $('#torch-info').textContent = '';
   $('#opt-lock').checked = S.settings.lock; $('#opt-mask').checked = S.settings.mask; $('#opt-diag').checked = S.settings.diag;
   $('#opt-off').textContent = S.point.mm.toFixed(1) + ' mm' + (S.point.samples.length ? ' (' + S.point.samples.length + ' popr.)' : '');
   $('#opt-collect').checked = !!S.settings.collect;
@@ -5196,6 +5212,13 @@ $('#opt-lock').addEventListener('change', async (e) => {
   S.settings.lock = e.target.checked; saveSettings();
   const res = await applyLocks(S.settings.lock);
   toast(S.settings.lock ? 'Zablokowano: ' + res : 'Automatyka aparatu włączona');
+});
+$('#opt-torch').addEventListener('change', async (e) => {
+  S.settings.torch = e.target.checked; saveSettings();
+  const t = await applyTorch(S.settings.torch);
+  $('#torch-info').textContent = t.charAt(0).toUpperCase() + t.slice(1) + '.';
+  setTimeout(() => { if (S.det) S.resetPending = true; }, 1500);   // other light: new reference once it has settled
+  toast(t.charAt(0).toUpperCase() + t.slice(1), 3000);
 });
 $('#opt-ev').addEventListener('change', async (e) => {
   S.settings.ev = +e.target.value; $('#opt-ev-v').textContent = e.target.value; saveSettings();

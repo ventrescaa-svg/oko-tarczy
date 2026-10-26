@@ -82,6 +82,11 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - Sprawdzone w Playwright (atrapa kamery ze zdjęciem tarczy Piotra 4K, SwiftShader): obraz z karty różni się od canvasa średnio o 0,75–1,25 jasności, wycinek ostrego zdjęcia o 0,5; po utracie kontekstu gra działa dalej na canvasie. Prawdziwej szybkości na S26 jeszcze nie znamy (SwiftShader liczy na procesorze); rdzeń bez zmian, więc `test_rzutow.js` daje to samo.
 - Następny krok, gdy będzie szybko: większy obraz wykrywania w 4K (np. 1280 px) albo różnica „przed/po” liczona na karcie.
 
+## Latarka telefonu (od 2026.10.26b)
+- Piotr: systemowej latarki nie da się włączyć w trakcie gry, bo przeglądarka trzyma aparat. Ustawienia wykrywania, „Latarka telefonu” (`S.settings.torch`, `applyTorch`): `applyConstraints({advanced:[{torch}]})` na ścieżce kamery,
+  ponownie po `startCamera` i w `restoreCam(all)`; po zmianie nowe `ref` po 1,5 s. Pod przełącznikiem komunikat (np. brak `torch` w `getCapabilities`). Nagłówek dziennika: „latarka tak/nie”.
+- Cel: światło od strony aparatu chowa cień rzutki za rzutką (pomysł z recenzji 2026-10-24). Na S26 jeszcze nie sprawdzone (atrapa kamery Chromium nie ma latarki).
+
 ## Dziennik czasów (od 2026.10.19i)
 - W grze `perfAdd`/`perfFlush` co 10 s zapisują linię: średni/najdłuższy czas (ms) i ile razy na sekundę dla kroków
   `śledzenie`, `śledzenie między`, `kopiowanie klatki`, `wyrównanie`, `wykrywanie`, `obsługa rzutu`, `rysowanie`, `odstęp klatek` (ostatnie 90 linii).
