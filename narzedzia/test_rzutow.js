@@ -3,6 +3,7 @@
 //   NOISE=4 SEED=1  -> dodaje szum kamery (sprawdzenie stabilności), V=1 -> lista rzutów
 // Wynik: ile rzutów dostało to samo pole, co ostatecznie zapisał gracz (tap = poprawione stuknięciem).
 // Druga linia: rzuty 2. i 3. w turze, blisko drutu (< 3 mm), błąd w mm na rzutach ze stuknięciem.
+//   FULL=1 -> próbki od 2026.10.26d liczone na całym obrazie przetwarzania zamiast na wycinku (jak w aplikacji)
 //   OUT=plik.jsonl -> jeden wiersz na rzut (do narzedzia/porownaj.py: stara wersja vs nowa, co naprawia, co psuje)
 const fs = require('fs'), path = require('path'), os = require('os');
 const [htmlFile, dir] = process.argv.slice(2);
@@ -17,7 +18,12 @@ const rows = [], out = [], errs = [], grp = [0, 0], wire = [0, 0];
 M.samples.forEach((s, k) => {
   const id = k + 1;
   const rd = (t) => new Uint8ClampedArray(fs.readFileSync(path.join(dir, `${String(id).padStart(3, '0')}_${t}.rgba`)));
-  const ref = rd('ref'), cur = rd('cur');
+  // FULL=1: cały obraz przetwarzania (od 2026.10.26d), wtedy wycinek zaczyna się w (0, 0)
+  const full = !!(process.env.FULL && s.full && fs.existsSync(path.join(dir, `${String(id).padStart(3, '0')}_fullref.rgba`)));
+  const ref = rd(full ? 'fullref' : 'ref'), cur = rd(full ? 'fullcur' : 'cur');
+  const cx0 = full ? 0 : s.crop.x0, cy0 = full ? 0 : s.crop.y0;
+  // pierścienie nauczone na tej tarczy (zapisywane od 2026.10.26d), jak w aplikacji
+  C.setRings(s.rings || null);
   // próbki sprzed 2026.10.17 bywają bez zdjęcia "przed" (ref == cur) - nie da się ich odtworzyć
   if (Buffer.from(ref).equals(Buffer.from(cur)) || s.label.source === 'deleted' || s.label.source === 'keypad') { skipped++; return; }
   if (process.env.NOISE) {
@@ -26,9 +32,9 @@ M.samples.forEach((s, k) => {
     const g = () => { let u = 0; for (let t = 0; t < 4; t++) u += rnd(); return (u - 2) * 1.732; };
     for (const im of [ref, cur]) for (let i = 0; i < im.length; i += 4) for (let c = 0; c < 3; c++) im[i + c] += g() * +process.env.NOISE;
   }
-  const w = s.crop.w, h = s.crop.h;
-  const Hp = C.mulH([1, 0, -s.crop.x0, 0, 1, -s.crop.y0, 0, 0, 1], s.proc.Hp);
-  const pp = [(s.video[0] / 2 - s.proc.x) * s.proc.s - s.crop.x0, (s.video[1] / 2 - s.proc.y) * s.proc.s - s.crop.y0];
+  const w = full ? s.full.w : s.crop.w, h = full ? s.full.h : s.crop.h;
+  const Hp = C.mulH([1, 0, -cx0, 0, 1, -cy0, 0, 0, 1], s.proc.Hp);
+  const pp = [(s.video[0] / 2 - s.proc.x) * s.proc.s - cx0, (s.video[1] / 2 - s.proc.y) * s.proc.s - cy0];
   const c = C.applyH(s.proc.Hp, 0, 0), p6 = C.applyH(s.proc.Hp, 170, 0), p11 = C.applyH(s.proc.Hp, -170, 0);
   const q = Math.hypot(p6[0] - c[0], p6[1] - c[1]) >= Math.hypot(p11[0] - c[0], p11[1] - c[1]) ? p6 : p11, l = Math.hypot(q[0] - c[0], q[1] - c[1]);
   const cfg = { w, h, Hp, nearDir: [(q[0] - c[0]) / l, (q[1] - c[1]) / l], thr: 60, shadows: true, pp,
@@ -39,7 +45,8 @@ M.samples.forEach((s, k) => {
   // od 2026.10.19q próbka ma też stan detektora: poprzednie rzutki tury (occ) i numer rzutu w turze
   const occFile = path.join(dir, `${String(id).padStart(3, '0')}_occ.rgba`);
   if (!process.env.NOSTATE && s.dartsInTurn > 1 && fs.existsSync(occFile)) {
-    const o = rd('occ'); for (let i = 0; i < w * h; i++) det.occ[i] = o[i * 4] > 127 ? 1 : 0;
+    const o = rd('occ'), ow = s.crop.w, ox0 = s.crop.x0 - cx0, oy0 = s.crop.y0 - cy0;   // occ jest w wycinku
+    for (let i = 0; i < ow * s.crop.h; i++) det.occ[(oy0 + Math.floor(i / ow)) * w + ox0 + i % ow] = o[i * 4] > 127 ? 1 : 0;
     det.dartsInTurn = s.dartsInTurn - 1;
   }
   const ev = det.analyze(Uint8ClampedArray.from(cur), 1000, false, false);
@@ -52,7 +59,7 @@ M.samples.forEach((s, k) => {
   if (!d) { rows.push(`${id} ${s.label.source} ${s.label.label} -> brak rzutki`); out.push(Object.assign(rec, { app2: null, good: false })); return; }
   // HI=1: grot jeszcze raz na ostrym wycinku (od 2026.10.19l), tak jak hiRefine w aplikacji
   if (process.env.HI && s.hiCrop && fs.existsSync(path.join(dir, `${String(id).padStart(3, '0')}_hiref.rgba`))) {
-    const hc = s.hiCrop, z = hc.z, ox = (s.crop.x0 / s.crop.k) * z - hc.x0, oy = (s.crop.y0 / s.crop.k) * z - hc.y0;   // crop px -> hi px
+    const hc = s.hiCrop, z = hc.z, ox = (cx0 / s.crop.k) * z - hc.x0, oy = (cy0 / s.crop.k) * z - hc.y0;   // crop px -> hi px
     const hr = rd('hiref'), hcur = rd('hicur'), bt = d.det.barrelTip;
     const thrLow = Math.max(det.pointMin, det.pointK * (det.noise || 0));
     const r = C.refineTipHi(hr, hcur, hc.w, hc.h, det.lastGain || 1, { tip: [bt[0] * z + ox, bt[1] * z + oy], axis: d.det.axis }, z,

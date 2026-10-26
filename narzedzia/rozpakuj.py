@@ -22,7 +22,8 @@ for zi, zp in enumerate(zps):
 zf = [zipfile.ZipFile(zp) for zp in zps]
 S = sorted(samples.values(), key=lambda t: t[1].get('ts', 0))
 for i, (zi, s) in enumerate(S, 1):
-    for k in ('ref', 'cur', 'hiRef', 'hiCur', 'mask', 'occ'):
+    # od 2026.10.26d: cały obraz przetwarzania przed/po i pełna maska (fullRef/fullCur/fullMask)
+    for k in ('ref', 'cur', 'hiRef', 'hiCur', 'mask', 'occ', 'fullRef', 'fullCur', 'fullMask'):
         if k not in s['files']: continue
         im = Image.open(io.BytesIO(zf[zi].read(s['files'][k]))).convert('RGBA')   # mask/occ: 0 albo 255
         np.asarray(im, dtype=np.uint8).tofile(os.path.join(out, f'{i:03d}_{k.lower()}.rgba'))

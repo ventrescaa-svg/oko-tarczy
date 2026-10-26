@@ -46,6 +46,10 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
   Wysłane mają `r.up`; poprawka starego rzutu (`relabeled`) czyści `up`, więc rzut idzie jeszcze raz. `rozpakuj.py` bierze wiele plików i zostawia najnowszą wersję każdego `id`, rzuty układa według czasu.
 - Naprawione 2026.10.17: zdjęcie „przed” bywało kopią „po”, bo `refA` aliasował `this.ref`. Dotyczyło 17 z 77 starych próbek.
 - Nowe próbki mają też `det.nose`, `pointPx`, `pxPerMm`, `tipBy`, `pointMm`.
+- Od 2026.10.26d (audyt 2026-10-26, zgoda Piotra) próbka ma też cały obraz przetwarzania przed/po (`_fullref.jpg`/`_fullcur.jpg`, JPEG 0,85, ok. 130 kB każdy) i pełną maskę (`_fullmask.png`), `full: {w, h}` oraz nauczone pierścienie `rings` [trebleIn, trebleOut, doubleIn].
+  Powód: przy „złym obiekcie” (cień od lampy, nakładające się lotki) prawdziwa rzutka bywała poza wycinkiem, więc nie dało się tego sprawdzić offline. Rdzeń: `cfg.keepFull` / `det.keepFull` (= „Zbieraj dane”), `debugCrop` dokłada `full`.
+  Rzut waży ok. 375 kB zamiast ok. 105 kB. `rozpakuj.py` rozpakowuje `fullref`/`fullcur`/`fullmask`, `test_rzutow.js` z `FULL=1` liczy na całym obrazie (występowanie `occ` wstawiane w miejsce wycinka) i zawsze ustawia `rings` z próbki.
+  Sprawdzone: wynik na starych rzutach bez zmian (804/916); na 60 rzutach wklejonych w szare tło `FULL=1` daje te same miejsca co wycinek (mediana różnicy 0,4 mm; większe różnice z globalnego wzmocnienia/szumu liczonego z całego obrazu); Playwright: zapis próbki i ZIP mają nowe pliki.
 
 ## Zdjęcia z kalibracji w Nauka AI (od 2026.10.25d; wcześniej „zrzuty siatki” od 19)
 - `gridShot` robi się sam po automatycznej kalibracji (`kalibracja`) i 6 s po „Gotowe, gramy” (`gra`), bez komunikatu. Zapisuje do IndexedDB (ten sam magazyn co rzuty, `kind: 'cal'`):

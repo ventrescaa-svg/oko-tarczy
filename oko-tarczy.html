@@ -1606,6 +1606,7 @@ input[type=range]{accent-color:var(--cream)}
     this.prevHalf = null; this.curHalf = null;
     this.diag = { mv: 0, mvThr: 0, moving: false, A: 0, result: 'start', at: 0, frames: 0 };
     this.useBarrel = cfg.barrel !== false;
+    this.keepFull = !!cfg.keepFull;   // debugCrop also keeps the whole picture before/after (training samples)
     this.pointMin = cfg.pointMin != null ? cfg.pointMin : 14;
     this.pointK = cfg.pointK != null ? cfg.pointK : 3.2;
     this.ppm = localScale(this.Hp, 0, 0);
@@ -1855,7 +1856,9 @@ input[type=range]{accent-color:var(--cream)}
     }
     return { x0, y0, w: cw, h: ch, ref, cur, mask: mk, occ: occ0 ? oc : null, tip: det.tip.slice(), barrel: (det.barrelTip || det.tip).slice(), axis: det.axis.slice(),
       ext: det.ext, area: det.area, hidden: det.hidden, nearOcc: det.tipNearOcc, noise: this.noise, shift: this.diag.shift || [0, 0], dartsInTurn: this.dartsInTurn,
-      nose: det.nose ? det.nose.slice() : null, pointPx: det.pointPx, pxPerMm: det.pxPerMm, tipBy: det.tipBy, pointMm: this.pointMm, cast: det.cast || null };
+      nose: det.nose ? det.nose.slice() : null, pointPx: det.pointPx, pxPerMm: det.pxPerMm, tipBy: det.tipBy, pointMm: this.pointMm, cast: det.cast || null,
+      // The whole processing picture: when the detector took the wrong object, the real dart is often outside the crop.
+      full: this.keepFull ? { w: this.w, h: this.h, ref: Uint8ClampedArray.from(refA), cur: Uint8ClampedArray.from(frame), mask: Uint8Array.from(mask) } : null };
   };
 
   /* ---------- Automatic calibration ----------
@@ -3487,7 +3490,7 @@ function setupProc() {
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   const Hp = C.mulH([s, 0, -x * s, 0, s, -y * s, 0, 0, 1], H);
   S.proc = { x, y, w, h, s, pw, ph, canvas, ctx, Hp };
-  S.det = new C.Detector({ w: pw, h: ph, Hp, nearDir: S.cal.nearDir, thr: S.settings.thr, shadows: S.settings.shadows, pp: [(S.vw / 2 - x) * s, (S.vh / 2 - y) * s], pointMm: S.point.mm, pointMaxMm: S.point.max || 25 });
+  S.det = new C.Detector({ w: pw, h: ph, Hp, nearDir: S.cal.nearDir, thr: S.settings.thr, shadows: S.settings.shadows, pp: [(S.vw / 2 - x) * s, (S.vh / 2 - y) * s], pointMm: S.point.mm, pointMaxMm: S.point.max || 25, keepFull: !!S.settings.collect });
   S.maskCanvas = document.createElement('canvas'); S.maskCanvas.width = pw; S.maskCanvas.height = ph;
   S.maskImg = null;
   setupStab();
@@ -3563,7 +3566,7 @@ function alignCalibration() {
     S.cal = C.makeCalibration(S.pts); savePoints();
     const P = S.proc;
     P.Hp = C.mulH([P.s, 0, -P.x * P.s, 0, P.s, -P.y * P.s, 0, 0, 1], S.cal.H);
-    S.det = new C.Detector({ w: P.pw, h: P.ph, Hp: P.Hp, nearDir: S.cal.nearDir, thr: S.settings.thr, shadows: S.settings.shadows, pp: [(S.vw / 2 - P.x) * P.s, (S.vh / 2 - P.y) * P.s], pointMm: S.point.mm, pointMaxMm: S.point.max || 25 });
+    S.det = new C.Detector({ w: P.pw, h: P.ph, Hp: P.Hp, nearDir: S.cal.nearDir, thr: S.settings.thr, shadows: S.settings.shadows, pp: [(S.vw / 2 - P.x) * P.s, (S.vh / 2 - P.y) * P.s], pointMm: S.point.mm, pointMaxMm: S.point.max || 25, keepFull: !!S.settings.collect });
     S.resetPending = true;
   } catch (e) {}
 }
@@ -4597,7 +4600,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.26c';
+const APP_VERSION = '2026.10.26d';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
@@ -4643,7 +4646,7 @@ function labelOf(d) {
   const board = d.tip && d.cal0 ? C.applyH(d.cal0.Hi, d.tip[0], d.tip[1]).map(r2) : null;
   return { num: d.num, mult: d.mult, pts: d.pts, label: d.label, source, tip: d.tip ? toCrop(d.tip, d.proc0, d.crop0) : null, board };
 }
-function rgbaToJpeg(rgba, w, h, k) {
+function rgbaToJpeg(rgba, w, h, k, q) {
   return new Promise((res) => {
     try {
       const c = document.createElement('canvas'); c.width = w; c.height = h;
@@ -4653,7 +4656,7 @@ function rgbaToJpeg(rgba, w, h, k) {
         out = document.createElement('canvas'); out.width = Math.round(w * k); out.height = Math.round(h * k);
         out.getContext('2d').drawImage(c, 0, 0, out.width, out.height);
       }
-      out.toBlob((b) => res(b ? { blob: b, w: out.width, h: out.height } : null), 'image/jpeg', 0.92);
+      out.toBlob((b) => res(b ? { blob: b, w: out.width, h: out.height } : null), 'image/jpeg', q || 0.92);
     } catch (e) { res(null); }
   });
 }
@@ -4680,7 +4683,7 @@ function harvestTurn(darts) {
         crop: { x0: D.x0, y0: D.y0, k: cr.k },
         proc: P, cal: cal ? { H: cal.H, viewAngle: r2(cal.viewAngle), side: cal.side, pxPerMm: r2(cal.pxPerMm) } : null,
         video: [S.vw, S.vh], noise: D.noise, shift: D.shift, dartsInTurn: D.dartsInTurn, pointMm: r2(D.pointMm || S.point.mm),
-        ai: d.ai || null,
+        ai: d.ai || null, rings: [C.RING.trebleIn, C.RING.trebleOut, C.RING.doubleIn].map(r2),
         turn: { i, labels: darts.map(x => x && x.label) }
       };
       dsChain = dsChain.then(() => saveSample(rec, D)).catch(() => {});
@@ -4716,6 +4719,12 @@ async function saveSample(rec, D) {
   if (D.hiCrop) {
     const [ha, hb] = await Promise.all([rgbaToJpeg(D.hiCrop.ref, D.hiCrop.w, D.hiCrop.h), rgbaToJpeg(D.hiCrop.cur, D.hiCrop.w, D.hiCrop.h)]);
     if (ha && hb) { rec.hiRef = ha.blob; rec.hiCur = hb.blob; rec.bytes += ha.blob.size + hb.blob.size; }
+  }
+  if (D.full) {
+    // whole processing picture before/after (since 2026.10.26d), a bit stronger compression: ~2 x 100-150 kB
+    const F = D.full, [fa, fb] = await Promise.all([rgbaToJpeg(F.ref, F.w, F.h, 1, 0.85), rgbaToJpeg(F.cur, F.w, F.h, 1, 0.85)]);
+    if (fa && fb) { rec.fullRef = fa.blob; rec.fullCur = fb.blob; rec.full = { w: F.w, h: F.h }; rec.bytes += fa.blob.size + fb.blob.size; }
+    const fm = await bitsToPng(F.mask, F.w, F.h); if (fm) { rec.fullMask = fm; rec.bytes += fm.size; }
   }
   await DS.put(rec);
   S.dsCount++; syncAiPill();
@@ -4793,7 +4802,7 @@ async function packDataset(recs, cals, part, withLog) {
   const add = (f) => { files.push(f); size += f.data.length + 80; };
   for (let k = 0; k < recs.length; k++) {
     const r = recs[k], base = 'samples/' + String(k + 1).padStart(5, '0');
-    const m = Object.assign({}, r); delete m.ref; delete m.cur; delete m.hiRef; delete m.hiCur; delete m.maskImg; delete m.occImg; delete m.up;
+    const m = Object.assign({}, r); delete m.ref; delete m.cur; delete m.hiRef; delete m.hiCur; delete m.maskImg; delete m.occImg; delete m.up; delete m.fullRef; delete m.fullCur; delete m.fullMask;
     m.files = { ref: base + '_ref.jpg', cur: base + '_cur.jpg' };
     add({ name: m.files.ref, data: new Uint8Array(await r.ref.arrayBuffer()) });
     add({ name: m.files.cur, data: new Uint8Array(await r.cur.arrayBuffer()) });
@@ -4803,6 +4812,12 @@ async function packDataset(recs, cals, part, withLog) {
       m.files.hiRef = base + '_hiref.jpg'; m.files.hiCur = base + '_hicur.jpg';
       add({ name: m.files.hiRef, data: new Uint8Array(await r.hiRef.arrayBuffer()) });
       add({ name: m.files.hiCur, data: new Uint8Array(await r.hiCur.arrayBuffer()) });
+    }
+    if (r.fullRef && r.fullCur) {
+      m.files.fullRef = base + '_fullref.jpg'; m.files.fullCur = base + '_fullcur.jpg';
+      add({ name: m.files.fullRef, data: new Uint8Array(await r.fullRef.arrayBuffer()) });
+      add({ name: m.files.fullCur, data: new Uint8Array(await r.fullCur.arrayBuffer()) });
+      if (r.fullMask) { m.files.fullMask = base + '_fullmask.png'; add({ name: m.files.fullMask, data: new Uint8Array(await r.fullMask.arrayBuffer()) }); }
     }
     meta.push(m);
     if (size > part) flush();
@@ -4929,7 +4944,7 @@ $('#opt-track').addEventListener('change', (e) => {
 $('#opt-hitip').addEventListener('change', (e) => { S.settings.hiTip = e.target.checked; saveSettings(); if (!e.target.checked) S.hi = null; });
 $('#opt-ai').addEventListener('change', (e) => { S.settings.ai = e.target.value; saveSettings(); AI.failAt = 0; aiInfo(); if (e.target.value !== 'off') aiLoad().catch(() => {}); });
 $('#opt-gpu').addEventListener('change', (e) => { S.settings.gpu = e.target.checked; saveSettings(); S.hi = null; camInfo(); });
-$('#opt-collect').addEventListener('change', (e) => { S.settings.collect = e.target.checked; saveSettings(); syncAiPill(); });
+$('#opt-collect').addEventListener('change', (e) => { S.settings.collect = e.target.checked; saveSettings(); syncAiPill(); if (S.det) S.det.keepFull = e.target.checked; });
 // What the camera really gives (the browser may give less than asked) and how fast play runs.
 function camInfo() {
   const el = $('#cam-info'); if (!el) return;
