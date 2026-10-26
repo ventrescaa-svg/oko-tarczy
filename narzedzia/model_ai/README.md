@@ -9,7 +9,7 @@ pewność = część całej masy (softmax) w oknie 7×7 wokół szczytu.
 
 Nauka od nowa (PyTorch z PyPI, na procesorze ok. 90 s na przebieg):
 ```
-python3 narzedzia/rozpakuj.py cz1.zip cz2.zip cz3.zip /tmp/rz
+BEZ_PELNYCH=1 python3 narzedzia/rozpakuj.py cz1.zip cz2.zip cz3.zip /tmp/rz   # bez całych obrazów z 26d (niepotrzebne do nauki)
 python3 narzedzia/model_ai/prep.py /tmp/rz /tmp/dane.npz
 FOLD=4/5 EP=10 python3 narzedzia/model_ai/train.py /tmp/dane.npz      # sprawdzian: ostatnia 1/5 rzutów (po czasie)
 FOLD=4/5 LOAD=stary.pt python3 narzedzia/model_ai/train.py /tmp/dane.npz # ten sam sprawdzian dla obecnego modelu
