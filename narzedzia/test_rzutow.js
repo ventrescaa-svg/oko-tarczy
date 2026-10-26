@@ -2,6 +2,8 @@
 // Użycie: node narzedzia/test_rzutow.js oko-tarczy.html katalog_z_rozpakuj
 //   NOISE=4 SEED=1  -> dodaje szum kamery (sprawdzenie stabilności), V=1 -> lista rzutów
 // Wynik: ile rzutów dostało to samo pole, co ostatecznie zapisał gracz (tap = poprawione stuknięciem).
+// Druga linia: rzuty 2. i 3. w turze, blisko drutu (< 3 mm), błąd w mm na rzutach ze stuknięciem.
+//   OUT=plik.jsonl -> jeden wiersz na rzut (do narzedzia/porownaj.py: stara wersja vs nowa, co naprawia, co psuje)
 const fs = require('fs'), path = require('path'), os = require('os');
 const [htmlFile, dir] = process.argv.slice(2);
 const html = fs.readFileSync(htmlFile, 'utf8');
@@ -11,7 +13,7 @@ fs.writeFileSync(tmp, core);
 const C = require(tmp);
 const M = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
 let n = 0, ok = 0, tapN = 0, tapOk = 0, prior = 0, skipped = 0;
-const rows = [];
+const rows = [], out = [], errs = [], grp = [0, 0], wire = [0, 0];
 M.samples.forEach((s, k) => {
   const id = k + 1;
   const rd = (t) => new Uint8ClampedArray(fs.readFileSync(path.join(dir, `${String(id).padStart(3, '0')}_${t}.rgba`)));
@@ -43,7 +45,11 @@ M.samples.forEach((s, k) => {
   const ev = det.analyze(Uint8ClampedArray.from(cur), 1000, false, false);
   const d = ev.find(e => e.type === 'dart');
   n++; const tap = s.label.source === 'tap'; if (tap) tapN++;
-  if (!d) { rows.push(`${id} ${s.label.source} ${s.label.label} -> brak rzutki`); return; }
+  const lb = s.label.board, wd = lb ? C.wireDistance(lb[0], lb[1]) : null, g2 = (s.dartsInTurn || 1) > 1;
+  if (g2) grp[1]++;
+  if (wd != null && wd < 3) wire[1]++;
+  const rec = { id, sid: s.id, app: s.app, src: s.label.source, lab: s.label.label, dartsInTurn: s.dartsInTurn || 1, wire: wd };
+  if (!d) { rows.push(`${id} ${s.label.source} ${s.label.label} -> brak rzutki`); out.push(Object.assign(rec, { app2: null, good: false })); return; }
   // HI=1: grot jeszcze raz na ostrym wycinku (od 2026.10.19l), tak jak hiRefine w aplikacji
   if (process.env.HI && s.hiCrop && fs.existsSync(path.join(dir, `${String(id).padStart(3, '0')}_hiref.rgba`))) {
     const hc = s.hiCrop, z = hc.z, ox = (s.crop.x0 / s.crop.k) * z - hc.x0, oy = (s.crop.y0 / s.crop.k) * z - hc.y0;   // crop px -> hi px
@@ -60,8 +66,18 @@ M.samples.forEach((s, k) => {
   }
   const lab = C.scoreAt(d.board[0], d.board[1]).label, good = lab === s.label.label;
   ok += good; if (tap) tapOk += good; if (d.det.tipBy === 'prior') prior++;
+  if (g2) grp[0] += good;
+  if (wd != null && wd < 3) wire[0] += good;
+  const err = lb ? Math.hypot(d.board[0] - lb[0], d.board[1] - lb[1]) : null;
+  if (tap && err != null) errs.push(err);
+  out.push(Object.assign(rec, { app2: lab, good, err: err != null ? +err.toFixed(2) : null, tipBy: d.det.tipBy, board: d.board.map(v => +v.toFixed(2)) }));
   rows.push(`${String(id).padStart(3)} ${s.label.source.padEnd(9)} gracz=${s.label.label.padEnd(4)} app=${lab.padEnd(4)} ${good ? 'OK ' : 'ŹLE'} grot:${d.det.tipBy}`);
 });
 fs.unlinkSync(tmp);
 if (process.env.V) console.log(rows.join('\n'));
 console.log(`rzutów ${n}: dobre pole ${ok} | poprawiane stuknięciem: ${tapOk}/${tapN} | grot zgadnięty z długości: ${prior} | pominięte: ${skipped}`);
+// Błąd w mm liczony tylko dla stuknięć: przy "auto" etykieta to wynik samej aplikacji, więc nic nie mówi.
+errs.sort((a, b) => a - b);
+const pq = (q) => errs.length ? errs[Math.min(errs.length - 1, Math.floor(q * errs.length))].toFixed(1) : '-';
+console.log(`2. i 3. rzutka w turze: ${grp[0]}/${grp[1]} | blisko drutu (< 3 mm): ${wire[0]}/${wire[1]} | błąd grota przy stuknięciach: mediana ${pq(0.5)} mm, 90% poniżej ${pq(0.9)} mm`);
+if (process.env.OUT) fs.writeFileSync(process.env.OUT, out.map(r => JSON.stringify(r)).join('\n') + '\n');

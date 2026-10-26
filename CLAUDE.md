@@ -251,6 +251,9 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 python3 narzedzia/rozpakuj.py eksport.zip /tmp/rzuty
 node narzedzia/test_rzutow.js oko-tarczy.html /tmp/rzuty          # V=1: lista, NOISE=4: szum kamery
 ```
+Od 2026-10-26 test pisze też drugą linię (2. i 3. rzutka w turze, grot < 3 mm od drutu, błąd w mm przy stuknięciach), a z `OUT=plik.jsonl` jeden wiersz na rzut.
+`python3 narzedzia/porownaj.py przed.jsonl po.jsonl` porównuje dwa przebiegi: osobno rzuty z wersji sprzed 25.10 (do strojenia) i nowsze (sprawdzian), z listą naprawionych i zepsutych.
+Audyt z 2026-10-26 (916 rzutów, HI=1): 804 dobrze, stuknięcia 220/277, 2.–3. rzutka 479/557, przy drucie 202/249, mediana błędu przy stuknięciach 4,1 mm; `occ` nic nie zmienia (`occDrop` = 2), strojenie długości grota nic nie daje.
 Wynik na eksporcie z 2026-10-17 (77 rzutów, 59 da się odtworzyć), historycznie (tryby `walk`/`old` testu usunięte w 19z):
 
 | Wersja | Dobre pole | Poprawiane stuknięciem | Z szumem kamery |
