@@ -12,6 +12,7 @@ Nauka od nowa (PyTorch z PyPI, na procesorze ok. 90 s na przebieg):
 python3 narzedzia/rozpakuj.py cz1.zip cz2.zip cz3.zip /tmp/rz
 python3 narzedzia/model_ai/prep.py /tmp/rz /tmp/dane.npz
 FOLD=4/5 EP=10 python3 narzedzia/model_ai/train.py /tmp/dane.npz      # sprawdzian: ostatnia 1/5 rzutów (po czasie)
+FOLD=4/5 LOAD=stary.pt python3 narzedzia/model_ai/train.py /tmp/dane.npz # ten sam sprawdzian dla obecnego modelu
 ALL=1 EP=20 SAVE=/tmp/grot.pt python3 narzedzia/model_ai/train.py /tmp/dane.npz
 python3 narzedzia/model_ai/export.py /tmp/grot.pt model/grot.onnx     # potem podbić ?v= w AI_MODEL
 ```

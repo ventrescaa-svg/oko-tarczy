@@ -11,7 +11,7 @@ def score(x, y):
     if r >= 160: return 'D%d' % n
     if 97 <= r <= 107: return 'T%d' % n
     return str(n)
-# Użycie: python3 train.py dane.npz   (ALL=1 EP=20 SAVE=model.pt: na wszystkim; FOLD=0/5 EP=10: sprawdzian po czasie)
+# Użycie: python3 train.py dane.npz   (ALL=1 EP=20 SAVE=model.pt: na wszystkim; FOLD=0/5 EP=10: sprawdzian po czasie; LOAD=model.pt: ocena gotowego)
 DATA = sys.argv[1]
 d = np.load(DATA); X, Y = d['X'], d['Y']
 meta = json.load(open(DATA.rsplit('.', 1)[0] + '.meta.json'))
@@ -79,6 +79,7 @@ opt = torch.optim.AdamW(net.parameters(), 2e-3, weight_decay=1e-4)
 sched = torch.optim.lr_scheduler.OneCycleLR(opt, 2e-3, total_steps=EP * math.ceil(len(train) / BS))
 wt = np.array([3.0 if meta[i]['src'] == 'tap' else 1.0 for i in range(N)], np.float32)
 t0 = time.time()
+if os.environ.get('LOAD'): net.load_state_dict(torch.load(os.environ['LOAD'])); EP = 0   # LOAD=model.pt: tylko ocena
 for ep in range(EP):
     net.train(); p = np.random.permutation(train); L = 0
     for b in range(0, len(p), BS):

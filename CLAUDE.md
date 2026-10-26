@@ -243,6 +243,7 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - Aplikacja: Ustawienia wykrywania, „Model AI grota” (`S.settings.ai`: `off`, `bg` = domyślnie, tylko zapisuje odpowiedź w próbce jako `ai`, `on` = zastępuje wynik reguł, gdy pewność ≥ `AI_TRUST` i gracz nie ruszał rzutki; mówi „Poprawka: …”).
   `aiForDart` po `addDart`, kolejka jednego naraz; `labelOf` liczy przesunięcie od `d.aiTip`, więc zmiana przez model nie jest „tap”. Dziennik: nagłówek „model AI …”, wpisy `!!` przy błędzie wczytania.
 - onnxruntime-web 1.29.0 z jsdelivr (`ort.all.min.js`), najpierw `webgl`, potem `wasm`. W Playwright (SwiftShader) ok. 5 s na rzut i wynik identyczny z Pythonem; prawdziwej szybkości na S26 jeszcze nie znamy.
+- 2026.10.26c (`?v=2`): douczony na 864 rzutach (eksporty z 25.10 + paczki z GitHuba do 26.10 17:41). Sprawdzian na dwóch najnowszych częściach po 123 rzuty: nowy 114 + 117, stary 113 + 115, reguły 107 + 109; mediana błędu 2,2 mm (stary 2,4–2,5). Paczki z 25–26.10 na żywo: reguły 210/240, model 224, łączenie 222; model zmienił 19 rzutów, 14 dobrze. `train.py` z `LOAD=model.pt` ocenia gotowy model na tym samym sprawdzianie. Nauka 20 przebiegów na procesorze ok. 35 min.
 - Narzędzia i opis nauki: `narzedzia/model_ai/README.md`. Nie ma tu sztucznych rzutów ani danych z innych tarcz (plan: różne światło, strona kamery, groty, tarcze znajomych).
 
 ## Test na prawdziwych rzutach
