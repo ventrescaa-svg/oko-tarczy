@@ -248,6 +248,8 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
   `aiForDart` po `addDart`, kolejka jednego naraz; `labelOf` liczy przesunięcie od `d.aiTip`, więc zmiana przez model nie jest „tap”. Dziennik: nagłówek „model AI …”, wpisy `!!` przy błędzie wczytania.
 - onnxruntime-web 1.29.0 z jsdelivr (`ort.all.min.js`), najpierw `webgl`, potem `wasm`. W Playwright (SwiftShader) ok. 5 s na rzut i wynik identyczny z Pythonem; prawdziwej szybkości na S26 jeszcze nie znamy.
 - 2026.10.26c (`?v=2`): douczony na 864 rzutach (eksporty z 25.10 + paczki z GitHuba do 26.10 17:41). Sprawdzian na dwóch najnowszych częściach po 123 rzuty: nowy 114 + 117, stary 113 + 115, reguły 107 + 109; mediana błędu 2,2 mm (stary 2,4–2,5). Paczki z 25–26.10 na żywo: reguły 210/240, model 224, łączenie 222; model zmienił 19 rzutów, 14 dobrze. `train.py` z `LOAD=model.pt` ocenia gotowy model na tym samym sprawdzianie. Nauka 20 przebiegów na procesorze ok. 35 min.
+- Od 2026.10.28a domyślnie `on` (decyzja Piotra 2026-10-28). Paczki z 28.10 (151 rzutów z 26d, model 26c ich nie widział, 134 sprawdzone stuknięciem lub potwierdzeniem): reguły na żywo 128/151, model 144; na 146 z odpowiedzią modelu reguły 123, łączenie przy 0,6: 144 (naprawia 21, psuje 0; 0,7: 140, 0,8: 137). Na żywo model zmienił 22 rzuty, 21 dobrze. Mediana błędu przy stuknięciach: model 1,9 mm, reguły 3,8 mm.
+  Zmiana dotyczy tylko nowych ustawień: `saveSettings` zapisuje cały obiekt, więc kto już zapisał ustawienia, ma swoje `ai`.
 - Narzędzia i opis nauki: `narzedzia/model_ai/README.md`. Nie ma tu sztucznych rzutów ani danych z innych tarcz (plan: różne światło, strona kamery, groty, tarcze znajomych).
 
 ## Test na prawdziwych rzutach
