@@ -94,6 +94,11 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - Dziennik: `śledzenie` rozbite na `śledzenie: obraz` (klatka na kartę i odczyt) i `śledzenie: liczenie` (sam Lucas–Kanade). W Playwright (Full HD, SwiftShader) obraz 31–39 ms, liczenie 1,2–1,5 ms,
   więc dalsze przyspieszanie dotyczy przenoszenia obrazu (asynchroniczny odczyt, `VideoFrame`), nie śledzenia. Najpierw dziennik z S26.
   Dziennik z S26 (28.10 wieczorem, 4K): `śledzenie: obraz` 40–57 ms, `śledzenie: liczenie` ok. 3 ms, `kopiowanie klatki` ok. 7 ms, `wykrywanie` 26–34 ms, 7–9 kl/s. Następny krok przyspieszenia: wgrywanie klatki 4K na kartę (np. mniejsza tekstura, `VideoFrame`).
+- 2026.10.28e: na S26 w 4K wątek był prawie cały zajęty (śledzenie w wykrywaniu ok. 7,5×55 ms + „śledzenie między” ok. 4,5×55 ms + wykrywanie ok. 7,5×28 ms na sekundę), stąd 7–9 kl/s zamiast 10.
+  Ustawienia wykrywania, „Oszczędne śledzenie” (`S.settings.lean`, domyślnie wł., `leanOn`): licznik nowych klatek kamery (`requestVideoFrameCallback`, `S.vf`), ta sama klatka nie jest drugi raz śledzona ani przetwarzana,
+  a „śledzenie między” jest pomijane, gdy średni czas obrazu do śledzenia `S.trkMs` > 20 ms (siatka na ekranie odświeża się wtedy ok. 10×/s). Gdy licznik stoi > 0,5 s, działa jak dawniej.
+  Dziennik: linia ma `kamera N kl/s` i `oszczędne tak/nie`, nowe kroki `karta: wgrywanie` (samo `texImage2D`) i `karta: odczyt` (`readPixels`, czeka na kartę). Playwright (atrapa 10 kl/s): wgrywania 18 → 10 na sekundę. Rdzeń bez zmian.
+  Następnie: z dziennika S26 zobaczyć, czy drogie jest wgrywanie czy odczyt; potem ewentualnie większy obraz wykrywania w 4K.
 
 ## Latarka telefonu (od 2026.10.26b)
 - Piotr: systemowej latarki nie da się włączyć w trakcie gry, bo przeglądarka trzyma aparat. Ustawienia wykrywania, „Latarka telefonu” (`S.settings.torch`, `applyTorch`): `applyConstraints({advanced:[{torch}]})` na ścieżce kamery,

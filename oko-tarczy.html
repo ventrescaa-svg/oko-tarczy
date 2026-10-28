@@ -483,6 +483,7 @@ input[type=range]{accent-color:var(--cream)}
       <p class="hint" id="ai-info"></p>
     </div>
     <label class="toggle"><span>Obraz przez kartę graficzną (szybciej, zwłaszcza w 4K)</span><input type="checkbox" id="opt-gpu" checked></label>
+    <label class="toggle"><span>Oszczędne śledzenie (bez liczenia tej samej klatki dwa razy)</span><input type="checkbox" id="opt-lean" checked></label>
     <label class="toggle"><span>Kamera 4K (więcej szczegółów, większe obciążenie)</span><input type="checkbox" id="opt-4k"></label>
     <p class="hint" id="cam-info"></p>
     <label class="toggle"><span>Blokuj ekspozycję i ostrość aparatu</span><input type="checkbox" id="opt-lock"></label>
@@ -2906,7 +2907,7 @@ const S = {
   pts: null, cal: null, sel: 0,
   proc: null, det: null, frameData: null, resetPending: false, rebasePending: false,
   mode: 'intro', manual: false, camHidden: false,
-  settings: Object.assign({ thr: 60, shadows: true, autoNext: true, voice: true, coVoice: true, mask: false, lock: false, diag: false, view: 'board', collect: true, track: true, hiTip: true, gpu: true, ai: 'on' }, store.get('settings', {})),
+  settings: Object.assign({ thr: 60, shadows: true, autoNext: true, voice: true, coVoice: true, mask: false, lock: false, diag: false, view: 'board', collect: true, track: true, hiTip: true, gpu: true, lean: true, ai: 'on' }, store.get('settings', {})),
   offset: { mm: 0, samples: [] },
   point: Object.assign({ mm: 14, samples: [], max: 25 }, store.get('point', {})),   // max = measured point (25 mm), barrel 40 mm
   game: null, status: 'idle', blockedShown: false, lastProc: 0, maskImg: null, maskCanvas: null
@@ -3399,7 +3400,9 @@ function glUpload(tok) {
   if (G.frameAt === tok) return;
   const gl = G.gl;
   gl.bindTexture(gl.TEXTURE_2D, G.tex);
+  const t = performance.now();
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, S.video);
+  perfAdd('karta: wgrywanie', performance.now() - t);
   G.frameAt = tok; G.vw = S.video.videoWidth; G.vh = S.video.videoHeight;
 }
 function glTarget(key, w, h) {
@@ -3432,8 +3435,9 @@ function glWarp(tok, A, w, h, key) {
 function glRead(key, x, y, w, h) {
   const gl = G.gl, f = G.fbs[key];
   gl.bindFramebuffer(gl.FRAMEBUFFER, f.fb);
-  const out = new Uint8Array(w * h * 4);
-  gl.readPixels(x, y, w, h, gl.RGBA, gl.UNSIGNED_BYTE, out);
+  const out = new Uint8Array(w * h * 4), t = performance.now();
+  gl.readPixels(x, y, w, h, gl.RGBA, gl.UNSIGNED_BYTE, out);   // waits for the card to finish (upload + drawing)
+  perfAdd('karta: odczyt', performance.now() - t);
   return new Uint8ClampedArray(out.buffer);
 }
 
@@ -3508,9 +3512,13 @@ function trackBoard(now) {
   }
   // split in the time log: getting the small picture (upload of the video frame to the graphics card + reading back)
   // and the tracking itself; on S26 in 4K the whole step took ~65 ms while the tracking alone is a few ms
+  if (leanOn() && T.vf === S.vf) return true;   // same camera frame: the board has not moved since
+  T.vf = S.vf;
   let t = performance.now();
   const g = stabGray(S.video);
-  perfAdd('śledzenie: obraz', performance.now() - t); t = performance.now();
+  const ms = performance.now() - t;
+  perfAdd('śledzenie: obraz', ms); S.trkMs = S.trkMs ? 0.8 * S.trkMs + 0.2 * ms : ms;
+  t = performance.now();
   const r = T.tracker.track(g);
   perfAdd('śledzenie: liczenie', performance.now() - t);
   if (r.ok) {
@@ -3554,7 +3562,8 @@ function perfFlush(now) {
   if (now - pf.t0 < 10000) return;
   const secs = (now - pf.t0) / 1000;
   const parts = Object.keys(pf.acc).map(k => { const a = pf.acc[k]; return k + ' ' + (a[0] / a[1]).toFixed(1) + '/' + a[2].toFixed(0) + ' ms ×' + (a[1] / secs).toFixed(1) + '/s'; });
-  pf.log.push(new Date().toLocaleTimeString('pl-PL') + '  ' + S.vw + '×' + S.vh + '  wykrywanie ' + (S.fps || 0).toFixed(1) + ' kl/s  stan ' + (S.status || '') + '  |  ' + parts.join('  |  '));
+  const camFps = S.vfAt ? ((S.vf - (pf.vf0 || 0)) / secs).toFixed(1) : '?'; pf.vf0 = S.vf;
+  pf.log.push(new Date().toLocaleTimeString('pl-PL') + '  ' + S.vw + '×' + S.vh + '  kamera ' + camFps + ' kl/s  oszczędne ' + (leanOn() ? 'tak' : 'nie') + '  wykrywanie ' + (S.fps || 0).toFixed(1) + ' kl/s  stan ' + (S.status || '') + '  |  ' + parts.join('  |  '));
   if (pf.log.length > 90) pf.log.shift();
   pf.acc = {}; pf.t0 = now;
 }
@@ -4347,6 +4356,20 @@ function drawLoupe(cal, m) {
   ctx.moveTo(W / 2, W / 2 - 22); ctx.lineTo(W / 2, W / 2 - 6); ctx.moveTo(W / 2, W / 2 + 6); ctx.lineTo(W / 2, W / 2 + 22); ctx.stroke();
 }
 
+/* ---------------- New camera frames ----------------
+   The loop runs at the screen rate (60/s) and the camera gives fewer frames, more so in 4K. With
+   "Oszczędne śledzenie" a frame the board was already tracked on, or already processed, is not done
+   again. The browser counts new frames (requestVideoFrameCallback); if the count stops for 0.5 s
+   while the video plays, every round counts as new, as before. */
+S.vf = 0; S.vfAt = 0;
+if (S.video.requestVideoFrameCallback) {
+  const onVF = () => { S.vf++; S.vfAt = performance.now(); S.video.requestVideoFrameCallback(onVF); };
+  S.video.requestVideoFrameCallback(onVF);
+}
+function leanOn() { return S.settings.lean !== false && S.vfAt > 0 && performance.now() - S.vfAt < 500; }
+// Average time of getting the small tracking picture (slow in 4K: then no extra tracking between detections).
+S.trkMs = 0;
+
 /* ---------------- Main loop ---------------- */
 function loop(now) {
   S.tick = (S.tick || 0) + 1;   // one video upload to the graphics card per round
@@ -4354,8 +4377,8 @@ function loop(now) {
   try {
     watchVideo(now);
     if (S.mode === 'game' && !S.manual) {
-      if (now - S.lastProc >= 95) { S.lastProc = now; processFrame(now); }
-      else if (S.stab && now - (S.lastTrack || 0) >= 45) { const t = performance.now(); trackBoard(now); perfAdd('śledzenie między', performance.now() - t); } // keeps the grid on the board between detections
+      if (now - S.lastProc >= 95 && !(leanOn() && S.vf === S.procVF)) { S.lastProc = now; S.procVF = S.vf; processFrame(now); }
+      else if (S.stab && now - (S.lastTrack || 0) >= 45 && !(leanOn() && S.trkMs > 20)) { const t = performance.now(); trackBoard(now); perfAdd('śledzenie między', performance.now() - t); } // keeps the grid on the board between detections
       perfFlush(now);
     }
   } catch (err) { S.loopErrs = (S.loopErrs || 0) + 1; if (S.loopErrs <= 20) logNote('błąd w pętli: ' + (err && err.stack ? err.stack.split('\n').slice(0, 3).join(' | ') : err)); }
@@ -4575,7 +4598,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.28d';
+const APP_VERSION = '2026.10.28e';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
@@ -4918,6 +4941,7 @@ $('#opt-track').addEventListener('change', (e) => {
 });
 $('#opt-hitip').addEventListener('change', (e) => { S.settings.hiTip = e.target.checked; saveSettings(); if (!e.target.checked) S.hi = null; });
 $('#opt-ai').addEventListener('change', (e) => { S.settings.ai = e.target.value; saveSettings(); AI.failAt = 0; aiInfo(); if (e.target.value !== 'off') aiLoad().catch(() => {}); });
+$('#opt-lean').addEventListener('change', (e) => { S.settings.lean = e.target.checked; saveSettings(); });
 $('#opt-gpu').addEventListener('change', (e) => { S.settings.gpu = e.target.checked; saveSettings(); S.hi = null; camInfo(); });
 $('#opt-collect').addEventListener('change', (e) => { S.settings.collect = e.target.checked; saveSettings(); syncAiPill(); if (S.det) S.det.keepFull = e.target.checked; });
 // What the camera really gives (the browser may give less than asked) and how fast play runs.
@@ -5178,6 +5202,7 @@ function openSettings() {
   $('#opt-hitip').checked = S.settings.hiTip !== false;
   $('#opt-ai').value = S.settings.ai || 'on'; aiInfo();
   $('#opt-gpu').checked = S.settings.gpu !== false;
+  $('#opt-lean').checked = S.settings.lean !== false;
   $('#opt-4k').checked = !!S.settings.cam4k; camInfo();
   refreshDsInfo();
   { const c = ghCfg(); $('#gh-on').checked = c.on; $('#gh-cell').checked = c.cell; $('#gh-token').value = c.token; $('#gh-repo').value = c.repo; ghInfo(); }
