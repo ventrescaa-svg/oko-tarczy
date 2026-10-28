@@ -56,7 +56,7 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
   pełne zdjęcie z kamery bez siatki (JPEG), `H` (tarcza mm → px wideo, w grze z macierzą śledzenia), `info` (rms, wzór, druty), `rings`. Trzymane ostatnie `CAL_KEEP` = 12 (`DS.del`).
 - Eksport ZIP: `cal/NNN-tag.jpg` + `manifest.cals`, plus `dziennik.txt` (dziennik czasów). `rozpakuj.py` kopiuje je do `katalog/cal/` i `katalog/dziennik.txt`. Siatkę rysuje się z `H` przy sprawdzaniu.
 - Usunięte (prośba Piotra, 2026-10-25): komunikat o zrzucie, `shareGridShots` i przycisk Menu „Wyślij zrzuty i dziennik”. Licznik Nauka AI liczy tylko rzuty.
-- Piotr chciał, żeby dziennik sam szedł na GitHub; bez tokenu w publicznej stronie się nie da, więc dziennik jedzie w eksporcie (przycisk „Wyślij dziennik na GitHub” został).
+- Piotr chciał, żeby dziennik sam szedł na GitHub; bez tokenu w publicznej stronie się nie da, więc dziennik jedzie w eksporcie (przycisk „Wyślij dziennik na GitHub” usunięty w 28b, dziennik jest w paczkach na GitHubie).
 
 ## Dociąganie siatki do drutów (`refineGrid`, od 2026.10.19c)
 - `autoCalibrate` dopasowuje tylko okręgi (krawędzie kolorów na zdjęciu 800 px); obrót bierze z wzoru pól, więc linie sektorów potrafiły być 2–4 mm obok drutów.
@@ -86,6 +86,14 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - Sprawdzone w Playwright (atrapa kamery ze zdjęciem tarczy Piotra 4K, SwiftShader): obraz z karty różni się od canvasa średnio o 0,75–1,25 jasności, wycinek ostrego zdjęcia o 0,5; po utracie kontekstu gra działa dalej na canvasie. Prawdziwej szybkości na S26 jeszcze nie znamy (SwiftShader liczy na procesorze); rdzeń bez zmian, więc `test_rzutow.js` daje to samo.
 - Następny krok, gdy będzie szybko: większy obraz wykrywania w 4K (np. 1280 px) albo różnica „przed/po” liczona na karcie.
 
+## Szybsze wykrywanie i porządki (2026.10.28b)
+- `envelope3` + `envDist`: otoczka 3×3 (min/maks każdego kanału) liczona raz na obraz zamiast 9 porównań na piksel; używają jej `motionMeasureHalf` i `diffMap`.
+  Pomiar w Node (540×960): `motionMeasureHalf` 20,5 → 14,0 ms, `diffMap` z drganiem 104 → 56 ms, krok bez rzutu 22,6 → 15,5 ms, `analyze` z rzutką 162 → 118 ms.
+  Wynik liczenia identyczny co do bajta (`OUT=` jsonl): 916 rzutów z HI, paczki 28.10 z FULL+HI, NOISE=4 SEED=1 i NOSTATE.
+- Usunięte: „Jaśniejszy obraz z kamery” (`ev`, `applyEv`), „Wyślij dziennik na GitHub” (`sendLogGithub`, `logHead` zostaje), filtr `occDrop` w `findDart` (nic nie zmieniał).
+- Dziennik: `śledzenie` rozbite na `śledzenie: obraz` (klatka na kartę i odczyt) i `śledzenie: liczenie` (sam Lucas–Kanade). W Playwright (Full HD, SwiftShader) obraz 31–39 ms, liczenie 1,2–1,5 ms,
+  więc dalsze przyspieszanie dotyczy przenoszenia obrazu (asynchroniczny odczyt, `VideoFrame`), nie śledzenia. Najpierw dziennik z S26.
+
 ## Latarka telefonu (od 2026.10.26b)
 - Piotr: systemowej latarki nie da się włączyć w trakcie gry, bo przeglądarka trzyma aparat. Ustawienia wykrywania, „Latarka telefonu” (`S.settings.torch`, `applyTorch`): `applyConstraints({advanced:[{torch}]})` na ścieżce kamery,
   ponownie po `startCamera` i w `restoreCam(all)`; po zmianie nowe `ref` po 1,5 s. Pod przełącznikiem komunikat (np. brak `torch` w `getCapabilities`). Nagłówek dziennika: „latarka tak/nie”.
@@ -95,7 +103,7 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - W grze `perfAdd`/`perfFlush` co 10 s zapisują linię: średni/najdłuższy czas (ms) i ile razy na sekundę dla kroków
   `śledzenie`, `śledzenie między`, `kopiowanie klatki`, `wyrównanie`, `wykrywanie`, `obsługa rzutu`, `rysowanie`, `odstęp klatek` (ostatnie 90 linii).
 - Od 2026.10.25d wysyłany jako `dziennik.txt` w eksporcie Nauka AI.
-- Od 2026.10.19k Menu, „Wyślij dziennik na GitHub” (`sendLogGithub`): otwiera gotowe zgłoszenie (issue). Od 19o link ma ≤ 3500 znaków (nagłówek + najnowsze linie; dłuższy dawał Piotrowi błąd), a pełny dziennik idzie do schowka (wkleić pod tekstem). Bez etykiety, bez tokenu w stronie (świadomie).
+- Od 2026.10.19k Menu, „Wyślij dziennik na GitHub” (`sendLogGithub`): otwiera gotowe zgłoszenie (issue). Od 19o link ma ≤ 3500 znaków (nagłówek + najnowsze linie; dłuższy dawał Piotrowi błąd), a pełny dziennik idzie do schowka (wkleić pod tekstem). Bez etykiety, bez tokenu w stronie (świadomie). Usunięte w 2026.10.28b (dziennik i tak jest w każdej paczce Nauka AI).
 - `processFrame` jest celowo ograniczone do ok. 10 kl/s (co 95 ms), więc 8–9 kl/s w Full HD to prawie maksimum. W 4K Piotr miał 2–3 kl/s.
 
 ## Szturchnięty statyw (od 2026.10.19j)
@@ -130,7 +138,7 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - `loop` ma try/catch i zawsze planuje następną klatkę; błędy trafiają do dziennika (`logNote`, linie z `!!`, też `window.onerror`).
 - `watchVideo`: gdy `video.currentTime` stoi 3 s, `play()`; po 7 s `restartCamera` (zatrzymuje ścieżki, `startCamera`, `resetPending`). Test Playwright: pauza i zatrzymana ścieżka wracają same.
 - Ostry grot: canvas bez `willReadFrequently`; gdy `hiCaptureRef` trwa > 150 ms trzy razy z rzędu, `S.hiOff` wyłącza go do końca sesji (wpis w dzienniku).
-- Przy kolejnym zawieszeniu poproś o „Wyślij dziennik na GitHub” (linie `!!` mówią, co się stało).
+- Przy kolejnym zawieszeniu sprawdź `dziennik.txt` w najnowszej paczce (linie `!!` mówią, co się stało).
 - Od 2026.10.24d `restoreCam`: po powrocie do aplikacji (`visibilitychange`, po 0,3/1,2/3 s) i co 3 s w `watchVideo` zoom wraca do zapisanego (`localStorage` `zoom`), gdy `getSettings().zoom` się różni (Android po wyjściu z aplikacji otwierał kamerę z domyślnym zoomem; Piotr, 2026-10-24). Po przywróceniu nowe `ref` po 1,5 s; przy „Blokuj ekspozycję” blokada też jest nakładana ponownie. Sprawdzone tylko na atrapie kamery.
 
 ## Cień zamiast rzutki (od 2026.10.19p, eksport Piotra z 20:51, 38 rzutów)
@@ -158,7 +166,7 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - Wywołane w `Detector.analyze` po `locateTip`, a w aplikacji jeszcze raz po `hiRefine` (ostry obraz też potrafi „zobaczyć” fałszywy grot na czarnym). Wyłączenie: `cfg.shadowTip = false` (test: `NOSHADOW=1`).
 - Wynik na 60 rzutach (`test_rzutow.js`): bez ostrego grotu dobre pole 39 → 43, poprawiane stuknięciem 16/23 → 20/23 (poprawione rzuty 13, 23, 57, 60, żadnego nie zepsuło); z `HI=1` 40 → 42, 18/23 → 20/23, z szumem 4: 42–43.
 - Ograniczenie: cień musi być gdzieś widoczny. Gdy cały leży na czarnym polu, nic się nie zmienia (zostaje zgadywanie z długości).
-- Od 2026.10.19w Ustawienia wykrywania, „Jaśniejszy obraz z kamery” (`S.settings.ev` 0–3, `applyEv`): kompensacja ekspozycji aparatu (`exposureCompensation`), a gdy jej nie ma, ręczny czas naświetlania × 2^ev (z auto-wartości `S.evBase`). Jasne pola się przepalają, w czerni jest więcej szczegółów. Funkcja próbna, domyślnie 0 (nic się nie zmienia); po zmianie nowe `ref` po 2,5 s. Przetestowane tylko na atrapie kamery Chromium (ścieżka z czasem naświetlania); na S26 nie wiadomo, co przeglądarka udostępnia (komunikat pod suwakiem to mówi). Nie sprawdzone, czy pomaga czarnemu grotowi.
+- Od 2026.10.19w Ustawienia wykrywania, „Jaśniejszy obraz z kamery” (`S.settings.ev` 0–3, `applyEv`): kompensacja ekspozycji aparatu (`exposureCompensation`), a gdy jej nie ma, ręczny czas naświetlania × 2^ev (z auto-wartości `S.evBase`). Jasne pola się przepalają, w czerni jest więcej szczegółów. Funkcja próbna, domyślnie 0 (nic się nie zmienia); po zmianie nowe `ref` po 2,5 s. Przetestowane tylko na atrapie kamery Chromium (ścieżka z czasem naświetlania); na S26 nie wiadomo, co przeglądarka udostępnia (komunikat pod suwakiem to mówi). Nie sprawdzone, czy pomaga czarnemu grotowi. Usunięte w 2026.10.28b (przepalało pola, Piotr wrócił do 0).
 
 ## Eksport z 2026-10-21 i wersja 2026.10.19x
 - Eksport `oko-tarczy-dane-20261021-1837.zip`: 233 próbki (108 z wersji 19w, id 126–233; reszta to stare próbki). Odtworzenie w scratchpadzie jako `rz4`.
@@ -259,7 +267,7 @@ node narzedzia/test_rzutow.js oko-tarczy.html /tmp/rzuty          # V=1: lista, 
 ```
 Od 2026-10-26 test pisze też drugą linię (2. i 3. rzutka w turze, grot < 3 mm od drutu, błąd w mm przy stuknięciach), a z `OUT=plik.jsonl` jeden wiersz na rzut.
 `python3 narzedzia/porownaj.py przed.jsonl po.jsonl` porównuje dwa przebiegi: osobno rzuty z wersji sprzed 25.10 (do strojenia) i nowsze (sprawdzian), z listą naprawionych i zepsutych.
-Audyt z 2026-10-26 (916 rzutów, HI=1): 804 dobrze, stuknięcia 220/277, 2.–3. rzutka 479/557, przy drucie 202/249, mediana błędu przy stuknięciach 4,1 mm; `occ` nic nie zmienia (`occDrop` = 2), strojenie długości grota nic nie daje.
+Audyt z 2026-10-26 (916 rzutów, HI=1): 804 dobrze, stuknięcia 220/277, 2.–3. rzutka 479/557, przy drucie 202/249, mediana błędu przy stuknięciach 4,1 mm; `occ` nic nie zmienia (`occDrop` = 2; filtr usunięty w 28b, sama maska `occ` zostaje w próbkach), strojenie długości grota nic nie daje.
 Wynik na eksporcie z 2026-10-17 (77 rzutów, 59 da się odtworzyć), historycznie (tryby `walk`/`old` testu usunięte w 19z):
 
 | Wersja | Dobre pole | Poprawiane stuknięciem | Z szumem kamery |

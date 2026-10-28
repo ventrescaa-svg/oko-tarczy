@@ -405,7 +405,6 @@ input[type=range]{accent-color:var(--cream)}
       <button class="btn" data-act="stats">Statystyki</button>
       <button class="btn" data-act="calib">Kalibracja kamery</button>
       <button class="btn" data-act="settings">Ustawienia wykrywania</button>
-      <button class="btn" data-act="ghlog">Wyślij dziennik na GitHub</button>
       <button class="btn" data-act="cam">Ukryj obraz z kamery</button>
       <button class="btn" data-act="full">Pełny ekran</button>
       <button class="btn" data-act="intro">Instrukcja ustawienia</button>
@@ -489,11 +488,6 @@ input[type=range]{accent-color:var(--cream)}
     <label class="toggle"><span>Blokuj ekspozycję i ostrość aparatu</span><input type="checkbox" id="opt-lock"></label>
     <label class="toggle"><span>Latarka telefonu (światło od strony aparatu, mniej cieni)</span><input type="checkbox" id="opt-torch"></label>
     <p class="hint" id="torch-info"></p>
-    <div class="field" id="ev-row">
-      <label for="opt-ev">Jaśniejszy obraz z kamery (czarny grot): <b id="opt-ev-v" class="num">0</b> <span class="hint">(0 = bez zmian)</span></label>
-      <input type="range" id="opt-ev" min="0" max="3" step="1" value="0">
-      <p class="hint" id="ev-info">Próbna funkcja: rozjaśnia obraz samą kamerą, żeby w czerni było więcej szczegółów. Jasne pola się przepalą, to nie szkodzi. Po zmianie poczekaj chwilę na ustabilizowanie obrazu.</p>
-    </div>
     <label class="toggle"><span>Pokaż, co widzi wykrywanie (różowe)</span><input type="checkbox" id="opt-mask"></label>
     <label class="toggle"><span>Pokaż diagnostykę (liczby na obrazie)</span><input type="checkbox" id="opt-diag"></label>
     <div class="field">
@@ -753,7 +747,7 @@ input[type=range]{accent-color:var(--cream)}
     const mr = meanLum(ref, roi.sample), mc = meanLum(cur, roi.sample);
     let g = mc > 1 ? mr / mc : 1;
     g = Math.max(0.6, Math.min(1.6, g));
-    const mask = roi.mask;
+    const mask = roi.mask, E = J ? envelope3(ref, w, h) : null;
     for (let i = 0, j = 0; i < n; i++, j += 4) {
       if (!mask[i]) { tmp[i] = 0; if (J) J[i] = 0; continue; }
       const cr = cur[j] * g, cg = cur[j + 1] * g, cb = cur[j + 2] * g;
@@ -768,7 +762,7 @@ input[type=range]{accent-color:var(--cream)}
         // Phone stabilisation shifts the picture by up to a pixel: a pixel only counts as changed
         // when its colour lies outside the range of the 3x3 reference neighbourhood.
         const x = i % w, y = (i - x) / w;
-        if (x > 0 && y > 0 && x < w - 1 && y < h - 1) best = envelopeDist(ref, j, w, cr, cg, cb);
+        if (x > 0 && y > 0 && x < w - 1 && y < h - 1) best = envDist(E, i * 3, cr, cg, cb);
       }
       tmp[i] = exact;
       if (J) J[i] = best;
@@ -833,6 +827,43 @@ input[type=range]{accent-color:var(--cream)}
     }
     return d;
   }
+  // Lowest and highest value of each colour in the 3x3 neighbourhood of every inner pixel, for the whole
+  // picture at once (min/max along rows, then along columns). Gives exactly what envelopeDist reads pixel
+  // by pixel, about 4x faster: that pixel-by-pixel reading was most of the time of motion check and diffMap.
+  // lo/hi: 3 bytes per pixel (r, g, b); border pixels are left as they were.
+  const ENV = {};
+  function envelope3(img, w, h) {
+    const n = w * h * 3;
+    if (!ENV[n]) ENV[n] = { lo: new Uint8Array(n), hi: new Uint8Array(n), rl: new Uint8Array(n), rh: new Uint8Array(n) };
+    const { lo, hi, rl, rh } = ENV[n];
+    for (let y = 0; y < h; y++) {
+      let j = (y * w + 1) * 4, q = (y * w + 1) * 3;
+      for (let x = 1; x < w - 1; x++, j += 4, q += 3) {
+        rl[q] = Math.min(img[j - 4], img[j], img[j + 4]); rh[q] = Math.max(img[j - 4], img[j], img[j + 4]);
+        rl[q + 1] = Math.min(img[j - 3], img[j + 1], img[j + 5]); rh[q + 1] = Math.max(img[j - 3], img[j + 1], img[j + 5]);
+        rl[q + 2] = Math.min(img[j - 2], img[j + 2], img[j + 6]); rh[q + 2] = Math.max(img[j - 2], img[j + 2], img[j + 6]);
+      }
+    }
+    const W3 = w * 3;
+    for (let y = 1; y < h - 1; y++) {
+      for (let q = y * W3 + 3, e = (y + 1) * W3 - 3; q < e; q++) {
+        lo[q] = Math.min(rl[q - W3], rl[q], rl[q + W3]); hi[q] = Math.max(rh[q - W3], rh[q], rh[q + W3]);
+      }
+    }
+    return ENV[n];
+  }
+  // envelopeDist from the precomputed neighbourhood (q = pixel index * 3)
+  function envDist(E, q, cr, cg, cb) {
+    const lo = E.lo, hi = E.hi;
+    let d = 0, l = lo[q], u = hi[q];
+    if (cr < l) d += l - cr; else if (cr > u) d += cr - u;
+    l = lo[q + 1]; u = hi[q + 1];
+    if (cg < l) d += l - cg; else if (cg > u) d += cg - u;
+    l = lo[q + 2]; u = hi[q + 2];
+    if (cb < l) d += l - cb; else if (cb > u) d += cb - u;
+    return d;
+  }
+
 
   // Global sub-pixel shift between two frames (phone stabilisation), Lucas–Kanade on
   // half-resolution grey levels inside the ROI, ignoring pixels that really changed.
@@ -916,14 +947,14 @@ input[type=range]{accent-color:var(--cream)}
   function motionMeasureHalf(a, b, hw, hh, maskH, sample, thr, buf, B) {
     const ma = meanLum(a, sample), mb = meanLum(b, sample);
     const g = mb > 1 ? Math.max(0.7, Math.min(1.4, ma / mb)) : 1;
-    const hist = new Uint32Array(768);
+    const hist = new Uint32Array(768), E = envelope3(a, hw, hh);
     let n = 0;
     for (let y = 1; y < hh - 1; y++) {
       for (let x = 1; x < hw - 1; x++) {
         const i = y * hw + x;
         if (!maskH[i]) { buf[i] = 0; continue; }
         const j = i * 4;
-        let d = envelopeDist(a, j, hw, b[j] * g, b[j + 1] * g, b[j + 2] * g);
+        let d = envDist(E, i * 3, b[j] * g, b[j + 1] * g, b[j + 2] * g);
         d = d > 767 ? 767 : d | 0;
         buf[i] = d; hist[d]++; n++;
       }
@@ -1106,14 +1137,6 @@ input[type=range]{accent-color:var(--cream)}
         sup.set(c.id, k);
       }
       comps = comps.filter(c => sup.get(c.id) >= 0.25 * c.area);
-    }
-    if (opts.occ && comps.length) {
-      const L1 = cc.labels, oc = opts.occ;
-      comps = comps.filter(c => {
-        let inside = 0;
-        for (let y = c.miny; y <= c.maxy; y++) for (let x = c.minx; x <= c.maxx; x++) { const i = y * w + x; if (L1[i] === c.id && oc[i]) inside++; }
-        return inside < (opts.occDrop != null ? opts.occDrop : 0.6) * c.area;
-      });
     }
     if (!comps.length) return null;
     if (opts.axisAt && comps.length > 1) {
@@ -1600,7 +1623,6 @@ input[type=range]{accent-color:var(--cream)}
     this.shadows = cfg.shadows !== false;
     this.jitter = cfg.jitter !== false;
     this.align = cfg.align !== false;
-    this.occDrop = cfg.occDrop != null ? cfg.occDrop : 2;
     this.camMovedShare = cfg.camMovedShare != null ? cfg.camMovedShare : 0.12;
     this.mbuf = new Uint16Array((cfg.w >> 1) * (cfg.h >> 1) + 16);
     this.prevHalf = null; this.curHalf = null;
@@ -1738,7 +1760,7 @@ input[type=range]{accent-color:var(--cream)}
     const det = findDart(th.mask, this.w, this.h, {
       nearDir: this.nearDir, minComp: this.lim.minComp, minDartArea: this.lim.minDartArea,
       gap: this.lim.gap, occ: this.dartsInTurn ? this.occ : null, weights: this.useBarrel ? this.buf2 : null,
-      seed: th.seed, seedThr: th.T, occDrop: this.occDrop,
+      seed: th.seed, seedThr: th.T,
       cast: this.cam && this.castShadow !== false ? { Hp: this.Hp, Hpi: this.Hpi, cam: this.cam } : null,
       axisAt: this.cam && this.dirPrior !== false ? (x, y) => {
         const J = heightStep(this.cam, this.Hpi, x, y);
@@ -2884,7 +2906,7 @@ const S = {
   pts: null, cal: null, sel: 0,
   proc: null, det: null, frameData: null, resetPending: false, rebasePending: false,
   mode: 'intro', manual: false, camHidden: false,
-  settings: Object.assign({ thr: 60, shadows: true, autoNext: true, voice: true, coVoice: true, mask: false, lock: false, diag: false, view: 'board', collect: true, track: true, hiTip: true, gpu: true, ev: 0, ai: 'on' }, store.get('settings', {})),
+  settings: Object.assign({ thr: 60, shadows: true, autoNext: true, voice: true, coVoice: true, mask: false, lock: false, diag: false, view: 'board', collect: true, track: true, hiTip: true, gpu: true, ai: 'on' }, store.get('settings', {})),
   offset: { mm: 0, samples: [] },
   point: Object.assign({ mm: 14, samples: [], max: 25 }, store.get('point', {})),   // max = measured point (25 mm), barrel 40 mm
   game: null, status: 'idle', blockedShown: false, lastProc: 0, maskImg: null, maskCanvas: null
@@ -2986,8 +3008,6 @@ async function startCamera() {
     await new Promise(r => { if (S.video.videoWidth) r(); else S.video.onloadedmetadata = () => r(); });
     S.vw = S.video.videoWidth; S.vh = S.video.videoHeight;
     setupZoom();
-    S.evManual = false;   // a new camera starts in automatic exposure
-    if (S.settings.ev > 0) applyEv();
     if (S.settings.torch) setTimeout(() => applyTorch(true), 500);
     keepAwake();
     return true;
@@ -3039,42 +3059,6 @@ async function applyLocks(on) {
   return done.length ? done.join(', ') : 'brak';
 }
 
-// A brighter picture from the camera itself (exposure compensation, else a longer exposure time):
-// a black point on a black field sits at the very bottom of the brightness range, where the
-// picture has little detail left. Cream fields clip, which does not matter for the point.
-async function applyEv() {
-  const info = $('#ev-info');
-  const say = (t) => { if (info) info.textContent = t; return t; };
-  if (!S.track || !S.track.getCapabilities) return say('Kamera wyłączona.');
-  const ev = Math.max(0, +S.settings.ev || 0), caps = S.track.getCapabilities();
-  const wait = (ms) => new Promise(r => setTimeout(r, ms));
-  const cmp = caps.exposureCompensation;
-  let res = null;
-  try {
-    if (S.settings.lock) await applyLocks(false);   // start again from the automatic exposure
-    if (cmp && cmp.max > cmp.min) {
-      const v = Math.max(cmp.min, Math.min(cmp.max, ev));
-      await S.track.applyConstraints({ advanced: [{ exposureCompensation: v }] });
-      res = 'kompensacja ekspozycji ' + (S.track.getSettings().exposureCompensation != null ? S.track.getSettings().exposureCompensation : v) + ' (zakres ' + cmp.min + '…' + cmp.max + ')';
-    } else if (caps.exposureTime && caps.exposureMode && caps.exposureMode.includes('manual')) {
-      if (ev > 0) {
-        await wait(600);
-        if (!S.evManual) S.evBase = S.track.getSettings().exposureTime;   // the automatic exposure the boost starts from
-        const t0 = S.evBase;
-        if (t0) {
-          const t = Math.max(caps.exposureTime.min, Math.min(caps.exposureTime.max, t0 * Math.pow(2, ev)));
-          await S.track.applyConstraints({ advanced: [{ exposureMode: 'manual', exposureTime: t }] });
-          S.evManual = true; res = 'czas naświetlania ×' + (t / t0).toFixed(1);
-        }
-      } else if (S.evManual && caps.exposureMode.includes('continuous')) {
-        await S.track.applyConstraints({ advanced: [{ exposureMode: 'continuous' }] }); S.evManual = false; res = 'bez zmian';
-      }
-    }
-    if (S.settings.lock && !S.evManual) { await wait(1200); await applyLocks(true); }
-  } catch (e) { logNote('jasność kamery: ' + (e && e.message || e)); }
-  return say(res ? 'Ustawiono: ' + res + '.' : (ev > 0 ? 'Ta kamera nie pozwala zmienić jasności z przeglądarki.' : 'Bez zmian.'));
-}
-
 let wakeLock = null;
 async function keepAwake() {
   try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
@@ -3106,7 +3090,7 @@ async function restoreCam(why, all) {
     const now = S.track.getSettings().zoom;
     if (want != null && caps.zoom && now != null && Math.abs(now - want) > 0.04) { await applyZoom(want); fixed = true; }
     else if (want != null && caps.zoom && all) await applyZoom(want);   // reported value may lag behind the real one: set it once anyway
-    if (all && S.settings.lock && !(S.settings.ev > 0)) await applyLocks(true);
+    if (all && S.settings.lock) await applyLocks(true);
     if (all && S.settings.torch) await applyTorch(true);   // reopening the camera switches the torch off
   } catch (e) {}
   if (fixed) {
@@ -3313,24 +3297,6 @@ function logHead() {
   return ['Oko Tarczy ' + APP_VERSION + '  ' + new Date().toLocaleString('pl-PL'), navigator.userAgent,
     'Kamera: ' + S.vw + '×' + S.vh + ' ' + (st.frameRate || '?') + ' kl/s, 4K ' + (S.settings.cam4k ? 'tak' : 'nie') + ', latarka ' + (S.settings.torch ? 'tak' : 'nie') + ', śledzenie ' + (S.settings.track ? 'tak' : 'nie') + ', karta graficzna ' + (G.ok ? 'tak' : (S.settings.gpu === false ? 'wyłączona' : G.failed ? 'błąd' : 'nie')) + ', model AI ' + (S.settings.ai || 'on') + (AI.sess ? ' ' + AI.backend + (AI.n ? ' ' + Math.round(AI.ms / AI.n) + ' ms' : '') : AI.err ? ' błąd' : '') + (S.proc ? ', przetwarzanie ' + S.proc.pw + '×' + S.proc.ph : ''),
     'Każda linia: średnio/najdłużej w ms, ile razy na sekundę.', ''];
-}
-// Opens a prefilled GitHub issue. A long log does not fit in a link (GitHub answers with an error),
-// so the link carries the head and the newest lines and the whole log is copied to the clipboard.
-// Text only; the person taps Submit. No token in the page.
-function sendLogGithub() {
-  if (!S.perf.log.length) { toast('Dziennik jest pusty. Zapisuje się w trakcie gry, co 10 s.', 4000); return; }
-  try {
-    const head = logHead(), all = head.concat(S.perf.log).join('\n'), lines = S.perf.log.slice();
-    const url = (body) => 'https://github.com/ventrescaa-svg/oko-tarczy/issues/new?title=' + encodeURIComponent('Dziennik ' + APP_VERSION) + '&body=' + encodeURIComponent(body);
-    const mk = (ls, cut) => 'Dziennik z aplikacji (najnowsze linie' + (cut ? ', starszych pominięto: ' + cut : '') + '). Pełny jest skopiowany do schowka: wklej go pod tym tekstem.\n\n```\n' + head.slice(0, 3).join('\n') + '\n' + ls.join('\n') + '\n```\n';
-    let cut = 0, u = url(mk(lines, 0));
-    while (u.length > 3500 && lines.length > 1) { lines.shift(); cut++; u = url(mk(lines, cut)); }
-    let copied = false;
-    try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(all).catch(() => {}); copied = true; } } catch (e) {}
-    const w = window.open(u, '_blank');
-    if (!w) toast('Przeglądarka zablokowała nowe okno. Stuknij jeszcze raz.', 4000);
-    else toast(copied ? 'Otwieram GitHub. Pełny dziennik jest w schowku (wklej pod tekstem), potem „Submit new issue”.' : 'Otwieram GitHub. Stuknij „Submit new issue”.', 5000);
-  } catch (e) { toast('Nie udało się otworzyć zgłoszenia: ' + (e && e.message ? e.message : e), 5000); }
 }
 // Dragging: touch anywhere, the selected point follows at half speed (precise, finger never covers it).
 let drag = null;
@@ -3540,7 +3506,13 @@ function trackBoard(now) {
     alignCalibration();
     return true;
   }
-  const r = T.tracker.track(stabGray(S.video));
+  // split in the time log: getting the small picture (upload of the video frame to the graphics card + reading back)
+  // and the tracking itself; on S26 in 4K the whole step took ~65 ms while the tracking alone is a few ms
+  let t = performance.now();
+  const g = stabGray(S.video);
+  perfAdd('śledzenie: obraz', performance.now() - t); t = performance.now();
+  const r = T.tracker.track(g);
+  perfAdd('śledzenie: liczenie', performance.now() - t);
   if (r.ok) {
     T.M = C.affMul(T.M, C.affMul(affS(1 / T.f), C.affMul(r.A, affS(T.f))));
     T.lost = 0; T.good = r.good; T.lastOk = now;
@@ -4601,7 +4573,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.28a';
+const APP_VERSION = '2026.10.28b';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
@@ -5037,7 +5009,6 @@ $('#sh-menu').addEventListener('click', async (e) => {
     selectPoint(0); showScreen('cal'); autoCalSoon();
   }
   else if (act === 'settings') openSettings();
-  else if (act === 'ghlog') sendLogGithub();
   else if (act === 'cam') { S.camHidden = !S.camHidden; showScreen('game'); }
   else if (act === 'full') { try { await document.documentElement.requestFullscreen(); if (screen.orientation && screen.orientation.lock) screen.orientation.lock(screen.orientation.type).catch(() => {}); } catch (err) { toast('Pełny ekran niedostępny.'); } }
   else if (act === 'intro') showScreen('intro');
@@ -5206,7 +5177,6 @@ function openSettings() {
   $('#opt-ai').value = S.settings.ai || 'on'; aiInfo();
   $('#opt-gpu').checked = S.settings.gpu !== false;
   $('#opt-4k').checked = !!S.settings.cam4k; camInfo();
-  $('#opt-ev').value = S.settings.ev || 0; $('#opt-ev-v').textContent = S.settings.ev || 0;
   refreshDsInfo();
   { const c = ghCfg(); $('#gh-on').checked = c.on; $('#gh-cell').checked = c.cell; $('#gh-token').value = c.token; $('#gh-repo').value = c.repo; ghInfo(); }
   openSheet('#sh-set');
@@ -5235,13 +5205,6 @@ $('#opt-torch').addEventListener('change', async (e) => {
   $('#torch-info').textContent = t.charAt(0).toUpperCase() + t.slice(1) + '.';
   setTimeout(() => { if (S.det) S.resetPending = true; }, 1500);   // other light: new reference once it has settled
   toast(t.charAt(0).toUpperCase() + t.slice(1), 3000);
-});
-$('#opt-ev').addEventListener('change', async (e) => {
-  S.settings.ev = +e.target.value; $('#opt-ev-v').textContent = e.target.value; saveSettings();
-  $('#ev-info').textContent = 'Zmieniam…';
-  const t = await applyEv();
-  setTimeout(() => { if (S.det) S.resetPending = true; }, 2500);   // the picture changed brightness: take a new reference once it has settled
-  toast(t, 3500);
 });
 $('#opt-off-reset').addEventListener('click', () => { S.point = { mm: 14, samples: [], max: S.point.max || 25 }; store.set('point', S.point); if (S.det) S.det.pointMm = 14; $('#opt-off').textContent = '14.0 mm'; });
 $('#opt-voice-test').addEventListener('click', () => { const was = S.settings.voice; S.settings.voice = true; speak('potrójne 20. Razem 180'); S.settings.voice = was; });
