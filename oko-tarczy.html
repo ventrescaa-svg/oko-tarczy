@@ -4427,11 +4427,11 @@ function openFix(i) {
   $('#fix-val').textContent = d ? d.label : '–';
   const hasSnap = !!(d && d.snap && (d.snap.canvas || d.snap.wide) && S.cal);
   fix.wide = !!(d && d.snap && !d.snap.canvas);
-  fix.zoom = 1; fix.vx = fix.vy = 0;
+  fix.zoom = fix.wide ? 1 : 3; fix.vx = fix.vy = 0;   // close-up opens magnified ×3 around the tip (Piotr, 2026-10-28)
   $('#fix-photo').hidden = !hasSnap;
   $('#fix-wide').hidden = !(d && d.snap && d.snap.canvas && d.snap.wide);
   $('#fix-actions').hidden = !d;
-  if (hasSnap) drawFix();
+  if (hasSnap) { if (fix.zoom > 1) fixCenter(fixSnap(d), d); drawFix(); }
   buildPad($('#fix-pad'), (nd) => {
     if (fix.i >= 0) {
       const old = g.cur.darts[fix.i];
@@ -4513,7 +4513,7 @@ $('#fix-zoom').addEventListener('click', () => {
 });
 $('#fix-grid').addEventListener('click', () => { fix.grid = !fix.grid; drawFix(); });
 $('#fix-wide').addEventListener('click', () => {
-  fix.wide = !fix.wide;
+  fix.wide = !fix.wide; fix.zoom = fix.wide ? 1 : 3;
   const d = S.game.cur.darts[fix.i], sn = fixSnap(d);
   if (sn && fix.zoom > 1) fixCenter(sn, d);
   drawFix();
@@ -4573,7 +4573,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.28b';
+const APP_VERSION = '2026.10.28c';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,

@@ -221,7 +221,7 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 ## Okno „Popraw rzut”: jasność, lupa, siatka (od 2026.10.19u)
 - Piotr: czarny grot na czarnym polu jest prawie niewidoczny, a on sam ma ocenić miejsce wbicia na powiększeniu.
 - Nad obrazem trzy przyciski: „Jasność 0/1/2” (`brightenDark`: ciemne piksele < 90 jasności rozciągane na pełny zakres, od 2. do 92. lub 70. percentyla, więc czarne pole pokazuje fakturę), „Lupa ×1/×2/×3” (okno `fixView` wokół zielonego kółka, a bez niego wokół wykrytego grota; stuknięcie przelicza `fixMap` z uwzględnieniem lupy) i „Siatka wł./wył.” (żółte druty zasłaniały grot).
-- Jasność i siatka zostają między rzutami, lupa wraca do ×1. Obraz całej tarczy ma teraz 800 px szerokości (było 600, tyle co natywne wideo), żeby lupa miała z czego powiększać.
+- Jasność i siatka zostają między rzutami. Od 2026.10.28c zbliżenie otwiera się od razu z lupą ×3 wokół wykrytego grota (prośba Piotra), widok całej tarczy z ×1 (przełączanie zbliżenie/cała tarcza ustawia to samo). Obraz całej tarczy ma teraz 800 px szerokości (było 600, tyle co natywne wideo), żeby lupa miała z czego powiększać.
 - Test Playwright (scratchpad `t18.js`/`t19.js`): stuknięcie w środku okna lupy ×1/×2/×3 trafia w to samo miejsce, jasność podnosi średnią jasność obrazu. Na prawdziwym zdjęciu grota (`hicur` rzutu 57) czarne pole po „Jasność 1” pokazuje fakturę, ale grot nadal bywa tak samo ciemny jak pole.
 
 ## Poprawka rzutu: cała tarczą (od 2026.10.19s)
