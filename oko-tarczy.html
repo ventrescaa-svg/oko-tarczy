@@ -3910,6 +3910,8 @@ function captureWide() {
 
 function nextTurn(manual) {
   if (S.game.winner != null) return;
+  // Darts not on the board when the turn ends (bounced out, or off the board) count as misses (Piotr, 2026-10-28).
+  while (C.turnOpen(S.game)) C.addDart(S.game, Object.assign(C.makeDart(0, 0), { auto: false, bounce: true }));
   harvestTurn(S.game.cur.darts);
   C.commitTurn(S.game);
   trimMemory();
@@ -4573,7 +4575,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.28c';
+const APP_VERSION = '2026.10.28d';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,

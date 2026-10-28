@@ -93,6 +93,7 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - Usunięte: „Jaśniejszy obraz z kamery” (`ev`, `applyEv`), „Wyślij dziennik na GitHub” (`sendLogGithub`, `logHead` zostaje), filtr `occDrop` w `findDart` (nic nie zmieniał).
 - Dziennik: `śledzenie` rozbite na `śledzenie: obraz` (klatka na kartę i odczyt) i `śledzenie: liczenie` (sam Lucas–Kanade). W Playwright (Full HD, SwiftShader) obraz 31–39 ms, liczenie 1,2–1,5 ms,
   więc dalsze przyspieszanie dotyczy przenoszenia obrazu (asynchroniczny odczyt, `VideoFrame`), nie śledzenia. Najpierw dziennik z S26.
+  Dziennik z S26 (28.10 wieczorem, 4K): `śledzenie: obraz` 40–57 ms, `śledzenie: liczenie` ok. 3 ms, `kopiowanie klatki` ok. 7 ms, `wykrywanie` 26–34 ms, 7–9 kl/s. Następny krok przyspieszenia: wgrywanie klatki 4K na kartę (np. mniejsza tekstura, `VideoFrame`).
 
 ## Latarka telefonu (od 2026.10.26b)
 - Piotr: systemowej latarki nie da się włączyć w trakcie gry, bo przeglądarka trzyma aparat. Ustawienia wykrywania, „Latarka telefonu” (`S.settings.torch`, `applyTorch`): `applyConstraints({advanced:[{torch}]})` na ścieżce kamery,
@@ -244,6 +245,7 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - Od 2026.10.24c Ustawienia wykrywania: „Głos” (`S.settings.voiceName` = `voiceURI` polskiego głosu z `speechSynthesis.getVoices()`, `fillVoices`), „Tempo mowy” (`S.settings.rate`), „Posłuchaj”, oraz „Śmieszne komentarze po turach” (`S.settings.fun`, domyślnie wył.; `funSay`/`FUN`: 180, 140+, 100+, 26, zero, przerzut, wygrana, trzy trafienia w treningach; bez powtórki tej samej linii). Inne silniki mowy (RHVoice, Acapela, Vocalizer, Google) instaluje się w Androidzie i pojawiają się na liście.
 - Od 2026.10.24g w „Dookoła tarczy” po każdym trafieniu głos od razu mówi następny cel („1. Teraz 2”), też przy starcie gry („cel 1”), żeby nie trzeba było podchodzić do tarczy.
 - Test: scratchpad `tgame.js` (rdzeń w Node) i `pw.js` (Playwright, liczenie ręczne we wszystkich trybach). Na prawdziwej tarczy z kamerą jeszcze nie sprawdzone.
+- Od 2026.10.28d koniec tury (wyjęcie lotek albo „Dalej”) dopisuje brakujące lotki jako pudło (`bounce: true`), o ile tura jest otwarta (nie po przerzucie/wygranej). Odbita lotka albo lotka poza tarczą nie zostawia zmiany na obrazie, więc wcześniej tura miała mniej lotek (Piotr, 2026-10-28).
 - Pomysły na dalej: Killer, Cricket „cut-throat”, statystyki trafień (mapa tarczy), eksport historii.
 
 ## Model AI grota (od 2026.10.25b)
