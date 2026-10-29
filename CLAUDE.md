@@ -275,6 +275,7 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
   Zmiana dotyczy tylko nowych ustawień: `saveSettings` zapisuje cały obiekt, więc kto już zapisał ustawienia, ma swoje `ai`.
 - Od 2026.10.29a przy pewności ≥ `AI_TRUST` punkt modelu jest brany zawsze, także gdy pole się nie zmienia (wtedy po cichu, `d.ai.moved`; `d.ai.used` nadal tylko przy zmianie pola, mówi „Poprawka”).
   Powód (Piotr: „prawie każdy rzut poprawiam o parę mm”): paczki z 29.10, 219 stuknięć, odległość od stuknięcia: reguły mediana 3,4 mm (> 5 mm: 63), model 1,5 mm (> 5 mm: 14), a pokazywany punkt na żywo 3,2 mm, bo przy tym samym polu zostawał punkt reguł. Pole zmieniło stuknięcie tylko w 4 z 219.
+- 2026.10.29c (`?v=3`): douczony na 1462 rzutach (eksporty + paczki do 29.10 21:23). Sprawdzian na dwóch najnowszych częściach po 146 rzutów (model `v=2` ich nie widział): nowy 145 + 144, stary 145 + 143, reguły 138 + 130; stuknięte 216 vs 215 ze 219; mediana błędu 1,0–1,2 mm (stary 1,3–1,4), 90% 2,4–2,9 mm (stary 3,4–4,3). Próba z 28.10 (1181 rzutów) dała 289 vs 290 pól i nie była wgrana. Paczki z 29.10 na żywo: reguły 257/281, model 277.
 - Narzędzia i opis nauki: `narzedzia/model_ai/README.md`. Nie ma tu sztucznych rzutów ani danych z innych tarcz (plan: różne światło, strona kamery, groty, tarcze znajomych).
 
 ## Test na prawdziwych rzutach

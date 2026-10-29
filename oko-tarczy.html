@@ -3779,7 +3779,7 @@ function handleEvent(e) {
    Nauka AI samples keep) and points at the tip. Runs with onnxruntime-web (loaded from the CDN on first use),
    once per dart, after the dart has already been counted. 'bg': the answer only goes into the sample;
    'on': it replaces the rules' answer when the network is sure (AI_TRUST) and the player has not touched the dart. */
-const AI_MODEL = 'model/grot.onnx?v=2', AI_ORT = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/';
+const AI_MODEL = 'model/grot.onnx?v=3', AI_ORT = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/';
 // Checksum of ort.all.min.js from the npm package onnxruntime-web 1.29.0: a changed file on the CDN is not run (it could read the GitHub token).
 const AI_ORT_SRI = 'sha384-upnR4oatCASxKyLS2pRrHYAyd3vDJu7uxP6nSiUL+lhyTVELehRVGLAOSgVNZw1G';
 const AI_W = 384, AI_H = 256, AI_S = 2, AI_TRUST = 0.6;   // 0.6: best on the 5-part time check of 2026-10-25
@@ -4608,7 +4608,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.29b';
+const APP_VERSION = '2026.10.29c';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
