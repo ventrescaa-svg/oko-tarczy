@@ -3845,14 +3845,15 @@ async function aiDart(d, e, Hpi, g) {
     d.ai = { tip: tp.map(r2), crop: r.tip.map(r2), board: b.map(r2), label: sc.label, conf: r2(r.conf), ms: Math.round(r.ms), backend: AI.backend, mode, used: false };
     aiInfo();
     const i = g === S.game ? g.cur.darts.indexOf(d) : -1;
-    // only a dart the player has not corrected, still in the open turn
-    if (mode === 'on' && r.conf >= AI_TRUST && sc.label !== d.label && i >= 0 && !d.fixed && !d.confirmed && d.tip && d.det0 &&
+    // only a dart the player has not corrected, still in the open turn. The model's point is taken even when the field
+    // stays the same (silently, d.ai.moved): on 29.10 it was 1.5 mm from the player's taps, the rules' point 3.4 mm.
+    if (mode === 'on' && r.conf >= AI_TRUST && i >= 0 && !d.fixed && !d.confirmed && d.tip && d.det0 &&
         d.tip[0] === d.det0.tip[0] && d.tip[1] === d.det0.tip[1]) {
-      const tipV = toVideo(tp);
-      d.ai.used = true;
-      const nd = Object.assign({}, d, sc, { tip: tipV, board: b.slice(), aiTip: tipV.slice(), unsure: false });
+      const tipV = toVideo(tp), relabel = sc.label !== d.label;
+      if (relabel) d.ai.used = true; else d.ai.moved = true;
+      const nd = Object.assign({}, d, relabel ? sc : {}, { tip: tipV, board: b.slice(), aiTip: tipV.slice(), unsure: relabel ? false : d.unsure });
       if (C.setDart(g, i, nd)) {
-        speak('Poprawka: ' + C.sayDart(nd));
+        if (relabel) speak('Poprawka: ' + C.sayDart(nd));
         afterChange();
       }
     }
@@ -4598,7 +4599,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.28e';
+const APP_VERSION = '2026.10.29a';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
