@@ -100,6 +100,14 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
   Dziennik: linia ma `kamera N kl/s` i `oszczędne tak/nie`, nowe kroki `karta: wgrywanie` (samo `texImage2D`) i `karta: odczyt` (`readPixels`, czeka na kartę). Playwright (atrapa 10 kl/s): wgrywania 18 → 10 na sekundę. Rdzeń bez zmian.
   Następnie: z dziennika S26 zobaczyć, czy drogie jest wgrywanie czy odczyt; potem ewentualnie większy obraz wykrywania w 4K.
 
+## Porządki w danych i stan „złego obiektu” (2026.10.29b, zalecenia 5 i 2 z audytu)
+- Skrypt `ort.all.min.js` z jsdelivr ma sumę kontrolną (`AI_ORT_SRI`, sha384 z paczki npm onnxruntime-web 1.29.0, `crossOrigin`). Pliki `.wasm` (zapasowy silnik) nadal bez sumy. Przy zmianie wersji ORT policz nową: `npm pack onnxruntime-web@X`, `openssl dgst -sha384 -binary dist/ort.all.min.js | openssl base64 -A`.
+  Playwright (CDN podstawiony plikiem z npm): dobry plik wczytuje model (webgl), zmieniony plik jest odrzucony.
+- `ghSync`: licznik niewysłanych `S.dsUnsent` (start z `DS.all`, +1 w `saveSample` i przy poprawce wysłanego rzutu), automatyczne wysyłanie czyta bazę dopiero przy ≥ `GH_BATCH`; po błędzie przerwa 2 min (`GH.failAt`). „Wyślij teraz” bez zmian.
+- `store.set`: błąd zapisu idzie do dziennika (`!!`) i raz na sesję na ekran.
+- Zły obiekt (zalecenie 2) na 535 rzutach z całym zdjęciem (paczki 28–29.10): reguły na żywo > 25 mm od prawdy tylko 8 razy, model AI naprawił 5. Zostały 3: srebrna baryłka poza maską (tylko lotka, n28b 41), baryłka sklejona z kreską cienia w kształt L odrzucona jako poprzeczna (n29 109, `crossElong`), grupa lotek pod tarczą. Za mało, żeby ruszać `findDart`.
+  Uwaga: odtworzenie `FULL=1` daje > 25 mm w 14 rzutach, ale żywa aplikacja w większości z nich miała dobre pole (test ≠ gra).
+
 ## Latarka telefonu (od 2026.10.26b)
 - Piotr: systemowej latarki nie da się włączyć w trakcie gry, bo przeglądarka trzyma aparat. Ustawienia wykrywania, „Latarka telefonu” (`S.settings.torch`, `applyTorch`): `applyConstraints({advanced:[{torch}]})` na ścieżce kamery,
   ponownie po `startCamera` i w `restoreCam(all)`; po zmianie nowe `ref` po 1,5 s. Pod przełącznikiem komunikat (np. brak `torch` w `getCapabilities`). Nagłówek dziennika: „latarka tak/nie”.

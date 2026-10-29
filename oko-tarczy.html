@@ -2899,7 +2899,14 @@ const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
 const store = {
   get(k, d) { try { const v = localStorage.getItem('okotarczy:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
-  set(k, v) { try { localStorage.setItem('okotarczy:' + k, JSON.stringify(v)); } catch (e) {} }
+  // A failed write (full storage) used to vanish silently: now it goes to the log and, once per session, on screen.
+  set(k, v) {
+    try { localStorage.setItem('okotarczy:' + k, JSON.stringify(v)); }
+    catch (e) {
+      try { logNote('!! zapis „' + k + '” nie udał się: ' + String(e && e.name || e)); } catch (e2) {}
+      if (!store.warned) { store.warned = true; setTimeout(() => { try { toast('Nie udało się zapisać (' + k + '). Pamięć przeglądarki może być pełna.', 6000); } catch (e3) {} }, 0); }
+    }
+  }
 };
 
 const S = {
@@ -3773,16 +3780,18 @@ function handleEvent(e) {
    once per dart, after the dart has already been counted. 'bg': the answer only goes into the sample;
    'on': it replaces the rules' answer when the network is sure (AI_TRUST) and the player has not touched the dart. */
 const AI_MODEL = 'model/grot.onnx?v=2', AI_ORT = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/';
+// Checksum of ort.all.min.js from the npm package onnxruntime-web 1.29.0: a changed file on the CDN is not run (it could read the GitHub token).
+const AI_ORT_SRI = 'sha384-upnR4oatCASxKyLS2pRrHYAyd3vDJu7uxP6nSiUL+lhyTVELehRVGLAOSgVNZw1G';
 const AI_W = 384, AI_H = 256, AI_S = 2, AI_TRUST = 0.6;   // 0.6: best on the 5-part time check of 2026-10-25
 // Default 'on' since 2026.10.28a: on 146 new throws (28.10, never seen in training) rules 123, model 144, rules + model at 0.6: 144, none made worse.
 const AI = { p: null, sess: null, backend: null, err: null, n: 0, ms: 0, q: Promise.resolve() };
-function aiLoadScript(src) {
-  return new Promise((res, rej) => { const el = document.createElement('script'); el.src = src; el.onload = res; el.onerror = () => rej(new Error('nie wczytano ' + src)); document.head.appendChild(el); });
+function aiLoadScript(src, sri) {
+  return new Promise((res, rej) => { const el = document.createElement('script'); if (sri) { el.integrity = sri; el.crossOrigin = 'anonymous'; } el.src = src; el.onload = res; el.onerror = () => rej(new Error('nie wczytano ' + src)); document.head.appendChild(el); });
 }
 function aiLoad() {
   if (AI.p) return AI.p;
   AI.p = (async () => {
-    if (!window.ort) await aiLoadScript(AI_ORT + 'ort.all.min.js');
+    if (!window.ort) await aiLoadScript(AI_ORT + 'ort.all.min.js', AI_ORT_SRI);
     ort.env.wasm.wasmPaths = AI_ORT;
     ort.env.wasm.numThreads = 1;
     const buf = await (await fetch(AI_MODEL)).arrayBuffer();
@@ -4599,7 +4608,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.29a';
+const APP_VERSION = '2026.10.29b';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
@@ -4629,8 +4638,8 @@ const DS = {
   del(id) { return this.run('readwrite', st => st.delete(id)); },
   clear() { return this.run('readwrite', st => st.clear()); }
 };
-S.dsCount = 0;
-DS.all().then(a => { S.dsCount = a.filter(r => r.kind !== 'cal').length; syncAiPill(); }).catch(() => {});
+S.dsCount = 0; S.dsUnsent = 0;   // unsent throws: ghSync reads the whole database only when there are enough
+DS.all().then(a => { const t = a.filter(r => r.kind !== 'cal'); S.dsCount = t.length; S.dsUnsent = t.filter(r => !r.up).length; syncAiPill(); }).catch(() => {});
 
 function procSnap() { const P = S.proc; return P ? { x: P.x, y: P.y, s: P.s, w: P.pw, h: P.ph, Hp: P.Hp.slice() } : null; }
 function keepMeta(o) { return o ? { snap: o.snap, debug: o.debug, det0: o.det0, proc0: o.proc0, cal0: o.cal0, sid: o.sid, sLabel: o.sLabel, crop0: o.crop0, ai: o.ai, aiTip: o.aiTip } : {}; }
@@ -4690,7 +4699,7 @@ function harvestTurn(darts) {
       const label = labelOf(d), js = JSON.stringify(label);
       if (js === d.sLabel) return;
       d.sLabel = js;
-      dsChain = dsChain.then(async () => { const r = await DS.get(d.sid); if (r) { r.label = label; r.relabeled = Date.now(); r.up = 0; await DS.put(r); } }).catch(() => {});
+      dsChain = dsChain.then(async () => { const r = await DS.get(d.sid); if (r) { r.label = label; if (r.up) S.dsUnsent++; r.relabeled = Date.now(); r.up = 0; await DS.put(r); } }).catch(() => {});
     }
   });
 }
@@ -4726,7 +4735,7 @@ async function saveSample(rec, D) {
     const fm = await bitsToPng(F.mask, F.w, F.h); if (fm) { rec.fullMask = fm; rec.bytes += fm.size; }
   }
   await DS.put(rec);
-  S.dsCount++; syncAiPill();
+  S.dsCount++; S.dsUnsent++; syncAiPill();
   setTimeout(() => ghSync(false), 3000);
   if (S.dsCount % 100 === 0) toast('Zebrano ' + rzut(S.dsCount) + ' do nauki AI.', 3500);
   if (!persistAsked) { persistAsked = true; try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {} }
@@ -4894,12 +4903,15 @@ async function ghTest() {
 async function ghSync(force) {
   const c = ghCfg();
   if (GH.busy || !c.token || !(c.on || force) || (!force && !c.cell && !ghWifi())) return;
+  // automatic sending: nothing to do yet, or failed less than 2 minutes ago (no network: it used to retry after every throw)
+  if (!force && (S.dsUnsent < GH_BATCH || Date.now() - (GH.failAt || 0) < 120000)) return;
   GH.busy = true; GH.err = ''; ghInfo();
   let more = false;
   try {
     await dsChain;
     const every = await DS.all();
     const recs = every.filter(r => r.kind !== 'cal' && !r.up).sort((a, b) => a.ts - b.ts), cals = every.filter(r => r.kind === 'cal' && !r.up);
+    S.dsUnsent = recs.length;
     if (!force && recs.length < GH_BATCH) return;
     if (!recs.length && !cals.length) { GH.msg = 'Wszystko już wysłane (' + new Date().toLocaleTimeString('pl-PL') + ').'; return; }
     const take = recs.slice(0, GH_MAX); more = recs.length > take.length;
@@ -4911,11 +4923,11 @@ async function ghSync(force) {
     }
     const now = Date.now();
     await (dsChain = dsChain.then(async () => { for (const r of take.concat(cals)) { const q = await DS.get(r.id); if (q && (q.relabeled || 0) === (r.relabeled || 0)) { q.up = now; await DS.put(q); } } }).catch(() => {}));
-    GH.sent += take.length;
+    GH.sent += take.length; S.dsUnsent = Math.max(0, S.dsUnsent - take.length); GH.failAt = 0;
     GH.msg = 'Wysłano ' + rzut(take.length) + (cals.length ? ' i ' + cals.length + ' zdjęć z kalibracji' : '') + ' (' + new Date().toLocaleTimeString('pl-PL') + ').';
     if (force) toast(GH.msg, 3500);
   } catch (e) {
-    GH.err = String(e && e.message || e).slice(0, 120); logNote('GitHub: ' + GH.err);
+    GH.err = String(e && e.message || e).slice(0, 120); logNote('GitHub: ' + GH.err); GH.failAt = Date.now();
     if (force) toast('Nie udało się wysłać: ' + GH.err, 5000);
   } finally {
     GH.busy = false; ghInfo();
