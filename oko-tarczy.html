@@ -56,14 +56,49 @@ button{cursor:pointer;touch-action:manipulation}
 .steps small{display:block;color:var(--muted);font-size:.9rem}
 .cta{display:grid;gap:10px}
 /* ---------- Home (main menu outside a game) ---------- */
-#scr-home{min-height:100%;padding-block:max(20px, env(safe-area-inset-top, 0px)) max(28px, env(safe-area-inset-bottom, 0px));padding-left:var(--gutter-l);padding-right:var(--gutter-r)}
-.home-menu{display:grid;gap:10px}
-.home-menu .btn{text-align:left;min-height:56px}
-.home-menu .btn small{display:block;font-weight:400;font-size:.88rem;color:var(--muted)}
-.home-menu .btn.primary small{color:#4b4434}
-.home-cam{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:.95rem;margin:0}
-.home-cam i{width:10px;height:10px;border-radius:50%;background:var(--dim);flex:none}
-.home-cam[data-s="ok"] i{background:var(--green, #3cb06d)}
+#scr-home{min-height:100%;overflow-x:clip;padding-block:0 max(24px, env(safe-area-inset-bottom, 0px));padding-left:var(--gutter-l);padding-right:var(--gutter-r);
+  background:radial-gradient(120% 60% at 100% 0%, rgba(226,73,61,.13), transparent 60%), radial-gradient(90% 50% at 0% 100%, rgba(60,176,109,.08), transparent 60%), var(--bg)}
+.home{max-width:620px;margin:0 auto;display:grid;gap:18px}
+.hero{position:relative;min-height:220px;display:flex;flex-direction:column;justify-content:flex-end;padding:max(28px, env(safe-area-inset-top, 0px)) 0 4px;overflow:visible}
+.hero-board{position:absolute;right:-20%;top:-4%;width:min(68%, 340px);aspect-ratio:1;pointer-events:none;filter:drop-shadow(0 18px 40px rgba(0,0,0,.6));
+  -webkit-mask-image:linear-gradient(200deg, #000 45%, transparent 85%);mask-image:linear-gradient(200deg, #000 45%, transparent 85%)}
+.hero-board svg{width:100%;height:100%;display:block}
+.hero h1{position:relative;font:700 clamp(3.2rem, 15vw, 4.6rem)/.86 var(--display);letter-spacing:.01em;margin:0;text-transform:uppercase;text-shadow:0 2px 18px rgba(0,0,0,.7)}
+.hero h1 span{display:block;color:var(--red)}
+.hero-sub{position:relative;margin:10px 0 0;color:var(--muted);max-width:58%}
+.home-cam{display:inline-flex;align-items:center;gap:8px;align-self:start;color:var(--fg);font-size:.9rem;margin:0;padding:6px 12px 6px 10px;border-radius:999px;background:rgba(23,28,25,.85);border:1px solid var(--line);position:relative}
+.home-cam i{width:9px;height:9px;border-radius:50%;background:var(--dim);flex:none}
+.home-cam[data-s="ok"] i{background:var(--green);box-shadow:0 0 0 4px rgba(60,176,109,.18)}
+.home-cam[data-s="warn"] i{background:var(--amber)}
+.h-lab{font:600 .82rem/1 var(--display);letter-spacing:.14em;text-transform:uppercase;color:var(--dim);margin:6px 0 -8px}
+.resume{display:grid;grid-template-columns:1fr auto;align-items:center;gap:6px 14px;text-align:left;padding:16px 18px;border-radius:16px;border:1px solid rgba(233,220,186,.35);
+  background:linear-gradient(135deg, rgba(233,220,186,.14), rgba(233,220,186,.03));color:var(--fg)}
+.resume b{font:700 1.5rem/1 var(--display);text-transform:uppercase;letter-spacing:.02em}
+.resume small{grid-column:1;color:var(--muted);font-size:.9rem}
+.resume .go{grid-row:1 / span 2;grid-column:2;width:48px;height:48px;border-radius:50%;background:var(--cream);color:#16130c;display:grid;place-items:center}
+.quick{display:grid;grid-template-columns:repeat(2, 1fr);gap:10px}
+.qcard{position:relative;overflow:hidden;text-align:left;min-height:104px;padding:14px;border-radius:16px;border:1px solid var(--line);background:var(--panel);display:flex;flex-direction:column;justify-content:flex-end;gap:2px;color:var(--fg)}
+.qcard b{font:700 2rem/1 var(--display);text-transform:uppercase;letter-spacing:.01em}
+.qcard small{color:var(--muted);font-size:.85rem;line-height:1.25}
+.qcard>*{position:relative;z-index:1}
+.qcard::before{content:"";position:absolute;right:-30px;top:-30px;width:86px;height:86px;border-radius:50%;opacity:.55;
+  background:radial-gradient(circle, var(--red) 0 9%, var(--green) 9% 18%, var(--bg) 18% 46%, var(--q1, var(--red)) 46% 54%, var(--bg) 54% 86%, var(--q2, var(--green)) 86% 100%)}
+.qcard.q-x01{background:linear-gradient(160deg, rgba(226,73,61,.22), var(--panel) 60%);border-color:rgba(226,73,61,.4)}
+.qcard.q-cr{background:linear-gradient(160deg, rgba(60,176,109,.2), var(--panel) 60%);border-color:rgba(60,176,109,.38);--q1:var(--green);--q2:var(--red)}
+.qcard.q-atc{--q1:var(--amber);--q2:var(--cream)}
+.qcard.q-more{--q1:var(--dim);--q2:var(--line)}
+.qcard:active,.tile:active,.resume:active{transform:scale(.985)}
+.tiles{display:grid;grid-template-columns:repeat(2, 1fr);gap:10px}
+.tile{display:flex;align-items:center;gap:12px;text-align:left;min-height:64px;padding:10px 12px;border-radius:14px;border:1px solid var(--line);background:var(--panel-2);color:var(--fg);font-weight:600;line-height:1.2}
+.tile svg{width:26px;height:26px;flex:none;color:var(--cream)}
+.tile small{display:block;font-weight:400;font-size:.8rem;color:var(--muted)}
+.home-foot{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.home-foot .btn{min-height:44px}
+.home-foot p{margin:0;color:var(--dim);font-size:.8rem}
+@media (prefers-reduced-motion:no-preference){
+  .hero-board svg{animation:boardIn 1.1s cubic-bezier(.2,.8,.2,1) both}
+  @keyframes boardIn{from{transform:rotate(-40deg) scale(.85);opacity:0}}
+}
 .note{font-size:.92rem;color:var(--muted);margin:0}
 .alert{border:1px solid var(--amber);color:var(--fg);background:rgba(242,180,65,.08);border-radius:12px;padding:12px 14px;font-size:.95rem}
 .alert b{color:var(--amber)}
@@ -302,20 +337,35 @@ input[type=range]{accent-color:var(--cream)}
 
 <!-- ============ HOME (main menu, nothing is counted here) ============ -->
 <section id="scr-home" hidden>
-  <div class="intro">
-    <div class="brand">
+  <div class="home">
+    <div class="hero">
+      <div class="hero-board" id="home-board"></div>
       <h1>Oko <span>Tarczy</span></h1>
-      <p id="home-ver"></p>
+      <p class="hero-sub">Telefon patrzy na tarczę i liczy za Ciebie.</p>
     </div>
     <p class="home-cam" id="home-cam" data-s="off"><i></i><span id="home-cam-t">Kamera wyłączona</span></p>
-    <div class="home-menu">
-      <button id="home-continue" class="btn primary" hidden>Kontynuuj grę<small id="home-continue-t"></small></button>
-      <button id="home-new" class="btn primary">Nowa gra<small>501, Cricket, treningi</small></button>
-      <button id="home-stats" class="btn">Statystyki</button>
-      <button id="home-calib" class="btn">Kalibracja kamery<small>Siatka na tarczy, zoom</small></button>
-      <button id="home-settings" class="btn">Ustawienia wykrywania<small>Głos, model AI, bateria, Nauka AI</small></button>
+
+    <button id="home-continue" class="resume" hidden><b>Kontynuuj grę</b><small id="home-continue-t"></small><span class="go"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 5l11 7-11 7z" fill="currentColor"/></svg></span></button>
+
+    <p class="h-lab">Zagraj</p>
+    <div class="quick">
+      <button class="qcard q-x01" data-quick="x01"><b>501</b><small>Klasyka, podwójne na koniec</small></button>
+      <button class="qcard q-cr" data-quick="cricket"><b>Cricket</b><small>15–20 i bull</small></button>
+      <button class="qcard q-atc" data-quick="atc"><b>Dookoła</b><small>Trening 1–20</small></button>
+      <button class="qcard q-more" data-quick="" id="home-new"><b>Więcej</b><small>301, 701, Bob's 27, Shanghai…</small></button>
+    </div>
+
+    <p class="h-lab">Narzędzia</p>
+    <div class="tiles">
+      <button id="home-stats" class="tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>Statystyki<small>Średnie, historia</small></span></button>
+      <button id="home-calib" class="tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M1 12h4M19 12h4"/></svg><span>Kalibracja<small>Siatka, zoom</small></span></button>
+      <button id="home-settings" class="tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg><span>Ustawienia<small>Głos, AI, bateria</small></span></button>
+      <button id="home-intro" class="tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg><span>Ustawienie<small>Gdzie postawić telefon</small></span></button>
+    </div>
+
+    <div class="home-foot">
       <button id="home-manual" class="btn ghost">Licz ręcznie, bez kamery</button>
-      <button id="home-intro" class="btn ghost">Instrukcja ustawienia telefonu</button>
+      <p id="home-ver"></p>
     </div>
   </div>
 </section>
@@ -3318,13 +3368,14 @@ function enterGame() {
    ends in the main menu and only "Nowa gra" / "Kontynuuj grę" start counting. The camera stays on
    in the menu (no new calibration needed), but no frame is processed there. */
 function renderHome() {
-  $('#home-ver').textContent = 'Licznik do darta z kamerą telefonu · wersja ' + APP_VERSION;
+  $('#home-ver').textContent = 'wersja ' + APP_VERSION;
+  if (!$('#home-board').firstChild) $('#home-board').innerHTML = boardSvg();
   const on = !!(S.stream && S.cal && S.det), hc = $('#home-cam');
-  hc.dataset.s = on ? 'ok' : 'off';
+  hc.dataset.s = on ? 'ok' : S.stream ? 'warn' : 'off';
   $('#home-cam-t').textContent = on ? 'Kamera włączona, tarcza skalibrowana' : S.stream ? 'Kamera włączona, potrzebna kalibracja' : 'Kamera wyłączona (włączy się przy grze)';
   const g = S.game, any = g && (g.turns.length || g.cur.darts.length);
   $('#home-continue').hidden = !(any && g.winner == null);
-  if (any) $('#home-continue-t').textContent = MODE_LABEL[C.modeOf(g)] + (C.modeOf(g) === 'x01' ? ' ' + g.start : '') + ' · ' + g.players.map(p => p.name).join(', ');
+  if (any) $('#home-continue-t').textContent = (C.modeOf(g) === 'x01' ? g.start : MODE_LABEL[C.modeOf(g)]) + ' · ' + g.players.map(p => p.name).join(', ') + ' · runda ' + (Math.floor(g.turns.length / g.players.length) + 1);
 }
 // Start counting: with the camera when it can be had, calibrating first if needed.
 async function playFromHome() {
@@ -3334,7 +3385,27 @@ async function playFromHome() {
   S.manual = false; S.afterCal = 'game';
   selectPoint(0); showScreen('cal'); autoCalSoon();
 }
+// Picture of a board for the menu (drawn, not a photo): 20 at the top, real sector order.
+function boardSvg() {
+  const N = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5], R = [0, 6.35, 16, 99, 107, 162, 170, 225];
+  const pt = (r, a) => (r * Math.sin(a)).toFixed(2) + ' ' + (-r * Math.cos(a)).toFixed(2);
+  const seg = (r0, r1, a0, a1, f) => '<path fill="' + f + '" d="M' + pt(r0, a0) + 'L' + pt(r1, a0) + 'A' + r1 + ' ' + r1 + ' 0 0 1 ' + pt(r1, a1) + 'L' + pt(r0, a1) + 'A' + r0 + ' ' + r0 + ' 0 0 0 ' + pt(r0, a0) + 'Z"/>';
+  let o = '<svg viewBox="-200 -200 400 400" aria-hidden="true"><circle r="196" fill="#141414" stroke="#3a443e" stroke-width="3"/>';
+  N.forEach((n, i) => {
+    const a0 = (i - 0.5) * Math.PI / 10, a1 = (i + 0.5) * Math.PI / 10, dark = i % 2 === 0;
+    const single = dark ? '#191919' : '#e9dcba', ring = dark ? '#d8392f' : '#2f9e5c';
+    o += seg(16, 99, a0, a1, single) + seg(99, 107, a0, a1, ring) + seg(107, 162, a0, a1, single) + seg(162, 170, a0, a1, ring);
+    const am = i * Math.PI / 10;
+    o += '<text x="' + (183 * Math.sin(am)).toFixed(1) + '" y="' + (-183 * Math.cos(am) + 6).toFixed(1) + '" fill="#cfc6ae" font-size="17" font-weight="700" text-anchor="middle" font-family="Barlow Condensed, Arial Narrow, sans-serif">' + n + '</text>';
+  });
+  o += '<g fill="none" stroke="#b8b3a6" stroke-opacity=".55" stroke-width="1.2"><circle r="170"/><circle r="162"/><circle r="107"/><circle r="99"/><circle r="16"/></g>';
+  o += '<circle r="16" fill="#2f9e5c"/><circle r="6.35" fill="#d8392f"/></svg>';
+  return o;
+}
 $('#home-new').addEventListener('click', () => openNew());
+$$('.qcard[data-quick]:not(#home-new)').forEach(b => b.addEventListener('click', () => {
+  openNew(); ng.mode = b.dataset.quick; if (ng.mode === 'x01') ng.start = 501; syncNew();
+}));
 $('#home-continue').addEventListener('click', () => { if (S.manual) startManual(); else playFromHome(); });
 $('#home-stats').addEventListener('click', () => openStats());
 $('#home-calib').addEventListener('click', async () => {
