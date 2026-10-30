@@ -100,6 +100,12 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
   Dziennik: linia ma `kamera N kl/s` i `oszczędne tak/nie`, nowe kroki `karta: wgrywanie` (samo `texImage2D`) i `karta: odczyt` (`readPixels`, czeka na kartę). Playwright (atrapa 10 kl/s): wgrywania 18 → 10 na sekundę. Rdzeń bez zmian.
   Następnie: z dziennika S26 zobaczyć, czy drogie jest wgrywanie czy odczyt; potem ewentualnie większy obraz wykrywania w 4K.
 
+## Menu główne (2026.10.30b)
+- Piotr: po „Gotowe, gramy” aplikacja od razu liczyła, czy grał, czy nie. Nowy ekran `scr-home` (`renderHome`): Kontynuuj grę (gdy gra ma rzuty i nie jest skończona), Nowa gra, Statystyki, Kalibracja kamery, Ustawienia wykrywania, Licz ręcznie, Instrukcja.
+- Start aplikacji: menu główne, gdy jest zapisana kalibracja (`store` `cal`), inaczej instrukcja. Kalibracja z menu albo z instrukcji kończy się w menu (`S.afterCal = 'home'`, przycisk „Gotowe”); kalibracja z gry albo przed grą (`playFromHome`) wchodzi do gry (`enterGame`: nowe `ref`, „Wyjmij lotki”).
+- W menu kamera zostaje włączona, ale nic nie jest przetwarzane ani rysowane (pętla działa tylko w `cal`/`game`). W grze Menu, „Menu główne (przerwa w liczeniu)”.
+- Playwright (scratchpad `pw_home.js`, `pw_home2.js`): w menu licznik klatek detektora stoi, przejścia menu/gra/kalibracja działają, Kontynuuj wraca do gry ręcznej.
+
 ## Oszczędzanie baterii (2026.10.30a)
 - Piotr: telefon się grzeje, bateria szybko schodzi. Dziennik S26 w 4K: ok. 85 ms pracy na każde przetworzenie przy ok. 9,5 kl/s, także gdy nikt nie rzuca.
 - Ustawienia wykrywania, „Oszczędzanie baterii” (`S.settings.eco`, domyślnie wł.): po 4 s bez zdarzeń (`S.busyAt`: zdarzenie detektora, `det.moving`, zgubione śledzenie, komunikat na ekranie, stan inny niż ready/pull) `ecoIdle` przetwarza co 300 ms zamiast 95 ms i pomija „śledzenie między”. Pierwszy ruch wraca do pełnego tempa.

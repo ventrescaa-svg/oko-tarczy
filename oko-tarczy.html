@@ -55,6 +55,15 @@ button{cursor:pointer;touch-action:manipulation}
 .steps b{font-weight:600}
 .steps small{display:block;color:var(--muted);font-size:.9rem}
 .cta{display:grid;gap:10px}
+/* ---------- Home (main menu outside a game) ---------- */
+#scr-home{min-height:100%;padding-block:max(20px, env(safe-area-inset-top, 0px)) max(28px, env(safe-area-inset-bottom, 0px));padding-left:var(--gutter-l);padding-right:var(--gutter-r)}
+.home-menu{display:grid;gap:10px}
+.home-menu .btn{text-align:left;min-height:56px}
+.home-menu .btn small{display:block;font-weight:400;font-size:.88rem;color:var(--muted)}
+.home-menu .btn.primary small{color:#4b4434}
+.home-cam{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:.95rem;margin:0}
+.home-cam i{width:10px;height:10px;border-radius:50%;background:var(--dim);flex:none}
+.home-cam[data-s="ok"] i{background:var(--green, #3cb06d)}
 .note{font-size:.92rem;color:var(--muted);margin:0}
 .alert{border:1px solid var(--amber);color:var(--fg);background:rgba(242,180,65,.08);border-radius:12px;padding:12px 14px;font-size:.95rem}
 .alert b{color:var(--amber)}
@@ -285,7 +294,28 @@ input[type=range]{accent-color:var(--cream)}
     <div class="cta">
       <button id="btn-start" class="btn primary">Włącz kamerę</button>
       <button id="btn-manual" class="btn ghost">Licz ręcznie, bez kamery</button>
+      <button id="btn-intro-home" class="btn ghost">Menu główne</button>
       <p class="note">Obraz z kamery zostaje na telefonie. Nic nie jest wysyłane.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ HOME (main menu, nothing is counted here) ============ -->
+<section id="scr-home" hidden>
+  <div class="intro">
+    <div class="brand">
+      <h1>Oko <span>Tarczy</span></h1>
+      <p id="home-ver"></p>
+    </div>
+    <p class="home-cam" id="home-cam" data-s="off"><i></i><span id="home-cam-t">Kamera wyłączona</span></p>
+    <div class="home-menu">
+      <button id="home-continue" class="btn primary" hidden>Kontynuuj grę<small id="home-continue-t"></small></button>
+      <button id="home-new" class="btn primary">Nowa gra<small>501, Cricket, treningi</small></button>
+      <button id="home-stats" class="btn">Statystyki</button>
+      <button id="home-calib" class="btn">Kalibracja kamery<small>Siatka na tarczy, zoom</small></button>
+      <button id="home-settings" class="btn">Ustawienia wykrywania<small>Głos, model AI, bateria, Nauka AI</small></button>
+      <button id="home-manual" class="btn ghost">Licz ręcznie, bez kamery</button>
+      <button id="home-intro" class="btn ghost">Instrukcja ustawienia telefonu</button>
     </div>
   </div>
 </section>
@@ -401,6 +431,7 @@ input[type=range]{accent-color:var(--cream)}
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="menu-title">
     <h3 id="menu-title">Menu</h3>
     <div class="menu">
+      <button class="btn" data-act="home">Menu główne (przerwa w liczeniu)</button>
       <button class="btn" data-act="newgame">Nowa gra</button>
       <button class="btn" data-act="stats">Statystyki</button>
       <button class="btn" data-act="calib">Kalibracja kamery</button>
@@ -2984,7 +3015,9 @@ function setStatus(s) {
 
 function showScreen(which) {
   $('#scr-intro').hidden = which !== 'intro';
-  $('#scr-stage').hidden = which === 'intro';
+  $('#scr-home').hidden = which !== 'home';
+  $('#scr-stage').hidden = which === 'intro' || which === 'home';
+  if (which === 'home') renderHome();
   S.mode = which;
   const st = $('#scr-stage');
   st.classList.toggle('mode-cal', which === 'cal');
@@ -2993,7 +3026,7 @@ function showScreen(which) {
   st.classList.toggle('camhidden', S.camHidden && which === 'game' && !S.manual);
   $('#pad-inline').hidden = !(which === 'game' && S.manual);
   $('#btn-key').hidden = S.manual;
-  if (which === 'cal') updateReadout();
+  if (which === 'cal') { updateReadout(); $('#cal-done').textContent = S.afterCal === 'home' ? 'Gotowe' : 'Gotowe, gramy'; }
   requestAnimationFrame(sizeOverlay);
 }
 
@@ -3266,15 +3299,53 @@ $('#cal-done').addEventListener('click', () => {
   if (!S.cal) { toast('Popraw punkty, zanim zaczniesz.'); return; }
   savePoints();
   setupProc();
+  if (S.afterCal === 'home') { S.afterCal = null; showScreen('home'); } else enterGame();
+});
+// Into play with the camera (from calibration or from the main menu): the empty board is learnt again.
+function enterGame() {
+  S.afterCal = null; S.manual = false;
   showScreen('game');
   setStatus('starting');
-  S.resetPending = true;
+  S.resetPending = true; S.busyAt = performance.now();
   toast('Wyjmij lotki z tarczy. Uczę się pustej tarczy.', 3200);
   renderGame();
   // Grid as used in play, once the tripod has settled after the tap (no touching needed later).
   clearTimeout(S.shotTimer);
   S.shotTimer = setTimeout(() => { if (S.mode === 'game' && S.cal && !S.manual) gridShot('gra', S.stab && S.stab.tracker ? 'śledzenie tarczy włączone' : 'bez śledzenia'); }, 6000);
+}
+/* ---------------- Main menu (since 2026.10.30b) ----------------
+   Piotr: after "Gotowe" the app was counting at once, whether he played or not. Now calibration
+   ends in the main menu and only "Nowa gra" / "Kontynuuj grę" start counting. The camera stays on
+   in the menu (no new calibration needed), but no frame is processed there. */
+function renderHome() {
+  $('#home-ver').textContent = 'Licznik do darta z kamerą telefonu · wersja ' + APP_VERSION;
+  const on = !!(S.stream && S.cal && S.det), hc = $('#home-cam');
+  hc.dataset.s = on ? 'ok' : 'off';
+  $('#home-cam-t').textContent = on ? 'Kamera włączona, tarcza skalibrowana' : S.stream ? 'Kamera włączona, potrzebna kalibracja' : 'Kamera wyłączona (włączy się przy grze)';
+  const g = S.game, any = g && (g.turns.length || g.cur.darts.length);
+  $('#home-continue').hidden = !(any && g.winner == null);
+  if (any) $('#home-continue-t').textContent = MODE_LABEL[C.modeOf(g)] + (C.modeOf(g) === 'x01' ? ' ' + g.start : '') + ' · ' + g.players.map(p => p.name).join(', ');
+}
+// Start counting: with the camera when it can be had, calibrating first if needed.
+async function playFromHome() {
+  speak(''); // unlock speech on Android after a user gesture
+  if (S.stream && S.cal && S.det) { enterGame(); return; }
+  if (!S.stream) { const ok = await startCamera(); if (!ok) { showScreen('intro'); return; } S.pts = loadPoints(); }
+  S.manual = false; S.afterCal = 'game';
+  selectPoint(0); showScreen('cal'); autoCalSoon();
+}
+$('#home-new').addEventListener('click', () => openNew());
+$('#home-continue').addEventListener('click', () => { if (S.manual) startManual(); else playFromHome(); });
+$('#home-stats').addEventListener('click', () => openStats());
+$('#home-calib').addEventListener('click', async () => {
+  speak('');
+  if (!S.stream) { const ok = await startCamera(); if (!ok) { showScreen('intro'); return; } S.pts = loadPoints(); }
+  S.manual = false; S.afterCal = 'home';
+  selectPoint(0); showScreen('cal'); autoCalSoon();
 });
+$('#home-settings').addEventListener('click', () => openSettings());
+$('#home-manual').addEventListener('click', () => startManual());
+$('#home-intro').addEventListener('click', () => showScreen('intro'));
 
 /* ---------- Calibration pictures for Nauka AI (since 2026.10.25d) ----------
    Taken by themselves (after automatic calibration and a few seconds into play), so the phone is
@@ -4406,7 +4477,7 @@ function loop(now) {
   } catch (err) { S.loopErrs = (S.loopErrs || 0) + 1; if (S.loopErrs <= 20) logNote('błąd w pętli: ' + (err && err.stack ? err.stack.split('\n').slice(0, 3).join(' | ') : err)); }
   try {
     const t = performance.now();
-    if (S.mode !== 'intro' && !S.manual) drawOverlay();
+    if ((S.mode === 'cal' || S.mode === 'game') && !S.manual) drawOverlay();
     if (S.mode === 'game') perfAdd('rysowanie', performance.now() - t);
   } catch (err) { S.loopErrs = (S.loopErrs || 0) + 1; if (S.loopErrs <= 20) logNote('błąd rysowania: ' + (err && err.stack ? err.stack.split('\n').slice(0, 3).join(' | ') : err)); }
   requestAnimationFrame(loop);
@@ -4620,7 +4691,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.30a';
+const APP_VERSION = '2026.10.30b';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
@@ -4996,16 +5067,18 @@ $('#btn-start').addEventListener('click', async () => {
   speak(''); // unlock speech on Android after a user gesture
   const ok = await startCamera();
   if (!ok) return;
-  S.manual = false;
+  S.manual = false; S.afterCal = 'home';
   S.pts = loadPoints(); selectPoint(0);
   showScreen('cal');
   autoCalSoon();
 });
-$('#btn-manual').addEventListener('click', () => {
-  S.manual = true;
+function startManual() {
+  S.manual = true; S.afterCal = null;
   buildPad($('#pad-inline'), manualDart);
   showScreen('game'); setStatus('manual'); renderGame();
-});
+}
+$('#btn-manual').addEventListener('click', () => startManual());
+$('#btn-intro-home').addEventListener('click', () => showScreen('home'));
 $('#btn-undo').addEventListener('click', () => {
   const last = S.game.cur.darts[S.game.cur.darts.length - 1];
   const r = C.undo(S.game);
@@ -5065,6 +5138,7 @@ $('#sh-menu').addEventListener('click', async (e) => {
   else if (act === 'cam') { S.camHidden = !S.camHidden; showScreen('game'); }
   else if (act === 'full') { try { await document.documentElement.requestFullscreen(); if (screen.orientation && screen.orientation.lock) screen.orientation.lock(screen.orientation.type).catch(() => {}); } catch (err) { toast('Pełny ekran niedostępny.'); } }
   else if (act === 'intro') showScreen('intro');
+  else if (act === 'home') { setStatus('idle'); hideStageMsg(); showScreen('home'); }
 });
 
 // New game (the last choices are remembered)
@@ -5117,7 +5191,9 @@ $('#new-go').addEventListener('click', () => {
   S.game = C.createGame({ mode: ng.mode, opts, start: ng.start, players: names, doubleOut: $('#opt-dout').checked });
   closeSheet('#sh-new');
   if (S.det) S.resetPending = true;
-  afterChange(); setStatus(S.manual ? 'manual' : 'ready');
+  afterChange();
+  if (S.mode === 'home') playFromHome();
+  else setStatus(S.manual ? 'manual' : 'ready');
   speak(names[0] + ', zaczynasz. ' + (ng.mode === 'x01' ? ng.start : MODE_LABEL[ng.mode] + (ng.mode === 'atc' || ng.mode === 'bob27' ? '. ' + turnPrompt().replace(/^[^,]*, (?=cel|podwójne)/, '') : '')));
 });
 
@@ -5268,7 +5344,7 @@ $('#set-close').addEventListener('click', () => closeSheet('#sh-set'));
 /* ---------------- Boot ---------------- */
 if (!window.isSecureContext) $('#secure-warn').hidden = false;
 renderGame();
-showScreen('intro');
+showScreen(store.get('cal', null) ? 'home' : 'intro');
 
 // Hooks for automated testing.
 window.OkoTarczy = { S, C, DS, G, glRead, hiA, stabD, gridShot, bitsToPng, captureSnap, openFix, fix, fixSnap, fixMap, hiRefine, hiCaptureRef, setPoints(p) { S.pts = p.map(q => q.slice()); updateReadout(); }, finishCalibration() { $('#cal-done').click(); }, startCamera, screenMap, exportDataset, dsIdle: () => dsChain, version: APP_VERSION };
