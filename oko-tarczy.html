@@ -484,6 +484,7 @@ input[type=range]{accent-color:var(--cream)}
     </div>
     <label class="toggle"><span>Obraz przez kartę graficzną (szybciej, zwłaszcza w 4K)</span><input type="checkbox" id="opt-gpu" checked></label>
     <label class="toggle"><span>Oszczędne śledzenie (bez liczenia tej samej klatki dwa razy)</span><input type="checkbox" id="opt-lean" checked></label>
+    <label class="toggle"><span>Oszczędzanie baterii (wolniej, gdy nic się nie dzieje; kamera 20 kl/s)</span><input type="checkbox" id="opt-eco" checked></label>
     <label class="toggle"><span>Kamera 4K (więcej szczegółów, większe obciążenie)</span><input type="checkbox" id="opt-4k"></label>
     <p class="hint" id="cam-info"></p>
     <label class="toggle"><span>Blokuj ekspozycję i ostrość aparatu</span><input type="checkbox" id="opt-lock"></label>
@@ -2914,7 +2915,7 @@ const S = {
   pts: null, cal: null, sel: 0,
   proc: null, det: null, frameData: null, resetPending: false, rebasePending: false,
   mode: 'intro', manual: false, camHidden: false,
-  settings: Object.assign({ thr: 60, shadows: true, autoNext: true, voice: true, coVoice: true, mask: false, lock: false, diag: false, view: 'board', collect: true, track: true, hiTip: true, gpu: true, lean: true, ai: 'on' }, store.get('settings', {})),
+  settings: Object.assign({ thr: 60, shadows: true, autoNext: true, voice: true, coVoice: true, mask: false, lock: false, diag: false, view: 'board', collect: true, track: true, hiTip: true, gpu: true, lean: true, eco: true, ai: 'on' }, store.get('settings', {})),
   offset: { mm: 0, samples: [] },
   point: Object.assign({ mm: 14, samples: [], max: 25 }, store.get('point', {})),   // max = measured point (25 mm), barrel 40 mm
   game: null, status: 'idle', blockedShown: false, lastProc: 0, maskImg: null, maskCanvas: null
@@ -2997,6 +2998,8 @@ function showScreen(which) {
 }
 
 /* ---------------- Camera ---------------- */
+// Battery saving: the camera is asked for 20 frames a second (detection uses at most 10; in 4K the S26 gives ~14 anyway).
+function camAskFps() { return S.settings.eco !== false ? 20 : 30; }
 async function startCamera() {
   const err = $('#cam-error'); err.hidden = true;
   if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -3006,8 +3009,8 @@ async function startCamera() {
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: false,
       video: S.settings.cam4k
-        ? { facingMode: { ideal: 'environment' }, width: { ideal: 3840 }, height: { ideal: 2160 }, frameRate: { ideal: 30 } }
-        : { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }
+        ? { facingMode: { ideal: 'environment' }, width: { ideal: 3840 }, height: { ideal: 2160 }, frameRate: { ideal: camAskFps() } }
+        : { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: camAskFps() } }
     });
     S.stream = stream; S.track = stream.getVideoTracks()[0];
     ['ended', 'mute', 'unmute'].forEach(ev => S.track.addEventListener(ev, () => { if (S.perf) logNote('ścieżka kamery: ' + ev); }));
@@ -3570,7 +3573,7 @@ function perfFlush(now) {
   const secs = (now - pf.t0) / 1000;
   const parts = Object.keys(pf.acc).map(k => { const a = pf.acc[k]; return k + ' ' + (a[0] / a[1]).toFixed(1) + '/' + a[2].toFixed(0) + ' ms ×' + (a[1] / secs).toFixed(1) + '/s'; });
   const camFps = S.vfAt ? ((S.vf - (pf.vf0 || 0)) / secs).toFixed(1) : '?'; pf.vf0 = S.vf;
-  pf.log.push(new Date().toLocaleTimeString('pl-PL') + '  ' + S.vw + '×' + S.vh + '  kamera ' + camFps + ' kl/s  oszczędne ' + (leanOn() ? 'tak' : 'nie') + '  wykrywanie ' + (S.fps || 0).toFixed(1) + ' kl/s  stan ' + (S.status || '') + '  |  ' + parts.join('  |  '));
+  pf.log.push(new Date().toLocaleTimeString('pl-PL') + '  ' + S.vw + '×' + S.vh + '  kamera ' + camFps + ' kl/s  oszczędne ' + (leanOn() ? 'tak' : 'nie') + '  bateria ' + (S.settings.eco === false ? 'wył.' : ecoIdle(performance.now()) ? 'czuwanie' : 'pełna') + '  wykrywanie ' + (S.fps || 0).toFixed(1) + ' kl/s  stan ' + (S.status || '') + '  |  ' + parts.join('  |  '));
   if (pf.log.length > 90) pf.log.shift();
   pf.acc = {}; pf.t0 = now;
 }
@@ -3728,6 +3731,7 @@ function processFrame(now) {
   t = performance.now();
   const evs = S.det.step(data, now);
   perfAdd('wykrywanie', performance.now() - t);
+  if (evs.length || S.det.moving || (T && T.lost) || S.blockedShown || (S.status !== 'ready' && S.status !== 'pull')) S.busyAt = now;
   // The picture keeps changing for a long time with nobody at the board: tell the player.
   if (S.det.moving && now - S.det.motionStart > 8000 && !S.blockedShown) {
     $('#stage-msg-t').textContent = 'Obraz ciągle się zmienia. Postaw telefon nieruchomo (statyw albo oparcie) i sprawdź, czy w kadrze nic nie miga ani się nie rusza.';
@@ -4376,6 +4380,13 @@ if (S.video.requestVideoFrameCallback) {
   const onVF = () => { S.vf++; S.vfAt = performance.now(); S.video.requestVideoFrameCallback(onVF); };
   S.video.requestVideoFrameCallback(onVF);
 }
+/* Battery saving (Piotr, 2026-10-30: the phone gets hot and the battery runs down). With nothing
+   happening on the board for 4 s (no motion, no event, waiting for a throw or for darts to be pulled)
+   the picture is checked about 3 times a second instead of 10, and the grid is not tracked between
+   checks. The first motion (a dart, a hand) brings full speed back: a dart stays in the board, so it is
+   only seen up to 0.3 s later, not lost. */
+S.busyAt = 0;
+function ecoIdle(now) { return S.settings.eco !== false && now - S.busyAt > 4000 && !S.resetPending && !S.rebasePending; }
 function leanOn() { return S.settings.lean !== false && S.vfAt > 0 && performance.now() - S.vfAt < 500; }
 // Average time of getting the small tracking picture (slow in 4K: then no extra tracking between detections).
 S.trkMs = 0;
@@ -4387,8 +4398,9 @@ function loop(now) {
   try {
     watchVideo(now);
     if (S.mode === 'game' && !S.manual) {
-      if (now - S.lastProc >= 95 && !(leanOn() && S.vf === S.procVF)) { S.lastProc = now; S.procVF = S.vf; processFrame(now); }
-      else if (S.stab && now - (S.lastTrack || 0) >= 45 && !(leanOn() && S.trkMs > 20)) { const t = performance.now(); trackBoard(now); perfAdd('śledzenie między', performance.now() - t); } // keeps the grid on the board between detections
+      const idle = ecoIdle(now);
+      if (now - S.lastProc >= (idle ? 300 : 95) && !(leanOn() && S.vf === S.procVF)) { S.lastProc = now; S.procVF = S.vf; processFrame(now); }
+      else if (S.stab && !idle && now - (S.lastTrack || 0) >= 45 && !(leanOn() && S.trkMs > 20)) { const t = performance.now(); trackBoard(now); perfAdd('śledzenie między', performance.now() - t); } // keeps the grid on the board between detections
       perfFlush(now);
     }
   } catch (err) { S.loopErrs = (S.loopErrs || 0) + 1; if (S.loopErrs <= 20) logNote('błąd w pętli: ' + (err && err.stack ? err.stack.split('\n').slice(0, 3).join(' | ') : err)); }
@@ -4608,7 +4620,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.29c';
+const APP_VERSION = '2026.10.30a';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
@@ -4955,6 +4967,7 @@ $('#opt-track').addEventListener('change', (e) => {
 $('#opt-hitip').addEventListener('change', (e) => { S.settings.hiTip = e.target.checked; saveSettings(); if (!e.target.checked) S.hi = null; });
 $('#opt-ai').addEventListener('change', (e) => { S.settings.ai = e.target.value; saveSettings(); AI.failAt = 0; aiInfo(); if (e.target.value !== 'off') aiLoad().catch(() => {}); });
 $('#opt-lean').addEventListener('change', (e) => { S.settings.lean = e.target.checked; saveSettings(); });
+$('#opt-eco').addEventListener('change', (e) => { S.settings.eco = e.target.checked; saveSettings(); S.busyAt = performance.now(); switchCamera(); });
 $('#opt-gpu').addEventListener('change', (e) => { S.settings.gpu = e.target.checked; saveSettings(); S.hi = null; camInfo(); });
 $('#opt-collect').addEventListener('change', (e) => { S.settings.collect = e.target.checked; saveSettings(); syncAiPill(); if (S.det) S.det.keepFull = e.target.checked; });
 // What the camera really gives (the browser may give less than asked) and how fast play runs.
@@ -4965,8 +4978,9 @@ function camInfo() {
   el.textContent = 'Obraz: ' + S.vw + '×' + S.vh + (st.frameRate ? ', kamera ' + Math.round(st.frameRate) + ' kl/s' : '') +
     (S.fps && S.proc ? ', wykrywanie ' + S.fps.toFixed(1) + ' kl/s' : '') + (G.ok && S.settings.gpu !== false ? ', przez kartę graficzną' : G.failed ? ', karta graficzna nie działa (canvas)' : '') + '.';
 }
-$('#opt-4k').addEventListener('change', async (e) => {
-  S.settings.cam4k = e.target.checked; saveSettings();
+$('#opt-4k').addEventListener('change', (e) => { S.settings.cam4k = e.target.checked; saveSettings(); switchCamera(); });
+// Starts the camera again with the new settings (size, frame rate).
+async function switchCamera() {
   if (!S.stream || S.manual) { camInfo(); return; }
   $('#cam-info').textContent = 'Przełączam kamerę…';
   S.stream.getTracks().forEach(t => t.stop());
@@ -4975,7 +4989,7 @@ $('#opt-4k').addEventListener('change', async (e) => {
   camInfo();
   if (ok && S.settings.lock) applyLocks(true);
   if (ok && S.settings.cam4k && Math.max(S.vw, S.vh) < 3000) toast('Ten telefon nie daje 4K w przeglądarce (' + S.vw + '×' + S.vh + ').', 4000);
-});
+}
 
 /* ---------------- Buttons ---------------- */
 $('#btn-start').addEventListener('click', async () => {
@@ -5216,6 +5230,7 @@ function openSettings() {
   $('#opt-ai').value = S.settings.ai || 'on'; aiInfo();
   $('#opt-gpu').checked = S.settings.gpu !== false;
   $('#opt-lean').checked = S.settings.lean !== false;
+  $('#opt-eco').checked = S.settings.eco !== false;
   $('#opt-4k').checked = !!S.settings.cam4k; camInfo();
   refreshDsInfo();
   { const c = ghCfg(); $('#gh-on').checked = c.on; $('#gh-cell').checked = c.cell; $('#gh-token').value = c.token; $('#gh-repo').value = c.repo; ghInfo(); }

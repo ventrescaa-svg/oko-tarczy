@@ -100,6 +100,12 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
   Dziennik: linia ma `kamera N kl/s` i `oszczędne tak/nie`, nowe kroki `karta: wgrywanie` (samo `texImage2D`) i `karta: odczyt` (`readPixels`, czeka na kartę). Playwright (atrapa 10 kl/s): wgrywania 18 → 10 na sekundę. Rdzeń bez zmian.
   Następnie: z dziennika S26 zobaczyć, czy drogie jest wgrywanie czy odczyt; potem ewentualnie większy obraz wykrywania w 4K.
 
+## Oszczędzanie baterii (2026.10.30a)
+- Piotr: telefon się grzeje, bateria szybko schodzi. Dziennik S26 w 4K: ok. 85 ms pracy na każde przetworzenie przy ok. 9,5 kl/s, także gdy nikt nie rzuca.
+- Ustawienia wykrywania, „Oszczędzanie baterii” (`S.settings.eco`, domyślnie wł.): po 4 s bez zdarzeń (`S.busyAt`: zdarzenie detektora, `det.moving`, zgubione śledzenie, komunikat na ekranie, stan inny niż ready/pull) `ecoIdle` przetwarza co 300 ms zamiast 95 ms i pomija „śledzenie między”. Pierwszy ruch wraca do pełnego tempa.
+  Kamera prosi o 20 kl/s zamiast 30 (`camAskFps`); przełącznik restartuje kamerę (`switchCamera`, to samo co przy 4K). Dziennik: `bateria czuwanie/pełna/wył.`.
+- Rdzeń bez zmian. Test (scratchpad `eco_step.js`): rzutka pojawia się po klatkach co 300 ms zamiast 100 ms, to samo pole. Playwright: czuwanie 3,3 kl/s, po ruchu pełne tempo.
+
 ## Porządki w danych i stan „złego obiektu” (2026.10.29b, zalecenia 5 i 2 z audytu)
 - Skrypt `ort.all.min.js` z jsdelivr ma sumę kontrolną (`AI_ORT_SRI`, sha384 z paczki npm onnxruntime-web 1.29.0, `crossOrigin`). Pliki `.wasm` (zapasowy silnik) nadal bez sumy. Przy zmianie wersji ORT policz nową: `npm pack onnxruntime-web@X`, `openssl dgst -sha384 -binary dist/ort.all.min.js | openssl base64 -A`.
   Playwright (CDN podstawiony plikiem z npm): dobry plik wczytuje model (webgl), zmieniony plik jest odrzucony.
