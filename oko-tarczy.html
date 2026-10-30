@@ -60,9 +60,13 @@ button{cursor:pointer;touch-action:manipulation}
   background:radial-gradient(120% 60% at 100% 0%, rgba(226,73,61,.13), transparent 60%), radial-gradient(90% 50% at 0% 100%, rgba(60,176,109,.08), transparent 60%), var(--bg)}
 .home{max-width:620px;margin:0 auto;display:grid;gap:18px}
 .hero{display:flex;flex-direction:column;align-items:center;text-align:center;padding:max(26px, env(safe-area-inset-top, 0px)) 0 2px}
-.hero-eye{width:min(80%, 340px);filter:drop-shadow(0 0 34px rgba(233,220,186,.10)) drop-shadow(0 14px 30px rgba(0,0,0,.6))}
+.hero-eye{width:calc(100% + 32px);max-width:560px;margin:0 -16px;aspect-ratio:4 / 3;overflow:hidden}
+.hero-eye img{width:100%;height:100%;object-fit:cover;display:block;
+  -webkit-mask-image:radial-gradient(ellipse 62% 60% at 50% 50%, #000 55%, transparent 100%);mask-image:radial-gradient(ellipse 62% 60% at 50% 50%, #000 55%, transparent 100%)}
+.hero-eye.drawn{width:min(80%, 340px);margin:0;aspect-ratio:auto;overflow:visible;filter:drop-shadow(0 0 34px rgba(233,220,186,.10)) drop-shadow(0 14px 30px rgba(0,0,0,.6))}
 .hero-eye svg{width:100%;height:auto;display:block;overflow:visible}
-.hero h1{font:700 clamp(2.9rem, 13vw, 4rem)/.9 var(--display);letter-spacing:.02em;margin:10px 0 0;text-transform:uppercase}
+.hero h1{position:relative;font:700 clamp(2.9rem, 13vw, 4rem)/.9 var(--display);letter-spacing:.02em;margin:-34px 0 0;text-transform:uppercase;text-shadow:0 2px 20px #000}
+.hero-eye.drawn + h1{margin-top:10px}
 .hero h1 span{color:var(--red)}
 .hero-sub{margin:8px 0 0;color:var(--muted)}
 .home-cam{display:inline-flex;align-items:center;gap:8px;justify-self:center;color:var(--fg);font-size:.9rem;margin:0;padding:6px 12px 6px 10px;border-radius:999px;background:rgba(23,28,25,.85);border:1px solid var(--line);position:relative}
@@ -95,6 +99,9 @@ button{cursor:pointer;touch-action:manipulation}
 .home-foot .btn{min-height:44px}
 .home-foot p{margin:0;color:var(--dim);font-size:.8rem}
 @media (prefers-reduced-motion:no-preference){
+  .hero-eye img{animation:eyeIn 1.4s ease-out both, breathe 9s ease-in-out 1.4s infinite}
+  @keyframes eyeIn{from{opacity:0;transform:scale(1.12)}}
+  @keyframes breathe{50%{transform:scale(1.035)}}
   .eye-iris{animation:irisIn 1.2s cubic-bezier(.2,.8,.2,1) both, look 9s ease-in-out 1.4s infinite}
   @keyframes irisIn{from{transform:rotate(-60deg) scale(.6);opacity:0}}
   @keyframes look{0%,30%,100%{transform:scale(.86) translate(0,0)}38%,52%{transform:scale(.86) translate(-60px,6px)}60%,78%{transform:scale(.86) translate(55px,-4px)}86%{transform:scale(.86) translate(0,0)}}
@@ -3371,7 +3378,12 @@ function enterGame() {
    in the menu (no new calibration needed), but no frame is processed there. */
 function renderHome() {
   $('#home-ver').textContent = 'wersja ' + APP_VERSION;
-  if (!$('#home-board').firstChild) $('#home-board').innerHTML = eyeSvg();
+  if (!$('#home-board').firstChild) {
+    // Picture made by Piotr (KlingAI, 2026-10-30); the drawn eye stays as a fallback when the file does not load.
+    const im = new Image(); im.alt = ''; im.decoding = 'async'; im.src = 'grafika/oko.jpg';
+    im.onerror = () => { $('#home-board').classList.add('drawn'); $('#home-board').innerHTML = eyeSvg(); };
+    $('#home-board').appendChild(im);
+  }
   const on = !!(S.stream && S.cal && S.det), hc = $('#home-cam');
   hc.dataset.s = on ? 'ok' : S.stream ? 'warn' : 'off';
   $('#home-cam-t').textContent = on ? 'Kamera włączona, tarcza skalibrowana' : S.stream ? 'Kamera włączona, potrzebna kalibracja' : 'Kamera wyłączona (włączy się przy grze)';
