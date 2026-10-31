@@ -28,6 +28,9 @@ for k, s in enumerate(S):
     tip = s['label'].get('tip') or (s.get('det') or {}).get('tip')   # ostateczne miejsce grota (po stuknięciu, po modelu)
     if not tip: continue
     Hc = mul([1,0,-c['x0'],0,1,-c['y0'],0,0,1], s['proc']['Hp'])   # board mm -> crop px
+    if (s.get('cal') or {}).get('side') == 'left':   # kamera z lewej: lustro w poziomie (jak aiRun(D, flip) w aplikacji), model zna tylko prawą stronę
+        ref, cur = ref[:, ::-1], cur[:, ::-1]; tip = [w - 1 - tip[0], tip[1]]
+        Hc = mul([-1,0,w-1,0,1,0,0,0,1], Hc)
     a = np.zeros((H, W, 6), np.uint8); a[:h, :w, :3] = ref; a[:h, :w, 3:] = cur
     X.append(a); Y.append(tip)
     app = (s.get('det') or {}).get('label')
