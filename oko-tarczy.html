@@ -4021,7 +4021,15 @@ async function aiRun(D) {
 function aiForDart(d, e) {   // one at a time, in order; the board mapping is the one of this moment
   const Hpi = S.det && S.det.Hpi ? S.det.Hpi.slice() : null, g = S.game;
   AI.q = AI.q.then(() => aiDart(d, e, Hpi, g)).catch(() => {});
+  return AI.q;
 }
+// Will the model look at this dart and may change it? Then the score is said after it (Piotr, 2026-10-31).
+function aiWillRun(e) {
+  const D = e.debug;
+  return (S.settings.ai || 'on') === 'on' && !!D && !!D.ref && D.kind !== 'missed' && !!(S.det && S.det.Hpi) &&
+    !(AI.failAt && Date.now() - AI.failAt < 60000) && !AI.err;
+}
+const AI_SAY_WAIT = 2500;   // longest wait for the model before the score is said anyway (S26: ~300 ms)
 async function aiDart(d, e, Hpi, g) {
   const mode = S.settings.ai || 'on', D = e.debug;
   if (mode === 'off' || !D || !D.ref || D.kind === 'missed' || !Hpi) return;
@@ -4041,7 +4049,7 @@ async function aiDart(d, e, Hpi, g) {
       if (relabel) d.ai.used = true; else d.ai.moved = true;
       const nd = Object.assign({}, d, relabel ? sc : {}, { tip: tipV, board: b.slice(), aiTip: tipV.slice(), unsure: relabel ? false : d.unsure });
       if (C.setDart(g, i, nd)) {
-        if (relabel) speak('Poprawka: ' + C.sayDart(nd));
+        if (relabel && (!d.say || d.say.done)) speak('Poprawka: ' + C.sayDart(nd));   // score already said: correct it aloud
         afterChange();
       }
     }
@@ -4063,10 +4071,22 @@ function onDart(e) {
   d.proc0 = procSnap(); d.cal0 = S.cal;
   const v = C.addDart(S.game, d);
   if (!v) return;
-  aiForDart(d, e);
+  const later = aiWillRun(e), q = aiForDart(d, e);
   hideStageMsg();
   const k = S.game.cur.darts.length;
-  speak(C.sayDart(d) + turnSay(v, k));
+  if (!later) speak(C.sayDart(d) + turnSay(v, k));
+  else {
+    // Said once, with the model's correction already in (shared object, copied into the corrected dart).
+    const g = S.game, say = d.say = { done: false };
+    const go = () => {
+      if (say.done) return; say.done = true;
+      if (g !== S.game) return;
+      const cur = g.cur.darts[k - 1];
+      if (!cur || cur.say !== say) { speak(C.sayDart(d)); return; }   // turn already moved on
+      speak(C.sayDart(cur) + turnSay(C.currentView(g), k));
+    };
+    q.then(go); setTimeout(go, AI_SAY_WAIT);
+  }
   setStatus(S.game.winner != null ? 'win' : (C.turnOpen(S.game) ? 'ready' : 'pull'));
   afterChange();
 }
@@ -4795,7 +4815,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.30b';
+const APP_VERSION = '2026.10.31a';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
