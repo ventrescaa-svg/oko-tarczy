@@ -4843,7 +4843,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.31c';
+const APP_VERSION = '2026.10.31d';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
@@ -5497,7 +5497,7 @@ $('#set-close').addEventListener('click', () => closeSheet('#sh-set'));
 /* ---------------- Boot ---------------- */
 if (!window.isSecureContext) $('#secure-warn').hidden = false;
 renderGame();
-showScreen(store.get('cal', null) ? 'home' : 'intro');
+showScreen('home');   // always the main menu first (Piotr, 2026-10-31); without calibration "play" calibrates first
 
 // Hooks for automated testing.
 window.OkoTarczy = { S, C, DS, G, glRead, hiA, stabD, gridShot, bitsToPng, captureSnap, openFix, fix, fixSnap, fixMap, hiRefine, hiCaptureRef, setPoints(p) { S.pts = p.map(q => q.slice()); updateReadout(); }, finishCalibration() { $('#cal-done').click(); }, startCamera, screenMap, exportDataset, dsIdle: () => dsChain, version: APP_VERSION };
