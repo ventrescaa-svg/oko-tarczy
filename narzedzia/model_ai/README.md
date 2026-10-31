@@ -31,3 +31,5 @@ Liczą się tylko rzuty sprawdzone przez gracza: pole przy „tap” i „confir
 Przy „auto” i „confirmed” punkt etykiety to punkt aplikacji (od 29a zwykle punkt modelu), więc obecny model ma tam błąd ≈ 0 mm sam ze sobą.
 Do ok. 100 sprawdzonych rzutów klasówka jest informacyjna; potem nowy model wgrywa się tylko, gdy na klasówce ma co najmniej tyle dobrych pól co stary i mediana mm przy stuknięciach nie gorsza o więcej niż 0,2 mm.
 30.10 (51 rzutów): w klasówce 10 (7 sprawdzonych), v3 6/7, v2 6/7, mm przy stuknięciach 2,6 vs 3,1 (2 stuknięcia).
+
+Kamera z lewej strony (`cal.side = "left"`, od 31.10): `prep.py` odbija wycinek w poziomie (ref, cur, x grota → w−1−x) i dokłada to odbicie do `Hc`, więc model zawsze widzi rzutkę jak z prawej, a ocena w `train.py` działa bez zmian. Paczka 20261031-1108 (16 rzutów z lewej): v3 na odbitych 11/11 sprawdzonych, mediana 2,0 mm.
