@@ -4136,10 +4136,18 @@ function aiLoad() {
     ort.env.wasm.wasmPaths = AI_ORT;
     ort.env.wasm.numThreads = 1;
     const buf = await (await fetch(AI_MODEL)).arrayBuffer();
-    for (const ep of ['webgl', 'wasm']) {
-      try { AI.sess = await ort.InferenceSession.create(buf, { executionProviders: [ep] }); AI.backend = ep; break; }
-      catch (e) { AI.err = String(e && e.message || e).slice(0, 120); }
+    // First choice: the model in its own thread (wasm in a Web Worker, ort.env.wasm.proxy), so the page is not stopped
+    // while it runs. On the main thread (webgl, plain wasm) the page stood for the whole run: S26 ~300 ms per dart,
+    // longest gap between frames with a dart 500–800 ms vs ~300 ms without (log of 31.10). Playwright: worker longest
+    // stop 5–8 ms, webgl/wasm the whole run. Too slow in the worker (aiSlow): back to webgl on the main thread.
+    const eps = AI.noWorker ? ['webgl', 'wasm'] : ['worker', 'webgl', 'wasm'];
+    for (const ep of eps) {
+      try {
+        ort.env.wasm.proxy = ep === 'worker';
+        AI.sess = await ort.InferenceSession.create(buf.slice(0), { executionProviders: [ep === 'worker' ? 'wasm' : ep] }); AI.backend = ep; break;
+      } catch (e) { AI.err = String(e && e.message || e).slice(0, 120); logNote('model AI ' + ep + ': ' + AI.err); }
     }
+    if (AI.sess) AI.err = null;
     if (!AI.sess) throw new Error(AI.err || 'brak silnika');
     logNote('model AI gotowy (' + AI.backend + ')'); aiInfo();
     return AI.sess;
@@ -4180,8 +4188,20 @@ async function aiRun(D, flip) {
   }
   const ms = performance.now() - t0;
   AI.n++; AI.ms += ms;
+  aiSlow(ms);
   const tx = sx / sw;
   return { tip: [flip ? w - 1 - tx : tx, sy / sw], conf: near / Z, ms, flip: !!flip };
+}
+// The worker runs plain wasm on one core; if on the phone that is much slower than webgl was (~300 ms),
+// the spoken score would wait for it. After 3 darts averaging > 900 ms: webgl on the main thread for the rest of the session.
+function aiSlow(ms) {
+  if (AI.backend !== 'worker') return;
+  AI.wn = (AI.wn || 0) + 1; AI.wms = (AI.wms || 0) + ms;
+  if (AI.wn >= 3 && AI.wms / AI.wn > 900) {
+    logNote('model AI: osobny wątek za wolny (' + Math.round(AI.wms / AI.wn) + ' ms), wracam do webgl');
+    AI.noWorker = true; const old = AI.sess; AI.sess = null; AI.p = null; AI.n = 0; AI.ms = 0;
+    if (old && old.release) old.release().catch(() => {});
+  }
 }
 // Crop larger than the model's input (camera closer to the board, 31.10: 34 of 238 throws, up to 407x282): cut a
 // 384x256 window out of it, placed so that the rules' tip sits where it usually is in crops the model takes
@@ -5012,7 +5032,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.31h';
+const APP_VERSION = '2026.10.31i';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
