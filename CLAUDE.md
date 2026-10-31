@@ -272,6 +272,9 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - Od 2026.10.24g w „Dookoła tarczy” po każdym trafieniu głos od razu mówi następny cel („1. Teraz 2”), też przy starcie gry („cel 1”), żeby nie trzeba było podchodzić do tarczy.
 - Test: scratchpad `tgame.js` (rdzeń w Node) i `pw.js` (Playwright, liczenie ręczne we wszystkich trybach). Na prawdziwej tarczy z kamerą jeszcze nie sprawdzone.
 - Od 2026.10.28d koniec tury (wyjęcie lotek albo „Dalej”) dopisuje brakujące lotki jako pudło (`bounce: true`), o ile tura jest otwarta (nie po przerzucie/wygranej). Odbita lotka albo lotka poza tarczą nie zostawia zmiany na obrazie, więc wcześniej tura miała mniej lotek (Piotr, 2026-10-28).
+- Od 2026.10.31c styl czytania (przegląd z Piotrem): `speak` zamienia liczby na słowa (`numPl`, `sayNums`), bo lektor czytał „1.” jak „pierwsze”. Koniec tury: sama liczba („sto!”), przy zerze „Bez punktów”.
+  Podpowiedź zakończenia tylko na początku tury i po 2. lotce. Kilku graczy: „Piotr, zostało 81”, wygrana w X01/Cricket „Leg wygrywa …”. Cricket: „22 punkty” (odmiana), sam gracz słyszy „Otwarte: 15, 16, bull”.
+  Ustawienia wykrywania, „Czytaj każdą lotkę” (`S.settings.sayEach`, domyślnie wł.; wyłączone: przy lotkach z kamery tylko wynik tury, podpowiedź, następny cel, przerzut i wygrana; `dartLine`). Wpisywanie ręczne zawsze czyta lotkę.
 - Pomysły na dalej: Killer, Cricket „cut-throat”, statystyki trafień (mapa tarczy), eksport historii.
 
 ## Model AI grota (od 2026.10.25b)

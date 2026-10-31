@@ -551,6 +551,7 @@ input[type=range]{accent-color:var(--cream)}
     </div>
     <label class="toggle"><span>Ignoruj cienie lotek</span><input type="checkbox" id="opt-shadow" checked></label>
     <label class="toggle"><span>Następna tura po wyjęciu lotek</span><input type="checkbox" id="opt-auto" checked></label>
+    <label class="toggle"><span>Czytaj każdą lotkę (wyłączone: tylko wynik tury)</span><input type="checkbox" id="opt-sayeach" checked></label>
     <label class="toggle"><span>Mów podpowiedź zakończenia (X01)</span><input type="checkbox" id="opt-covoice" checked></label>
     <label class="toggle"><span>Śmieszne komentarze po turach</span><input type="checkbox" id="opt-fun"></label>
     <div class="field">
@@ -3041,10 +3042,26 @@ function fillVoices() {
   sel.value = pl.some(v => v.voiceURI === S.settings.voiceName) ? S.settings.voiceName : '';
   $('#voice-info').textContent = pl.length ? 'Polskie głosy w telefonie: ' + pl.length + '. Nowe dochodzą po instalacji innego silnika mowy w Androidzie.' : 'Przeglądarka nie podaje listy głosów; użyty będzie domyślny.';
 }
+// Numbers as Polish words before speaking: the speech engine reads "1." (digit + full stop) as an ordinal ("pierwsze").
+const NUM_PL = {
+  one: ['zero', 'jeden', 'dwa', 'trzy', 'cztery', 'pięć', 'sześć', 'siedem', 'osiem', 'dziewięć', 'dziesięć', 'jedenaście', 'dwanaście', 'trzynaście', 'czternaście', 'piętnaście', 'szesnaście', 'siedemnaście', 'osiemnaście', 'dziewiętnaście'],
+  ten: ['', '', 'dwadzieścia', 'trzydzieści', 'czterdzieści', 'pięćdziesiąt', 'sześćdziesiąt', 'siedemdziesiąt', 'osiemdziesiąt', 'dziewięćdziesiąt'],
+  hun: ['', 'sto', 'dwieście', 'trzysta', 'czterysta', 'pięćset', 'sześćset', 'siedemset', 'osiemset', 'dziewięćset']
+};
+function numPl(n) {
+  if (!(n >= 0 && n < 1000)) return String(n);
+  if (n < 20) return NUM_PL.one[n];
+  const h = Math.floor(n / 100), r = n % 100, w = [];
+  if (h) w.push(NUM_PL.hun[h]);
+  if (r >= 20) { w.push(NUM_PL.ten[Math.floor(r / 10)]); if (r % 10) w.push(NUM_PL.one[r % 10]); }
+  else if (r) w.push(NUM_PL.one[r]);
+  return w.join(' ');
+}
+const sayNums = (t) => String(t).replace(/\d+/g, (x) => numPl(+x));
 function speak(text) {
-  if (!S.settings.voice || !('speechSynthesis' in window)) return;
+  if (!text || !S.settings.voice || !('speechSynthesis' in window)) return;
   try {
-    const u = new SpeechSynthesisUtterance(text);
+    const u = new SpeechSynthesisUtterance(sayNums(text));
     u.lang = 'pl-PL'; u.rate = S.settings.rate || 1.05;
     const v = (S.settings.voiceName && voices.find(v => v.voiceURI === S.settings.voiceName)) || voices.find(v => /^pl/i.test(v.lang));
     if (v) u.voice = v;
@@ -4074,7 +4091,7 @@ function onDart(e) {
   const later = aiWillRun(e), q = aiForDart(d, e);
   hideStageMsg();
   const k = S.game.cur.darts.length;
-  if (!later) speak(C.sayDart(d) + turnSay(v, k));
+  if (!later) speak(dartLine(d, v, k));
   else {
     // Said once, with the model's correction already in (shared object, copied into the corrected dart).
     const g = S.game, say = d.say = { done: false };
@@ -4082,8 +4099,8 @@ function onDart(e) {
       if (say.done) return; say.done = true;
       if (g !== S.game) return;
       const cur = g.cur.darts[k - 1];
-      if (!cur || cur.say !== say) { speak(C.sayDart(d)); return; }   // turn already moved on
-      speak(C.sayDart(cur) + turnSay(C.currentView(g), k));
+      if (!cur || cur.say !== say) { if (S.settings.sayEach !== false) speak(C.sayDart(d)); return; }   // turn already moved on
+      speak(dartLine(cur, C.currentView(g), k));
     };
     q.then(go); setTimeout(go, AI_SAY_WAIT);
   }
@@ -4212,19 +4229,26 @@ function sayRoute(g, rem, left) {
 }
 // Spoken after a dart: end of turn / game, or the checkout for the darts still in hand.
 function turnSay(v, k) { const t = turnSayBase(v, k), f = funSay(v, k); return f ? t + '. ' + f : t; }
+// What is said after a camera dart: the dart and the turn, or (option "Czytaj każdą lotkę" off) only the turn while it is still open.
+function dartLine(d, v, k) {
+  const t = turnSay(v, k);
+  if (S.settings.sayEach === false && v.state === 'open') return t.replace(/^\.\s*/, '');
+  return C.sayDart(d) + t;
+}
 function turnSayBase(v, k) {
   const g = S.game, m = C.modeOf(g);
   if (v.state === 'bust') return '. Przerzut';
   if (v.state === 'win' || v.state === 'done') {
     if (g.tie) return '. Remis';
-    if (g.players.length > 1) return '. Wygrywa ' + g.players[g.winner].name;
+    if (g.players.length > 1) return (m === 'x01' || m === 'cricket' ? '. Leg wygrywa ' : '. Wygrywa ') + g.players[g.winner].name;
     return m === 'x01' ? '. Wygrana!' : (m === 'shanghai' && v.state === 'win' ? '. Shanghai!' : '. Koniec gry');
   }
   // Dookoła tarczy: after a hit say the next field at once, so nobody has to walk to the board
   const next = m === 'atc' && v.flags[k - 1] === 'ok' ? '. Teraz ' + sayTarget(g, C.targetOf(g, v.after, 0)) : '';
-  if (k !== 3) { const r = m === 'x01' && v.state === 'open' ? sayRoute(g, v.rem, 3 - k) : ''; return r ? '. Zostało ' + v.rem + ': ' + r : next; }
+  // Checkout route only after the 2nd dart (the turn start already said it), not after every dart.
+  if (k !== 3) { const r = k === 2 && m === 'x01' && v.state === 'open' ? sayRoute(g, v.rem, 1) : ''; return r ? '. Zostało ' + v.rem + ': ' + r : next; }
   if (next) return next;
-  if (m === 'x01' || m === 'score' || m === 'shanghai') return '. Razem ' + v.total;
+  if (m === 'x01' || m === 'score' || m === 'shanghai') return '. ' + (v.total === 0 ? 'Bez punktów' : v.total + '!');
   if (m === 'bob27') return v.total < 0 ? '. Minus ' + (-v.total) : '. Plus ' + v.total;
   if (m === 'cricket' && v.marks) return '. ' + v.marks + ' ' + plural(v.marks, 'znacznik', 'znaczniki', 'znaczników');
   return '';
@@ -4273,13 +4297,17 @@ function funSay(v, k) {
 function turnPrompt() {
   const g = S.game, p = g.cur.p, m = C.modeOf(g), v = C.currentView(g), s = v.states[p];
   const multi = g.players.length > 1, name = multi ? g.players[p].name + ', ' : '';
-  if (m === 'x01') { const r = sayRoute(g, s, 3); return (multi ? name + s : 'zostało ' + s) + (r ? '. ' + r : ''); }
+  if (m === 'x01') { const r = sayRoute(g, s, 3); return name + 'zostało ' + s + (r ? '. ' + r : ''); }
   const t = C.targetOf(g, s, v.played[p]);
   if (m === 'atc') return name + 'cel ' + sayTarget(g, t);
   if (m === 'bob27') return name + 'podwójne ' + (t.num === 25 ? 'bull' : t.num) + ', masz ' + s.s;
   if (m === 'shanghai') return name + 'runda ' + t.num + ', masz ' + s.s;
   if (m === 'score') return name + 'runda ' + (v.played[p] + 1) + ', masz ' + s.s;
-  if (m === 'cricket') return multi ? name + s.s + ' punktów' : 'dalej';
+  if (m === 'cricket') {
+    if (multi) return name + s.s + ' ' + plural(s.s, 'punkt', 'punkty', 'punktów');
+    const open = C.CRICKET_NUMS.filter(n => s.m[n] < 3).map(n => n === 25 ? 'bull' : n);
+    return open.length ? 'Otwarte: ' + open.join(', ') : 'dalej';
+  }
   return name;
 }
 function winText(g, stats) {
@@ -4815,7 +4843,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.31b';
+const APP_VERSION = '2026.10.31c';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
@@ -5418,7 +5446,7 @@ function renderStats(hist) {
 // Settings
 function openSettings() {
   $('#opt-thr').value = S.settings.thr; $('#opt-thr-v').textContent = S.settings.thr;
-  $('#opt-shadow').checked = S.settings.shadows; $('#opt-auto').checked = S.settings.autoNext; $('#opt-covoice').checked = S.settings.coVoice !== false;
+  $('#opt-shadow').checked = S.settings.shadows; $('#opt-auto').checked = S.settings.autoNext; $('#opt-covoice').checked = S.settings.coVoice !== false; $('#opt-sayeach').checked = S.settings.sayEach !== false;
   $('#opt-fun').checked = !!S.settings.fun; fillVoices();
   $('#opt-rate').value = S.settings.rate || 1.05; $('#opt-rate-v').textContent = (+(S.settings.rate || 1.05)).toFixed(2);
   $('#opt-torch').checked = !!S.settings.torch; $('#torch-info').textContent = '';
@@ -5441,6 +5469,7 @@ $('#opt-thr').addEventListener('input', (e) => { S.settings.thr = +e.target.valu
 $('#opt-shadow').addEventListener('change', (e) => { S.settings.shadows = e.target.checked; if (S.det) S.det.shadows = e.target.checked; saveSettings(); });
 $('#opt-auto').addEventListener('change', (e) => { S.settings.autoNext = e.target.checked; saveSettings(); });
 $('#opt-covoice').addEventListener('change', (e) => { S.settings.coVoice = e.target.checked; saveSettings(); });
+$('#opt-sayeach').addEventListener('change', (e) => { S.settings.sayEach = e.target.checked; saveSettings(); });
 $('#opt-fun').addEventListener('change', (e) => { S.settings.fun = e.target.checked; saveSettings(); });
 const voiceSample = () => { const was = S.settings.voice; S.settings.voice = true; try { speechSynthesis.cancel(); } catch (e) {} speak('Potrójne 20. Razem 180. ' + funPick('max')); S.settings.voice = was; };
 $('#opt-voicename').addEventListener('change', (e) => { S.settings.voiceName = e.target.value; saveSettings(); voiceSample(); });
