@@ -12,6 +12,7 @@ def score(x, y):
     if 97 <= r <= 107: return 'T%d' % n
     return str(n)
 # Użycie: python3 train.py dane.npz   (ALL=1 EP=20 SAVE=model.pt: na wszystkim; FOLD=0/5 EP=10: sprawdzian po czasie; LOAD=model.pt: ocena gotowego)
+#   KLASOWKA=1: sprawdzian = klasówka (klasowka.py). Klasówka NIGDY nie idzie do nauki, także przy ALL=1 i FOLD.
 DATA = sys.argv[1]
 d = np.load(DATA); X, Y = d['X'], d['Y']
 meta = json.load(open(DATA.rsplit('.', 1)[0] + '.meta.json'))
@@ -23,6 +24,12 @@ if os.environ.get('ALL'): train = order
 if os.environ.get('FOLD'):   # time folds: test = fold-th block
     f, K = map(int, os.environ['FOLD'].split('/')); blk = np.array_split(order, K)
     test = blk[f]; train = np.concatenate([b for j, b in enumerate(blk) if j != f])
+hold = np.array([bool(m.get('hold')) for m in meta])
+if 'hold' not in meta[0]: sys.exit('dane bez znacznika klasówki: przygotuj je od nowa nowym prep.py')
+train = train[~hold[train]]   # klasówka nigdy w nauce
+if os.environ.get('KLASOWKA'): test = order[hold[order]]
+elif not os.environ.get('ALL'): test = test[~hold[test]]
+print(f'nauka {len(train)}, sprawdzian {len(test)}' + (' (klasówka)' if os.environ.get('KLASOWKA') else ''), flush=True)
 S2 = 2  # output stride
 class Net(nn.Module):
     def __init__(s, c=24):
@@ -76,7 +83,7 @@ def predict(o, m):
 net = Net(); torch.set_num_threads(4)
 EP = int(os.environ.get('EP', 50)); BS = 16
 opt = torch.optim.AdamW(net.parameters(), 2e-3, weight_decay=1e-4)
-sched = torch.optim.lr_scheduler.OneCycleLR(opt, 2e-3, total_steps=EP * math.ceil(len(train) / BS))
+sched = torch.optim.lr_scheduler.OneCycleLR(opt, 2e-3, total_steps=max(1, EP * math.ceil(len(train) / BS)))
 wt = np.array([3.0 if meta[i]['src'] == 'tap' else 1.0 for i in range(N)], np.float32)
 t0 = time.time()
 if os.environ.get('LOAD'): net.load_state_dict(torch.load(os.environ['LOAD'])); EP = 0   # LOAD=model.pt: tylko ocena
@@ -94,11 +101,14 @@ with torch.no_grad():
         for i, q in zip(idx, pr):
             mt = meta[i]; Hi = np.linalg.inv(np.array(mt['Hc'])); v = Hi @ [q[0], q[1], 1]; lab = score(v[0]/v[2], v[1]/v[2])
             v2 = Hi @ [Y[i][0], Y[i][1], 1]; err = math.hypot(v[0]/v[2] - v2[0]/v2[2], v[1]/v[2] - v2[1]/v2[2])
-            res.append(dict(id=mt['id'], src=mt['src'], label=mt['label'], app=mt['app'], model=lab, err=err, conf=q[2]))
+            res.append(dict(id=mt['id'], sid=mt.get('sid'), src=mt['src'], label=mt['label'], app=mt['app'], live_ai=mt.get('ai'), model=lab, err=err, conf=q[2]))
 json.dump(res, open(os.environ.get('OUT', 'wyniki.json'), 'w'))
 n = len(res); mo = sum(r['model'] == r['label'] for r in res); ap = sum(r['app'] == r['label'] for r in res)
 tp = [r for r in res if r['src'] == 'tap']
 print(f'test {n} (id {min(r["id"] for r in res)}-{max(r["id"] for r in res)}): model {mo}, aplikacja na żywo {ap} | tap {len(tp)}: model {sum(r["model"]==r["label"] for r in tp)}, app {sum(r["app"]==r["label"] for r in tp)}')
 e = np.array([r['err'] for r in res]); et = np.array([r['err'] for r in tp])
 print(f'błąd mm mediana {np.median(e):.1f}, 90% {np.percentile(e,90):.1f} | tap mediana {np.median(et):.1f}, 90% {np.percentile(et,90):.1f}')
-
+# Uczciwie liczone są tylko rzuty sprawdzone przez gracza: pole przy „tap” i „confirmed”, milimetry tylko przy „tap”
+# (przy „auto” i „confirmed” punkt etykiety to punkt aplikacji, od 29a zwykle starego modelu).
+ok = [r for r in res if r['src'] in ('tap', 'confirmed')]
+if ok: print(f'sprawdzone przez gracza {len(ok)}: model {sum(r["model"]==r["label"] for r in ok)}, aplikacja na żywo {sum(r["app"]==r["label"] for r in ok)}')

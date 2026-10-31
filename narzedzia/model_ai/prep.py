@@ -1,4 +1,5 @@
 import json, numpy as np, sys, math
+import os; sys.path.insert(0, os.path.dirname(os.path.abspath(__file__))); from klasowka import w_klasowce
 # Użycie: python3 prep.py katalog_z_rozpakuj dane.npz   (zapisuje też meta.json obok)
 D, OUTF = sys.argv[1], sys.argv[2]
 m = json.load(open(D + '/manifest.json')); S = m['samples']
@@ -30,12 +31,13 @@ for k, s in enumerate(S):
     a = np.zeros((H, W, 6), np.uint8); a[:h, :w, :3] = ref; a[:h, :w, 3:] = cur
     X.append(a); Y.append(tip)
     app = (s.get('det') or {}).get('label')
-    meta.append(dict(id=i, src=src, label=s['label']['label'], app=app, w=w, h=h, Hc=Hc.tolist(), ts=s['ts'], ver=s.get('app')))
+    meta.append(dict(id=i, sid=s.get('id'), src=src, label=s['label']['label'], app=app, w=w, h=h, Hc=Hc.tolist(), ts=s['ts'], ver=s.get('app'),
+                     hold=w_klasowce(s), ai=(s.get('ai') or {}).get('label')))
 # check scorer: crop->board with inverse
 bad = 0
 for mt, t in zip(meta, Y):
     Hi = np.linalg.inv(np.array(mt['Hc'])); p = Hi @ [t[0], t[1], 1]; lab = score(p[0]/p[2], p[1]/p[2])
     if mt['src'] != 'tap' and lab != mt['label']: bad += 1
-print(len(X), 'próbek; niezgodne etykiety auto/confirmed vs mój scorer:', bad)
+print(len(X), 'próbek, w klasówce', sum(m['hold'] for m in meta), '; niezgodne etykiety auto/confirmed vs mój scorer:', bad)
 np.savez_compressed(OUTF, X=np.array(X), Y=np.array(Y, np.float32))
 json.dump(meta, open(OUTF.rsplit('.', 1)[0] + '.meta.json', 'w'))

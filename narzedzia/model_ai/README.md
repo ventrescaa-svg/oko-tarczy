@@ -17,3 +17,17 @@ ALL=1 EP=20 SAVE=/tmp/grot.pt python3 narzedzia/model_ai/train.py /tmp/dane.npz
 python3 narzedzia/model_ai/export.py /tmp/grot.pt model/grot.onnx     # potem podbić ?v= w AI_MODEL
 ```
 Cel nauki: `label.tip` (ostateczne miejsce grota: po stuknięciu, inaczej to, co policzyła aplikacja). Poprawione stuknięciem mają wagę 3.
+
+## Klasówka: stały sprawdzian (od 2026-10-31)
+Co czwarta tura rzucona po nauce modelu v3 (ts > `KL_OD`, paczka 20261029-2123) jest na zawsze w klasówce (`klasowka.py`, wybór po czasie tury, więc zawsze ten sam).
+`train.py` nigdy nie uczy na klasówce (też przy `ALL=1` i `FOLD`), a `KLASOWKA=1` ocenia na niej. Dane trzeba przygotować nowym `prep.py` (znacznik `hold`).
+```
+python3 narzedzia/model_ai/klasowka.py /tmp/rz                                   # ile rzutów w klasówce
+KLASOWKA=1 LOAD=stary.pt OUT=/tmp/stary.json python3 narzedzia/model_ai/train.py /tmp/dane.npz
+KLASOWKA=1 LOAD=/tmp/grot.pt OUT=/tmp/nowy.json python3 narzedzia/model_ai/train.py /tmp/dane.npz
+python3 narzedzia/model_ai/porownaj_modele.py /tmp/stary.json /tmp/nowy.json    # kod 0 = można wgrać
+```
+Liczą się tylko rzuty sprawdzone przez gracza: pole przy „tap” i „confirmed”, milimetry tylko przy „tap”.
+Przy „auto” i „confirmed” punkt etykiety to punkt aplikacji (od 29a zwykle punkt modelu), więc obecny model ma tam błąd ≈ 0 mm sam ze sobą.
+Do ok. 100 sprawdzonych rzutów klasówka jest informacyjna; potem nowy model wgrywa się tylko, gdy na klasówce ma co najmniej tyle dobrych pól co stary i mediana mm przy stuknięciach nie gorsza o więcej niż 0,2 mm.
+30.10 (51 rzutów): w klasówce 10 (7 sprawdzonych), v3 6/7, v2 6/7, mm przy stuknięciach 2,6 vs 3,1 (2 stuknięcia).
