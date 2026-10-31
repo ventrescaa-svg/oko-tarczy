@@ -4183,6 +4183,22 @@ async function aiRun(D, flip) {
   const tx = sx / sw;
   return { tip: [flip ? w - 1 - tx : tx, sy / sw], conf: near / Z, ms, flip: !!flip };
 }
+// Crop larger than the model's input (camera closer to the board, 31.10: 34 of 238 throws, up to 407x282): cut a
+// 384x256 window out of it, placed so that the rules' tip sits where it usually is in crops the model takes
+// (95 px from the pointing side, 104 px from the top). Packs of 31.10, 28 such throws: same field 28/28,
+// distance to the player's tap (median, proc px) 3.7 instead of the rules' 9.5.
+function aiFit(D, tip, flip) {
+  if (D.w <= AI_W && D.h <= AI_H) return { D, ox: 0, oy: 0 };
+  const w = Math.min(D.w, AI_W), h = Math.min(D.h, AI_H);
+  const ax = flip ? 95 : AI_W - 1 - 95, t = tip || [D.w / 2, D.h / 2];
+  const ox = Math.round(Math.min(Math.max(t[0] - ax, 0), D.w - w)), oy = Math.round(Math.min(Math.max(t[1] - 104, 0), D.h - h));
+  const ref = new Uint8ClampedArray(w * h * 4), cur = new Uint8ClampedArray(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    const a = ((y + oy) * D.w + ox) * 4, b = a + w * 4;
+    ref.set(D.ref.subarray(a, b), y * w * 4); cur.set(D.cur.subarray(a, b), y * w * 4);
+  }
+  return { D: { w, h, ref, cur }, ox, oy };
+}
 // After onDart: ask the network about this dart and keep (or use) its answer.
 function aiForDart(d, e) {   // one at a time, in order; the board mapping is the one of this moment
   const Hpi = S.det && S.det.Hpi ? S.det.Hpi.slice() : null, g = S.game;
@@ -4201,10 +4217,14 @@ async function aiDart(d, e, Hpi, g) {
   if (mode === 'off' || !D || !D.ref || D.kind === 'missed' || !Hpi) return;
   if (AI.failAt && Date.now() - AI.failAt < 60000) return;     // failed a moment ago: do not retry on every dart
   try {
-    const r = await aiRun(D, !!(d.cal0 && d.cal0.side === 'left'));
+    const flip = !!(d.cal0 && d.cal0.side === 'left');
+    const F = aiFit(D, e.tip ? [e.tip[0] - D.x0, e.tip[1] - D.y0] : null, flip);
+    const r = await aiRun(F.D, flip);
     if (!r) { d.ai = { skip: 'crop ' + D.w + 'x' + D.h }; return; }
-    const tp = [D.x0 + r.tip[0], D.y0 + r.tip[1]], b = C.applyH(Hpi, tp[0], tp[1]), sc = C.scoreAt(b[0], b[1]);
-    d.ai = { tip: tp.map(r2), crop: r.tip.map(r2), board: b.map(r2), label: sc.label, conf: r2(r.conf), ms: Math.round(r.ms), backend: AI.backend, mode, used: false, flip: r.flip };
+    const ct = [F.ox + r.tip[0], F.oy + r.tip[1]];
+    const tp = [D.x0 + ct[0], D.y0 + ct[1]], b = C.applyH(Hpi, tp[0], tp[1]), sc = C.scoreAt(b[0], b[1]);
+    d.ai = { tip: tp.map(r2), crop: ct.map(r2), board: b.map(r2), label: sc.label, conf: r2(r.conf), ms: Math.round(r.ms), backend: AI.backend, mode, used: false, flip: r.flip };
+    if (F.D !== D) d.ai.win = [F.ox, F.oy, F.D.w, F.D.h];
     aiInfo();
     const i = g === S.game ? g.cur.darts.indexOf(d) : -1;
     // only a dart the player has not corrected, still in the open turn. The model's point is taken even when the field
@@ -4992,7 +5012,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.31g';
+const APP_VERSION = '2026.10.31h';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
