@@ -100,6 +100,15 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
   Dziennik: linia ma `kamera N kl/s` i `oszczędne tak/nie`, nowe kroki `karta: wgrywanie` (samo `texImage2D`) i `karta: odczyt` (`readPixels`, czeka na kartę). Playwright (atrapa 10 kl/s): wgrywania 18 → 10 na sekundę. Rdzeń bez zmian.
   Następnie: z dziennika S26 zobaczyć, czy drogie jest wgrywanie czy odczyt; potem ewentualnie większy obraz wykrywania w 4K.
 
+## Wygląd „Dart Arena” (2026.11.01a)
+- Prośba Piotra (2026-10-31): wygląd jak tablica wyników w klubie darta. Zmienione tylko `<style>` i układ HTML; oba skrypty bez zmian poza `APP_VERSION` (rdzeń identyczny co do bajta).
+- Kolory: `--bg` prawie czarny z zielenią, panele ciemnozielone (`--felt`), krem na główne przyciski i wynik, czerwień tylko na akcenty (logo, potrójne, kreska przy nazwie gracza). Fonty bez zmian (Barlow, Barlow Condensed).
+- Menu główne: oko na całą szerokość, logo pod nim (`.brand-mark`), „Kontynuuj grę” jako kremowy pasek, 501 jako szeroka karta (`.q-x01`, rysunek tarczy `.qboard`), Cricket/Dookoła/Więcej z ikonami (`.qi`). W poziomie (≥ 700 px) oko z lewej (przyklejone), przyciski z prawej.
+- Ustawienia podzielone na karty `.set-group` (Wykrywanie rzutów, Sztuczna inteligencja, Głos, Lektor ElevenLabs, Kamera i wydajność, Podgląd i diagnostyka, Nauka AI); „Test głosu” przeniesiony do Głosu. Pola wyboru rysowane jako przełączniki (te same `input type=checkbox`).
+- Ikony w Menu gry są w CSS (`::before` z `--ic` wg `data-act`), bo skrypt zmienia `textContent` tych przycisków i sprawdza `e.target.dataset.act` (dziecko w przycisku zepsułoby kliknięcie).
+- Stany: plakietka `#status` ma kolor i animację wg `data-s` (ready pulsuje na zielono, motion miga bursztynowo, pull/blocked czerwone, starting kręci się). Niepewna lotka: przerywana bursztynowa ramka z „?”. Animacje tylko przy `prefers-reduced-motion: no-preference`.
+- Sprawdzone w Playwright (`/tmp/pw` w sesji): ten sam przebieg kliknięć na starej i nowej wersji (6 trybów, 2 graczy, Cofnij, Dalej, wygrana, wszystkie przełączniki ustawień, statystyki) daje identyczne napisy na ekranie (57 stanów) i identyczny `localStorage`; obraz kamery ma tyle samo miejsca (412×915: 577 px, 360×640: 332 vs 331, poziom bez zmian). Zrzuty: `/mnt/project-files/oko-tarczy/redesign/`.
+
 ## Menu główne (2026.10.30b)
 - Piotr: po „Gotowe, gramy” aplikacja od razu liczyła, czy grał, czy nie. Nowy ekran `scr-home` (`renderHome`): Kontynuuj grę (gdy gra ma rzuty i nie jest skończona), Nowa gra, Statystyki, Kalibracja kamery, Ustawienia wykrywania, Licz ręcznie, Instrukcja.
 - Start aplikacji: zawsze menu główne (od 2026.10.31d, Piotr; wcześniej bez zapisanej kalibracji instrukcja). Gra bez kalibracji najpierw kalibruje (`playFromHome`), instrukcja jest w kafelku. Kalibracja z menu albo z instrukcji kończy się w menu (`S.afterCal = 'home'`, przycisk „Gotowe”); kalibracja z gry albo przed grą (`playFromHome`) wchodzi do gry (`enterGame`: nowe `ref`, „Wyjmij lotki”).
