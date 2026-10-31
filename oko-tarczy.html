@@ -3102,9 +3102,9 @@ function sysSpeak(text) {
    Each sentence is fetched once and kept in the Cache API ('lektor-el'), so after a few games nearly everything plays
    from the phone, without network or delay. No key, no network, used-up quota or a slow answer: the phone's voice says it. */
 const EL_API = 'https://api.elevenlabs.io/v1/', EL_WAIT = 2500, EL_CACHE = 'lektor-el';
-const EL = { q: Promise.resolve(), audio: null, offUntil: 0, warned: false, mem: new Map(), got: 0, hit: 0 };
+const EL = { last: '', q: Promise.resolve(), audio: null, offUntil: 0, warned: false, mem: new Map(), got: 0, hit: 0 };
 function elCfg() { const c = store.get('eleven', {}) || {}; return { on: !!c.on, key: (c.key || '').trim(), voice: c.voice || '', vname: c.vname || '', model: c.model || 'eleven_flash_v2_5' }; }
-function elSave(o) { store.set('eleven', Object.assign(elCfg(), o)); EL.offUntil = 0; EL.warned = false; }
+function elSave(o) { store.set('eleven', Object.assign(elCfg(), o)); EL.offUntil = 0; EL.warned = false; EL.last = ''; }
 function elActive() { const c = elCfg(); return c.on && !!c.key && !!c.voice && Date.now() > EL.offUntil; }
 const elSpeed = () => Math.max(0.7, Math.min(1.2, S.settings.rate || 1.05));
 const elId = (c, text) => 'https://lektor.invalid/' + encodeURIComponent(c.voice) + '/' + c.model + '/' + elSpeed().toFixed(2) + '/' + encodeURIComponent(text);
@@ -3137,6 +3137,7 @@ async function elFetch(c, text) {
   return r.blob();
 }
 function elFail(e) {
+  EL.last = 'ostatni błąd: ' + ((e && e.message) || e);
   logNote('!! lektor ElevenLabs: ' + ((e && e.message) || e));
   EL.offUntil = Date.now() + (e && (e.status === 401 || e.status === 403) ? 3600e3 : 120e3);
   if (!EL.warned) { EL.warned = true; toast('Lektor ElevenLabs nie odpowiada (' + (e && e.status ? 'błąd ' + e.status : 'brak sieci') + '). Mówi lektor telefonu.', 4000); }
@@ -3160,8 +3161,10 @@ async function elSay(text) {
     const f = elFetch(c, text).then(async (bl) => { await elCachePut(id, bl); EL.got++; return bl; });
     f.catch(elFail);
     b = await Promise.race([f.catch(() => null), new Promise(r => setTimeout(() => r(null), EL_WAIT))]);
+    if (!b && !EL.last) EL.last = 'odpowiedź wolniejsza niż 2,5 s (następnym razem zdanie będzie z pamięci)';
   }
-  if (b && await elPlay(b)) return;
+  if (b && await elPlay(b)) { EL.last = ''; return; }
+  if (b) EL.last = 'telefon nie odtworzył nagrania';
   await sysSpeak(text);
 }
 function elStop() { try { if (EL.audio) EL.audio.pause(); } catch (e) {} EL.q = Promise.resolve(); }
@@ -3169,7 +3172,24 @@ async function elInfo(msg) {
   const c = elCfg();
   let n = 0;
   try { if ('caches' in window) n = (await (await caches.open(EL_CACHE)).keys()).length; } catch (e) {}
-  $('#el-info').textContent = (msg ? msg + ' ' : '') + (!c.key ? 'Wpisz klucz i stuknij „Sprawdź klucz”.' : !c.voice ? 'Wybierz głos (najpierw „Sprawdź klucz”).' : c.on ? 'Włączony: ' + (c.vname || c.voice) + '.' : 'Wyłączony.') + ' Zapamiętane zdania w telefonie: ' + n + '.';
+  $('#el-info').textContent = (msg ? msg + ' ' : EL.last ? 'Uwaga, ' + EL.last + '. ' : '') + (!c.key ? 'Wpisz klucz i stuknij „Sprawdź klucz”.' : !c.voice ? 'Wybierz głos (najpierw „Sprawdź klucz”).' : c.on ? 'Włączony: ' + (c.vname || c.voice) + '.' : 'Wyłączony.') + ' Zapamiętane zdania w telefonie: ' + n + '.';
+}
+// "Posłuchaj" for ElevenLabs: waits for the recording (no 2.5 s fallback) and says what happened.
+async function elListen() {
+  elStop(); try { speechSynthesis.cancel(); } catch (e) {}
+  const c = elCfg();
+  if (!c.on) { elInfo('Najpierw włącz „Lektor ElevenLabs” (przełącznik wyżej).'); return; }
+  if (!c.key || !c.voice) { elInfo(); return; }
+  const text = sayNums('Potrójne 20. 180!'), id = elId(c, text), t0 = performance.now();
+  $('#el-info').textContent = 'Pobieram próbkę z ElevenLabs…';
+  let b = await elCacheGet(id), how = 'z pamięci telefonu';
+  if (!b) {
+    try { b = await elFetch(c, text); await elCachePut(id, b); how = 'pobrane w ' + Math.round(performance.now() - t0) + ' ms'; }
+    catch (e) { EL.last = ''; elInfo('ElevenLabs nie dał nagrania (' + ((e && e.message) || e) + ').'); return; }
+  }
+  EL.offUntil = 0; EL.last = '';
+  const ok = await elPlay(b);
+  elInfo(ok ? 'Mówi ElevenLabs (' + how + ').' : 'Nagranie przyszło, ale telefon go nie odtworzył.');
 }
 function elFillVoices(list, keep) {
   const sel = $('#el-voice'); sel.innerHTML = '';
@@ -4968,7 +4988,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.31e';
+const APP_VERSION = '2026.10.31f';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
@@ -5602,12 +5622,12 @@ $('#opt-voicename').addEventListener('change', (e) => { S.settings.voiceName = e
 $('#opt-rate').addEventListener('input', (e) => { S.settings.rate = +e.target.value; $('#opt-rate-v').textContent = (+e.target.value).toFixed(2); saveSettings(); });
 $('#opt-rate').addEventListener('change', voiceSample);
 $('#opt-voice-listen').addEventListener('click', voiceSample);
-$('#el-on').addEventListener('change', (e) => { elSave({ on: e.target.checked }); elInfo(); if (e.target.checked) voiceSample(); });
+$('#el-on').addEventListener('change', (e) => { elSave({ on: e.target.checked }); elInfo(); if (e.target.checked) elListen(); });
 $('#el-key').addEventListener('change', (e) => { elSave({ key: e.target.value.trim() }); elInfo(); });
-$('#el-voice').addEventListener('change', (e) => { const o = e.target.selectedOptions[0]; elSave({ voice: e.target.value, vname: o ? o.textContent : '' }); elInfo(); voiceSample(); });
+$('#el-voice').addEventListener('change', (e) => { const o = e.target.selectedOptions[0]; elSave({ voice: e.target.value, vname: o ? o.textContent : '' }); elInfo(); elListen(); });
 $('#el-model').addEventListener('change', (e) => { elSave({ model: e.target.value }); elInfo(); });
 $('#el-test').addEventListener('click', () => { elSave({ key: $('#el-key').value.trim() }); elTest(); });
-$('#el-listen').addEventListener('click', voiceSample);
+$('#el-listen').addEventListener('click', elListen);
 $('#el-clear').addEventListener('click', async () => { EL.mem.clear(); try { await caches.delete(EL_CACHE); } catch (e) {} elInfo('Usunięte.'); });
 $('#opt-mask').addEventListener('change', (e) => { S.settings.mask = e.target.checked; S.maskImg = null; saveSettings(); });
 $('#opt-diag').addEventListener('change', (e) => { S.settings.diag = e.target.checked; saveSettings(); });
