@@ -562,6 +562,22 @@ input[type=range]{accent-color:var(--cream)}
       <button id="opt-voice-listen" class="btn" type="button">Posłuchaj</button>
       <p class="hint" id="voice-info"></p>
     </div>
+    <label class="toggle"><span>Lektor ElevenLabs (własny klucz, przez internet)</span><input type="checkbox" id="el-on"></label>
+    <div class="field">
+      <label for="el-key">Klucz API ElevenLabs (zostaje tylko w tym telefonie)</label>
+      <input type="password" id="el-key" autocomplete="off" spellcheck="false" placeholder="sk_…">
+      <label for="el-voice">Głos ElevenLabs</label>
+      <select id="el-voice" style="min-height:44px;border-radius:10px;border:1px solid var(--line);background:var(--panel-2);padding:0 8px"></select>
+      <label for="el-model">Jakość</label>
+      <select id="el-model" style="min-height:44px;border-radius:10px;border:1px solid var(--line);background:var(--panel-2);padding:0 8px">
+        <option value="eleven_flash_v2_5">Szybki (zużywa o połowę mniej)</option>
+        <option value="eleven_multilingual_v2">Najlepsza jakość</option>
+      </select>
+      <div class="btn-row"><button id="el-test" class="btn" type="button">Sprawdź klucz</button><button id="el-listen" class="btn" type="button">Posłuchaj</button></div>
+      <button id="el-clear" class="btn" type="button">Usuń zapamiętane nagrania</button>
+      <p class="hint" id="el-info"></p>
+      <p class="hint">Każde zdanie jest pobierane raz i zapamiętane w telefonie. Bez internetu, po wyczerpaniu limitu albo gdy odpowiedź trwa ponad 2,5 s, mówi zwykły lektor telefonu.</p>
+    </div>
     <label class="toggle"><span>Śledź tarczę (chwiejący się statyw)</span><input type="checkbox" id="opt-track" checked></label>
     <label class="toggle"><span>Grot na ostrym obrazie (pełna rozdzielczość)</span><input type="checkbox" id="opt-hitip" checked></label>
     <div class="field">
@@ -3058,15 +3074,124 @@ function numPl(n) {
   return w.join(' ');
 }
 const sayNums = (t) => String(t).replace(/\d+/g, (x) => numPl(+x));
+// speak('') after a tap unlocks speech on Android, so the empty text still goes to the phone's voice.
 function speak(text) {
-  if (!text || !S.settings.voice || !('speechSynthesis' in window)) return;
+  if (!S.settings.voice) return;
+  const t = sayNums(text || '');
+  if (t && elActive()) { EL.q = EL.q.then(() => elSay(t)).catch(() => {}); return; }
+  sysSpeak(t);
+}
+// The phone's own voice; resolves when it has finished (or after a safe time).
+function sysSpeak(text) {
+  return new Promise((res) => {
+    if (!('speechSynthesis' in window)) return res();
+    try {
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'pl-PL'; u.rate = S.settings.rate || 1.05;
+      const v = (S.settings.voiceName && voices.find(v => v.voiceURI === S.settings.voiceName)) || voices.find(v => /^pl/i.test(v.lang));
+      if (v) u.voice = v;
+      const t = setTimeout(res, 1500 + text.length * 120);
+      u.onend = u.onerror = () => { clearTimeout(t); res(); };
+      speechSynthesis.speak(u);
+    } catch (e) { res(); }
+  });
+}
+
+/* ---------------- ElevenLabs voice (optional, Piotr 2026-10-31) ----------------
+   The player's own API key, kept only in this phone (localStorage 'eleven'), never in the page.
+   Each sentence is fetched once and kept in the Cache API ('lektor-el'), so after a few games nearly everything plays
+   from the phone, without network or delay. No key, no network, used-up quota or a slow answer: the phone's voice says it. */
+const EL_API = 'https://api.elevenlabs.io/v1/', EL_WAIT = 2500, EL_CACHE = 'lektor-el';
+const EL = { q: Promise.resolve(), audio: null, offUntil: 0, warned: false, mem: new Map(), got: 0, hit: 0 };
+function elCfg() { const c = store.get('eleven', {}) || {}; return { on: !!c.on, key: (c.key || '').trim(), voice: c.voice || '', vname: c.vname || '', model: c.model || 'eleven_flash_v2_5' }; }
+function elSave(o) { store.set('eleven', Object.assign(elCfg(), o)); EL.offUntil = 0; EL.warned = false; }
+function elActive() { const c = elCfg(); return c.on && !!c.key && !!c.voice && Date.now() > EL.offUntil; }
+const elSpeed = () => Math.max(0.7, Math.min(1.2, S.settings.rate || 1.05));
+const elId = (c, text) => 'https://lektor.invalid/' + encodeURIComponent(c.voice) + '/' + c.model + '/' + elSpeed().toFixed(2) + '/' + encodeURIComponent(text);
+async function elCacheGet(id) {
+  if (EL.mem.has(id)) return EL.mem.get(id);
   try {
-    const u = new SpeechSynthesisUtterance(sayNums(text));
-    u.lang = 'pl-PL'; u.rate = S.settings.rate || 1.05;
-    const v = (S.settings.voiceName && voices.find(v => v.voiceURI === S.settings.voiceName)) || voices.find(v => /^pl/i.test(v.lang));
-    if (v) u.voice = v;
-    speechSynthesis.speak(u);
-  } catch (e) {}
+    if (!('caches' in window)) return null;
+    const r = await (await caches.open(EL_CACHE)).match(id);
+    if (!r) return null;
+    const b = await r.blob(); EL.mem.set(id, b); return b;
+  } catch (e) { return null; }
+}
+async function elCachePut(id, blob) {
+  EL.mem.set(id, blob);
+  try { if ('caches' in window) await (await caches.open(EL_CACHE)).put(id, new Response(blob, { headers: { 'Content-Type': 'audio/mpeg' } })); } catch (e) {}
+}
+async function elReq(c, path, opt) {
+  const r = await fetch(EL_API + path, Object.assign({}, opt, { headers: Object.assign({ 'xi-api-key': c.key }, opt && opt.headers) }));
+  if (!r.ok) {
+    let m = '';
+    try { const j = await r.json(), d = j.detail || j; m = typeof d === 'string' ? d : (d.message || d.status || ''); } catch (e) {}
+    const er = new Error('błąd ' + r.status + (m ? ': ' + m : '')); er.status = r.status; throw er;
+  }
+  return r;
+}
+async function elFetch(c, text) {
+  const body = { text, model_id: c.model, voice_settings: { stability: 0.5, similarity_boost: 0.75, speed: elSpeed() } };
+  if (/flash|turbo/.test(c.model)) body.language_code = 'pl';
+  const r = await elReq(c, 'text-to-speech/' + encodeURIComponent(c.voice) + '?output_format=mp3_44100_64', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'audio/mpeg' }, body: JSON.stringify(body) });
+  return r.blob();
+}
+function elFail(e) {
+  logNote('!! lektor ElevenLabs: ' + ((e && e.message) || e));
+  EL.offUntil = Date.now() + (e && (e.status === 401 || e.status === 403) ? 3600e3 : 120e3);
+  if (!EL.warned) { EL.warned = true; toast('Lektor ElevenLabs nie odpowiada (' + (e && e.status ? 'błąd ' + e.status : 'brak sieci') + '). Mówi lektor telefonu.', 4000); }
+}
+function elPlay(blob) {
+  return new Promise((res) => {
+    const a = EL.audio || (EL.audio = new Audio()), url = URL.createObjectURL(blob);
+    let t = 0;
+    const done = (ok) => { clearTimeout(t); a.onended = a.onerror = null; URL.revokeObjectURL(url); res(ok); };
+    t = setTimeout(() => done(true), 15000);
+    a.onended = () => done(true); a.onerror = () => done(false);
+    a.src = url;
+    try { const p = a.play(); if (p && p.catch) p.catch(() => done(false)); } catch (e) { done(false); }
+  });
+}
+async function elSay(text) {
+  const c = elCfg(), id = elId(c, text);
+  let b = await elCacheGet(id);
+  if (b) EL.hit++;
+  else {
+    const f = elFetch(c, text).then(async (bl) => { await elCachePut(id, bl); EL.got++; return bl; });
+    f.catch(elFail);
+    b = await Promise.race([f.catch(() => null), new Promise(r => setTimeout(() => r(null), EL_WAIT))]);
+  }
+  if (b && await elPlay(b)) return;
+  await sysSpeak(text);
+}
+function elStop() { try { if (EL.audio) EL.audio.pause(); } catch (e) {} EL.q = Promise.resolve(); }
+async function elInfo(msg) {
+  const c = elCfg();
+  let n = 0;
+  try { if ('caches' in window) n = (await (await caches.open(EL_CACHE)).keys()).length; } catch (e) {}
+  $('#el-info').textContent = (msg ? msg + ' ' : '') + (!c.key ? 'Wpisz klucz i stuknij „Sprawdź klucz”.' : !c.voice ? 'Wybierz głos (najpierw „Sprawdź klucz”).' : c.on ? 'Włączony: ' + (c.vname || c.voice) + '.' : 'Wyłączony.') + ' Zapamiętane zdania w telefonie: ' + n + '.';
+}
+function elFillVoices(list, keep) {
+  const sel = $('#el-voice'); sel.innerHTML = '';
+  const add = (v, t) => { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o); };
+  if (!list.length) add('', '(brak głosów)');
+  list.forEach(v => add(v.voice_id, v.name + (v.category && v.category !== 'premade' ? ' (' + v.category + ')' : '')));
+  sel.value = list.some(v => v.voice_id === keep) ? keep : (list[0] ? list[0].voice_id : '');
+}
+async function elTest() {
+  const c = elCfg();
+  if (!c.key) { elInfo(); return; }
+  $('#el-info').textContent = 'Sprawdzam…';
+  try {
+    const j = await (await elReq(c, 'voices')).json(), list = (j.voices || []).slice().sort((a, b) => a.name.localeCompare(b.name));
+    store.set('elvoices', list.map(v => ({ voice_id: v.voice_id, name: v.name, category: v.category })));
+    elFillVoices(list, c.voice);
+    const v = list.find(x => x.voice_id === $('#el-voice').value);
+    elSave({ voice: v ? v.voice_id : '', vname: v ? v.name : '' });
+    let use = '';
+    try { const u = await (await elReq(c, 'user/subscription')).json(); if (u.character_limit) use = 'Wykorzystane w tym okresie: ' + u.character_count + ' z ' + u.character_limit + ' kredytów.'; } catch (e) {}
+    elInfo('Klucz działa, głosów: ' + list.length + '.' + (use ? ' ' + use : ''));
+  } catch (e) { elInfo('Nie działa (' + ((e && e.message) || e) + ').'); }
 }
 
 /* ---------------- UI helpers ---------------- */
@@ -3498,7 +3623,7 @@ function gridShot(tag, info) {
 function logHead() {
   const st = S.track && S.track.getSettings ? S.track.getSettings() : {};
   return ['Oko Tarczy ' + APP_VERSION + '  ' + new Date().toLocaleString('pl-PL'), navigator.userAgent,
-    'Kamera: ' + S.vw + '×' + S.vh + ' ' + (st.frameRate || '?') + ' kl/s, 4K ' + (S.settings.cam4k ? 'tak' : 'nie') + ', latarka ' + (S.settings.torch ? 'tak' : 'nie') + ', śledzenie ' + (S.settings.track ? 'tak' : 'nie') + ', karta graficzna ' + (G.ok ? 'tak' : (S.settings.gpu === false ? 'wyłączona' : G.failed ? 'błąd' : 'nie')) + ', model AI ' + (S.settings.ai || 'on') + (AI.sess ? ' ' + AI.backend + (AI.n ? ' ' + Math.round(AI.ms / AI.n) + ' ms' : '') : AI.err ? ' błąd' : '') + (S.proc ? ', przetwarzanie ' + S.proc.pw + '×' + S.proc.ph : ''),
+    'Kamera: ' + S.vw + '×' + S.vh + ' ' + (st.frameRate || '?') + ' kl/s, 4K ' + (S.settings.cam4k ? 'tak' : 'nie') + ', latarka ' + (S.settings.torch ? 'tak' : 'nie') + ', śledzenie ' + (S.settings.track ? 'tak' : 'nie') + ', karta graficzna ' + (G.ok ? 'tak' : (S.settings.gpu === false ? 'wyłączona' : G.failed ? 'błąd' : 'nie')) + ', lektor ' + (elCfg().on ? 'ElevenLabs' + (elActive() ? '' : ' (przerwa)') + ' z pamięci ' + EL.hit + ', pobrane ' + EL.got : 'telefon') + ', model AI ' + (S.settings.ai || 'on') + (AI.sess ? ' ' + AI.backend + (AI.n ? ' ' + Math.round(AI.ms / AI.n) + ' ms' : '') : AI.err ? ' błąd' : '') + (S.proc ? ', przetwarzanie ' + S.proc.pw + '×' + S.proc.ph : ''),
     'Każda linia: średnio/najdłużej w ms, ile razy na sekundę.', ''];
 }
 // Dragging: touch anywhere, the selected point follows at half speed (precise, finger never covers it).
@@ -4843,7 +4968,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.10.31d';
+const APP_VERSION = '2026.10.31e';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
@@ -5448,6 +5573,7 @@ function openSettings() {
   $('#opt-thr').value = S.settings.thr; $('#opt-thr-v').textContent = S.settings.thr;
   $('#opt-shadow').checked = S.settings.shadows; $('#opt-auto').checked = S.settings.autoNext; $('#opt-covoice').checked = S.settings.coVoice !== false; $('#opt-sayeach').checked = S.settings.sayEach !== false;
   $('#opt-fun').checked = !!S.settings.fun; fillVoices();
+  { const c = elCfg(); $('#el-on').checked = c.on; $('#el-key').value = c.key; $('#el-model').value = c.model; elFillVoices(store.get('elvoices', []) || [], c.voice); elInfo(); }
   $('#opt-rate').value = S.settings.rate || 1.05; $('#opt-rate-v').textContent = (+(S.settings.rate || 1.05)).toFixed(2);
   $('#opt-torch').checked = !!S.settings.torch; $('#torch-info').textContent = '';
   $('#opt-lock').checked = S.settings.lock; $('#opt-mask').checked = S.settings.mask; $('#opt-diag').checked = S.settings.diag;
@@ -5471,11 +5597,18 @@ $('#opt-auto').addEventListener('change', (e) => { S.settings.autoNext = e.targe
 $('#opt-covoice').addEventListener('change', (e) => { S.settings.coVoice = e.target.checked; saveSettings(); });
 $('#opt-sayeach').addEventListener('change', (e) => { S.settings.sayEach = e.target.checked; saveSettings(); });
 $('#opt-fun').addEventListener('change', (e) => { S.settings.fun = e.target.checked; saveSettings(); });
-const voiceSample = () => { const was = S.settings.voice; S.settings.voice = true; try { speechSynthesis.cancel(); } catch (e) {} speak('Potrójne 20. Razem 180. ' + funPick('max')); S.settings.voice = was; };
+const voiceSample = () => { const was = S.settings.voice; S.settings.voice = true; try { speechSynthesis.cancel(); } catch (e) {} elStop(); speak('Potrójne 20. 180! ' + funPick('max')); S.settings.voice = was; };
 $('#opt-voicename').addEventListener('change', (e) => { S.settings.voiceName = e.target.value; saveSettings(); voiceSample(); });
 $('#opt-rate').addEventListener('input', (e) => { S.settings.rate = +e.target.value; $('#opt-rate-v').textContent = (+e.target.value).toFixed(2); saveSettings(); });
 $('#opt-rate').addEventListener('change', voiceSample);
 $('#opt-voice-listen').addEventListener('click', voiceSample);
+$('#el-on').addEventListener('change', (e) => { elSave({ on: e.target.checked }); elInfo(); if (e.target.checked) voiceSample(); });
+$('#el-key').addEventListener('change', (e) => { elSave({ key: e.target.value.trim() }); elInfo(); });
+$('#el-voice').addEventListener('change', (e) => { const o = e.target.selectedOptions[0]; elSave({ voice: e.target.value, vname: o ? o.textContent : '' }); elInfo(); voiceSample(); });
+$('#el-model').addEventListener('change', (e) => { elSave({ model: e.target.value }); elInfo(); });
+$('#el-test').addEventListener('click', () => { elSave({ key: $('#el-key').value.trim() }); elTest(); });
+$('#el-listen').addEventListener('click', voiceSample);
+$('#el-clear').addEventListener('click', async () => { EL.mem.clear(); try { await caches.delete(EL_CACHE); } catch (e) {} elInfo('Usunięte.'); });
 $('#opt-mask').addEventListener('change', (e) => { S.settings.mask = e.target.checked; S.maskImg = null; saveSettings(); });
 $('#opt-diag').addEventListener('change', (e) => { S.settings.diag = e.target.checked; saveSettings(); });
 $('#opt-lock').addEventListener('change', async (e) => {

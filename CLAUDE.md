@@ -275,6 +275,9 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - Od 2026.10.31c styl czytania (przegląd z Piotrem): `speak` zamienia liczby na słowa (`numPl`, `sayNums`), bo lektor czytał „1.” jak „pierwsze”. Koniec tury: sama liczba („sto!”), przy zerze „Bez punktów”.
   Podpowiedź zakończenia tylko na początku tury i po 2. lotce. Kilku graczy: „Piotr, zostało 81”, wygrana w X01/Cricket „Leg wygrywa …”. Cricket: „22 punkty” (odmiana), sam gracz słyszy „Otwarte: 15, 16, bull”.
   Ustawienia wykrywania, „Czytaj każdą lotkę” (`S.settings.sayEach`, domyślnie wł.; wyłączone: przy lotkach z kamery tylko wynik tury, podpowiedź, następny cel, przerzut i wygrana; `dartLine`). Wpisywanie ręczne zawsze czyta lotkę.
+- Od 2026.10.31e lektor ElevenLabs (Piotr; głosy Edge nie są dostępne dla stron na Androidzie): Ustawienia wykrywania, „Lektor ElevenLabs”, klucz API gracza w `localStorage` `eleven` (nigdy w kodzie), „Sprawdź klucz” (`/v1/voices`, `/v1/user/subscription`), głos, jakość (`eleven_flash_v2_5` domyślnie z `language_code: 'pl'`, albo `eleven_multilingual_v2`).
+  `speak` → `elSay` (kolejka `EL.q`): zdanie (po `sayNums`) z pamięci Cache API `lektor-el` (klucz: głos/model/tempo/tekst), inaczej pobranie; odpowiedź > `EL_WAIT` = 2,5 s, brak sieci albo błąd → `sysSpeak` (lektor telefonu), błąd daje przerwę 2 min (401/403: 1 h) i wpis `!!`. `speak('')` nadal odblokowuje mowę Androida. Dziennik: `lektor ElevenLabs z pamięci N, pobrane M`.
+  Playwright (atrapa API): zły klucz 401, pamięć działa też po odświeżeniu, wolna odpowiedź i brak sieci → lektor telefonu. Na S26 i z prawdziwym API jeszcze nie sprawdzone (CORS, odtwarzanie dźwięku bez stuknięcia).
 - Pomysły na dalej: Killer, Cricket „cut-throat”, statystyki trafień (mapa tarczy), eksport historii.
 
 ## Model AI grota (od 2026.10.25b)
