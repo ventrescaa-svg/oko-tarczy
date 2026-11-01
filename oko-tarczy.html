@@ -443,6 +443,48 @@ input[type=range]{accent-color:var(--cream);width:100%}
   @keyframes winIn{from{opacity:0;transform:translateY(12px) scale(.97)}}
   .stage-msg:not([hidden]){animation:rise .3s var(--ease) both}
 }
+/* Tablica wyników na drugim urządzeniu (2026.11.01b) */
+.menu .btn[data-act="board"]{--ic:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2' y='4' width='20' height='13' rx='2'/%3E%3Cpath d='M8 21h8M12 17v4'/%3E%3C/svg%3E")}
+.tb-qr{display:grid;place-items:center;padding:12px;border-radius:var(--r-sm);background:#fff;width:max-content;margin:8px auto 4px}
+.tb-qr img,.tb-qr svg{display:block;width:220px;height:220px;image-rendering:pixelated}
+.tb-code{font:700 2.2rem/1 var(--display);letter-spacing:.18em;text-align:center;color:var(--cream)}
+#tb-in{text-transform:uppercase;letter-spacing:.2em;font:700 1.4rem/1 var(--display);text-align:center}
+#scr-tb{position:fixed;inset:0;background:var(--felt);overflow:auto}
+.tb{min-height:100%;box-sizing:border-box;display:flex;flex-direction:column;gap:clamp(8px,1.6vh,18px);padding:clamp(10px,2vw,26px)}
+.tb-main{display:flex;flex-direction:column;gap:clamp(8px,1.6vh,18px)}
+.tb-main[hidden],.tb-wait[hidden]{display:none}
+.tb-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.tb-brand{font:700 1.3rem/1 var(--display);text-transform:uppercase;letter-spacing:.06em}
+.tb-brand b{color:var(--red)}
+.tb-game{flex:1;min-width:0;font:600 clamp(1rem,2.2vw,1.6rem)/1.1 var(--display);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.tb-top .btn{min-height:40px;padding:0 12px}
+.tb-conn{display:inline-flex;align-items:center;gap:7px;font-size:.9rem;color:var(--muted)}
+.tb-conn::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--amber)}
+.tb-conn[data-s="ok"]::before{background:var(--green)}
+.tb-conn[data-s="off"]::before{background:var(--red)}
+.tb-status{font:600 clamp(1rem,2.4vw,1.7rem)/1.2 var(--display);letter-spacing:.04em;color:var(--amber);text-align:center;min-height:1.2em}
+.tb-players{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:clamp(8px,1.4vw,16px)}
+.tb-p{position:relative;padding:clamp(10px,1.6vw,20px);border-radius:var(--r);border:1px solid var(--line);background:rgba(6,9,7,.55);display:grid;gap:4px;opacity:.75}
+.tb-p.cur{opacity:1;border-color:var(--cream);background:linear-gradient(180deg, rgba(233,220,186,.10), rgba(6,9,7,.6))}
+.tb-p.cur::before{content:"";position:absolute;left:0;top:14px;bottom:14px;width:5px;border-radius:0 3px 3px 0;background:var(--red)}
+.tb-p .n{font:700 clamp(1.1rem,2.6vw,2rem)/1.1 var(--display);text-transform:uppercase;letter-spacing:.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tb-p .r{font:700 clamp(3.4rem,11vw,9rem)/.95 var(--display);color:var(--cream);font-variant-numeric:tabular-nums}
+.tb-p .r.bust{color:var(--amber)}
+.tb-p .s{font-size:clamp(.85rem,1.6vw,1.15rem);color:var(--muted)}
+.tb-solo .tb-p .r{font-size:clamp(6rem,24vw,18rem);text-align:center}
+.tb-solo .tb-p .n,.tb-solo .tb-p .s{text-align:center}
+.tb-turn{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:clamp(6px,1.2vw,14px);align-items:stretch}
+.tb-turn .slot{min-height:clamp(64px,13vh,140px);font-size:clamp(2.2rem,6vw,5rem)}
+.tb-sum{display:grid;place-items:center;min-width:clamp(80px,14vw,180px);border-radius:var(--r-sm);border:1px solid var(--line-2);background:rgba(233,220,186,.06)}
+.tb-sum small{font:600 .8rem/1 var(--body);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.tb-sum b{font:700 clamp(2.2rem,6vw,5rem)/1 var(--display);color:var(--cream)}
+.tb-co{text-align:center;font:600 clamp(1.2rem,3.4vw,2.6rem)/1.15 var(--display);letter-spacing:.03em;color:var(--fg);min-height:1.15em;margin:0}
+.tb-co b{color:#5fd892}
+#tb-cricket .cr{font-size:clamp(1.3rem,3vw,2.4rem)}
+#tb-cricket .cr thead th{font-size:clamp(.8rem,1.6vw,1.2rem);max-width:none}
+.tb-win{padding:clamp(14px,3vw,30px);border-radius:var(--r);background:linear-gradient(180deg, #f3e8c9, var(--cream));color:var(--ink);text-align:center;font:700 clamp(1.8rem,5vw,4rem)/1.1 var(--display);text-transform:uppercase;letter-spacing:.03em}
+.tb-wait{margin:auto;text-align:center;display:grid;gap:12px;max-width:520px;color:var(--muted)}
+.tb-wait b{font:700 clamp(1.6rem,4vw,2.6rem)/1.1 var(--display);color:var(--fg);text-transform:uppercase;letter-spacing:.04em}
 </style>
 </head>
 <body>
@@ -535,6 +577,7 @@ input[type=range]{accent-color:var(--cream);width:100%}
         <button id="home-stats" class="tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>Statystyki<small>Średnie, historia</small></span></button>
         <button id="home-calib" class="tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M1 12h4M19 12h4"/></svg><span>Kalibracja<small>Siatka, zoom</small></span></button>
         <button id="home-settings" class="tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg><span>Ustawienia<small>Głos, AI, bateria</small></span></button>
+        <button id="home-tb" class="tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg><span>Tablica wyników<small>Wynik na tablecie</small></span></button>
         <button id="home-intro" class="tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/></svg><span>Ustawienie<small>Gdzie postawić telefon</small></span></button>
       </div>
 
@@ -542,6 +585,29 @@ input[type=range]{accent-color:var(--cream);width:100%}
         <button id="home-manual" class="btn ghost">Licz ręcznie, bez kamery</button>
         <p id="home-ver"></p>
       </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SCOREBOARD on another device (tablet, laptop, TV) ============ -->
+<section id="scr-tb" hidden>
+  <div class="tb">
+    <header class="tb-top">
+      <span class="tb-brand">Oko <b>Tarczy</b></span>
+      <span class="tb-game" id="tb-game"></span>
+      <span class="tb-conn" id="tb-conn" data-s="wait">Łączę…</span>
+      <button id="tb-voice" class="btn ghost">Głos: wył.</button>
+      <button id="tb-full" class="btn ghost">Pełny ekran</button>
+      <button id="tb-exit" class="btn ghost">Wyjdź</button>
+    </header>
+    <div id="tb-wait" class="tb-wait"><b>Czekam na telefon</b><span id="tb-wait-t">Na telefonie otwórz Oko Tarczy, „Tablica wyników” i włącz „Udostępniaj wynik tablicy”.</span></div>
+    <div id="tb-main" class="tb-main" hidden>
+      <p class="tb-status" id="tb-status"></p>
+      <div class="tb-players" id="tb-players"></div>
+      <div class="tb-turn" id="tb-turn"><div class="slot empty">–</div><div class="slot empty">–</div><div class="slot empty">–</div><div class="tb-sum"><small id="tb-sum-l">Tura</small><b id="tb-sum" class="num">0</b></div></div>
+      <p class="tb-co" id="tb-co"></p>
+      <div id="tb-cricket"></div>
+      <div class="tb-win" id="tb-win" hidden></div>
     </div>
   </div>
 </section>
@@ -662,6 +728,7 @@ input[type=range]{accent-color:var(--cream);width:100%}
       <button class="btn" data-act="stats">Statystyki</button>
       <button class="btn" data-act="calib">Kalibracja kamery</button>
       <button class="btn" data-act="settings">Ustawienia wykrywania</button>
+      <button class="btn" data-act="board">Tablica wyników na tablecie</button>
       <button class="btn" data-act="cam">Ukryj obraz z kamery</button>
       <button class="btn" data-act="full">Pełny ekran</button>
       <button class="btn" data-act="intro">Instrukcja ustawienia</button>
@@ -697,6 +764,30 @@ input[type=range]{accent-color:var(--cream);width:100%}
     <div class="names" id="names"></div>
     <label class="toggle" data-m="x01"><span>Kończenie na podwójnym (double out)</span><input type="checkbox" id="opt-dout" checked></label>
     <div class="btn-row"><button id="new-go" class="btn primary">Zacznij</button><button id="new-cancel" class="btn ghost">Anuluj</button></div>
+  </div>
+</div>
+
+<div id="sh-tb" class="backdrop" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="tb-title">
+    <h3 id="tb-title">Tablica wyników</h3>
+    <p class="hint">Duży wynik na tablecie, laptopie albo telewizorze z przeglądarką. Telefon dalej liczy, a drugie urządzenie tylko pokazuje wynik. Oba muszą mieć internet: połączenie zestawia darmowy serwer PeerJS, potem wynik idzie prosto z telefonu (w domowym Wi-Fi zwykle bez wychodzenia do internetu).</p>
+    <div class="set-group">
+      <p class="set-h">Ten telefon liczy</p>
+      <label class="toggle"><span>Udostępniaj wynik tablicy</span><input type="checkbox" id="tb-share"></label>
+      <div id="tb-host" hidden>
+        <div class="tb-qr" id="tb-qr"></div>
+        <p class="tb-code num" id="tb-code"></p>
+        <p class="hint" id="tb-info"></p>
+        <p class="hint">Na tablecie zeskanuj kod QR aparatem albo otwórz Oko Tarczy, „Tablica wyników” i wpisz kod.</p>
+        <button id="tb-newcode" class="btn ghost">Nowy kod (odłącza tablice)</button>
+      </div>
+    </div>
+    <div class="set-group">
+      <p class="set-h">To urządzenie ma być tablicą</p>
+      <div class="field"><label for="tb-in">Kod z telefonu</label><input type="text" id="tb-in" maxlength="6" autocomplete="off" spellcheck="false" autocapitalize="characters" placeholder="ABC234"></div>
+      <button id="tb-go" class="btn primary">Pokaż tablicę</button>
+    </div>
+    <div class="btn-row"><button id="tb-close" class="btn">Zamknij</button></div>
   </div>
 </div>
 
@@ -3219,15 +3310,18 @@ function loadGame() {
   if (g && g.players && g.cur) return g;
   return C.createGame({ start: 501, players: ['Gracz 1'], doubleOut: true });
 }
-function saveGame() {
+// The game without pictures and detector data: what is saved, and what the scoreboard on another device gets.
+function gameForStore() {
   const strip = (d) => ({ num: d.num, mult: d.mult, pts: d.pts, label: d.label, auto: !!d.auto, unsure: !!d.unsure, fixed: !!d.fixed });
-  const g = Object.assign({}, S.game, {
+  return Object.assign({}, S.game, {
     cur: { p: S.game.cur.p, darts: S.game.cur.darts.map(strip) },
     turns: S.game.turns.map(t => Object.assign({}, t, { darts: t.darts.map(strip) }))
   });
-  store.set('game', g);
 }
+function saveGame() { store.set('game', gameForStore()); }
 S.game = loadGame();
+// Scoreboard link (tablet); here because renderGame/setStatus/speak use it (code further down, 'Tablica wyników').
+const TB = { peer: null, conns: [], conn: null, last: '', err: '', viewer: false, code: '', g: null, st: null, retry: 0, tm: 0, lock: null };
 
 /* ---------------- Speech ---------------- */
 let voices = [];
@@ -3261,6 +3355,7 @@ function numPl(n) {
 const sayNums = (t) => String(t).replace(/\d+/g, (x) => numPl(+x));
 // speak('') after a tap unlocks speech on Android, so the empty text still goes to the phone's voice.
 function speak(text) {
+  if (text) tbSay(text);   // the scoreboard on another device may speak too
   if (!S.settings.voice) return;
   const t = sayNums(text || '');
   if (t && elActive()) { EL.q = EL.q.then(() => elSay(t)).catch(() => {}); return; }
@@ -3417,12 +3512,14 @@ function setStatus(s) {
   if (S.status === s) return;
   S.status = s;
   const c = $('#status'); c.dataset.s = s; $('#status-t').textContent = STATUS_TEXT[s] || s;
+  tbPush();
 }
 
 function showScreen(which) {
   $('#scr-intro').hidden = which !== 'intro';
   $('#scr-home').hidden = which !== 'home';
-  $('#scr-stage').hidden = which === 'intro' || which === 'home';
+  $('#scr-stage').hidden = which === 'intro' || which === 'home' || which === 'tb';
+  $('#scr-tb').hidden = which !== 'tb';
   if (which === 'home') renderHome();
   S.mode = which;
   const st = $('#scr-stage');
@@ -3434,6 +3531,7 @@ function showScreen(which) {
   $('#btn-key').hidden = S.manual;
   if (which === 'cal') { updateReadout(); $('#cal-done').textContent = S.afterCal === 'home' ? 'Gotowe' : 'Gotowe, gramy'; }
   requestAnimationFrame(sizeOverlay);
+  tbPush();
 }
 
 /* ---------------- Camera ---------------- */
@@ -4696,8 +4794,8 @@ function winText(g, stats) {
   return 'Wynik ' + o.score;
 }
 const MARK = ['', '/', 'X', '⊗'];
-function renderCricket(g, live, p) {
-  const host = $('#cricket');
+function renderCricket(g, live, p, host) {
+  host = host || $('#cricket');
   const names = g.players.map((pl, i) => `<th class="${i === p ? 'cur' : ''}">${escapeHtml(pl.name)}</th>`).join('');
   const rows = C.CRICKET_NUMS.map(n => {
     const dead = live.every(s => s.m[n] >= 3);
@@ -4715,6 +4813,36 @@ function bigOf(g, s, round) {
   if (m === 'cricket' && g.players.length === 1) return C.CRICKET_NUMS.filter(n => s.m[n] >= 3).length + '/7';
   return String(s.s);
 }
+// One dart box of the current turn (phone and the scoreboard on another device).
+function fillSlot(el, d, f, i) {
+  el.className = 'slot ' + slotClass(d) + (d && d.unsure ? ' unsure' : '') + (f === 'void' ? ' void' : '') + (f === 'bust' ? ' bust' : '') + (f === 'nohit' ? ' nohit' : '');
+  el.innerHTML = d ? (d.pts === 0 ? '0' : escapeHtml(d.label)) + (!d.auto ? '<span class="src">ręcznie</span>' : d.fixed ? '<span class="src">poprawka</span>' : '') : '–';
+  el.setAttribute('aria-label', 'Rzut ' + (i + 1) + (d ? ': ' + d.label : ''));
+}
+const sumLabel = (m) => m === 'cricket' ? 'Znaczn.' : m === 'atc' ? 'Traf.' : 'Tura';
+const turnSum = (m, v) => v.state === 'bust' ? '0' : m === 'cricket' ? String(v.marks) : m === 'bob27' && v.total > 0 ? '+' + v.total : String(v.total);
+// Line under the darts: checkout route (X01) or what to aim at (training modes).
+function hintHtml(g, v, live, p) {
+  if (v.state !== 'open' || g.winner != null) return '';
+  const m = C.modeOf(g);
+  if (m === 'x01') {
+    const left = 3 - g.cur.darts.length;
+    const route = C.checkout(v.rem, left, g.doubleOut);
+    if (route) return 'Zamknij: <b>' + route.map(d => d.label).join(' &nbsp;') + '</b>';
+    return v.rem <= 170 && g.doubleOut && left === 3 ? 'Brak zamknięcia trzema lotkami' : '';
+  }
+  if (m === 'atc') {
+    const t = C.targetOf(g, live[p], 0);
+    return t ? 'Cel: <b>' + escapeHtml(sayTarget(g, t)) + '</b> · ' + t.n + ' z ' + t.of : '';
+  }
+  if (m === 'bob27' || m === 'shanghai') {
+    const t = C.targetOf(g, v.before, v.played[p]);
+    return 'Cel: <b>' + t.label + '</b>' + (m === 'bob27' ? ' · trafienie ' + (t.num === 25 ? 50 : t.num * 2) : '');
+  }
+  if (m === 'score') return 'Punkty';
+  if (m === 'cricket') return g.players.length > 1 ? 'Punkty' : 'Zamknięte pola';
+  return '';
+}
 function renderGame() {
   const g = S.game, p = g.cur.p, m = C.modeOf(g);
   const v = C.currentView(g);
@@ -4728,32 +4856,11 @@ function renderGame() {
   const rem = $('#cur-rem');
   rem.classList.toggle('bust', v.state === 'bust');
   rem.innerHTML = v.state === 'bust' ? v.before + '<small>PRZERZUT</small>' : escapeHtml(bigOf(g, live[p], v.played[p] + (g.cur.darts.length >= 3 ? 1 : 0)));
-  $$('.slot').forEach((el, i) => {
-    const d = g.cur.darts[i], f = v.flags[i];
-    el.className = 'slot ' + slotClass(d) + (d && d.unsure ? ' unsure' : '') + (f === 'void' ? ' void' : '') + (f === 'bust' ? ' bust' : '') + (f === 'nohit' ? ' nohit' : '');
-    el.innerHTML = d ? (d.pts === 0 ? '0' : d.label) + (!d.auto ? '<span class="src">ręcznie</span>' : d.fixed ? '<span class="src">poprawka</span>' : '') : '–';
-    el.setAttribute('aria-label', 'Rzut ' + (i + 1) + (d ? ': ' + d.label : ''));
-  });
-  const sumL = m === 'cricket' ? 'Znaczn.' : m === 'atc' ? 'Traf.' : 'Tura';
-  $('#turn-sum-l').textContent = sumL;
-  $('#turn-sum').textContent = v.state === 'bust' ? '0' : m === 'cricket' ? String(v.marks) : m === 'bob27' && v.total > 0 ? '+' + v.total : String(v.total);
+  $$('#scr-stage .slot').forEach((el, i) => fillSlot(el, g.cur.darts[i], v.flags[i], i));
+  $('#turn-sum-l').textContent = sumLabel(m);
+  $('#turn-sum').textContent = turnSum(m, v);
   const co = $('#checkout');
-  co.innerHTML = '';
-  if (v.state === 'open' && g.winner == null) {
-    if (m === 'x01') {
-      const left = 3 - g.cur.darts.length;
-      const route = C.checkout(v.rem, left, g.doubleOut);
-      if (route) co.innerHTML = 'Zamknij: <b>' + route.map(d => d.label).join(' &nbsp;') + '</b>';
-      else if (v.rem <= 170 && g.doubleOut && left === 3) co.textContent = 'Brak zamknięcia trzema lotkami';
-    } else if (m === 'atc') {
-      const t = C.targetOf(g, live[p], 0);
-      if (t) co.innerHTML = 'Cel: <b>' + escapeHtml(sayTarget(g, t)) + '</b> · ' + t.n + ' z ' + t.of;
-    } else if (m === 'bob27' || m === 'shanghai') {
-      const t = C.targetOf(g, v.before, v.played[p]);
-      co.innerHTML = 'Cel: <b>' + t.label + '</b>' + (m === 'bob27' ? ' · trafienie ' + (t.num === 25 ? 50 : t.num * 2) : '');
-    } else if (m === 'score') co.textContent = 'Punkty';
-    else if (m === 'cricket') co.textContent = g.players.length > 1 ? 'Punkty' : 'Zamknięte pola';
-  }
+  co.innerHTML = hintHtml(g, v, live, p);
   const crk = $('#cricket');
   crk.hidden = m !== 'cricket';
   if (m === 'cricket') renderCricket(g, live, p);
@@ -4777,6 +4884,7 @@ function renderGame() {
     co.textContent = '';
   } else win.hidden = true;
   $('#btn-next').disabled = g.winner != null;
+  tbPush();
 }
 
 /* ---------------- Overlay drawing ---------------- */
@@ -5190,7 +5298,7 @@ function download(blob, name) {
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
   document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
 }
-$$('.slot').forEach(el => el.addEventListener('click', () => {
+$$('#scr-stage .slot').forEach(el => el.addEventListener('click', () => {
   const i = +el.dataset.i;
   if (i < S.game.cur.darts.length) openFix(i);
   else if (C.turnOpen(S.game)) openFix(-1);
@@ -5217,7 +5325,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.11.01a';
+const APP_VERSION = '2026.11.01b';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
@@ -5404,12 +5512,18 @@ function makeZip(files) {
   return new Blob([...parts, ...central, new Uint8Array(e.buffer)], { type: 'application/zip' });
 }
 // Samples (and calibration pictures) -> ZIP parts of about `part` bytes, each a complete export with its own manifest.
+// Which phone made the data (random, kept in this browser): with two phones at one board their throws can be paired later by time.
+function deviceTag() {
+  let d = store.get('device', '');
+  if (!/^[a-z0-9]{6}$/.test(d)) { d = Array.from(crypto.getRandomValues(new Uint8Array(6)), b => 'abcdefghijkmnpqrstuvwxyz23456789'[b % 32]).join(''); store.set('device', d); }
+  return d;
+}
 async function packDataset(recs, cals, part, withLog) {
   const parts = [];
   let files = [], meta = [], cmeta = [], size = 0;
   const flush = () => {
     if (!files.length) return;
-    const manifest = { app: APP_VERSION, exported: new Date().toISOString(), ua: navigator.userAgent, count: meta.length,
+    const manifest = { app: APP_VERSION, exported: new Date().toISOString(), ua: navigator.userAgent, device: deviceTag(), count: meta.length,
       part: parts.length + 1, total: recs.length, cals: cmeta,
       note: 'crop px = (proc px - crop.x0/y0) * crop.k; proc px = (video px - proc.x/y) * proc.s; board mm -> proc px via proc.Hp', samples: meta };
     files.unshift({ name: 'manifest.json', data: new TextEncoder().encode(JSON.stringify(manifest)) });
@@ -5664,6 +5778,7 @@ $('#sh-menu').addEventListener('click', async (e) => {
   else if (act === 'cam') { S.camHidden = !S.camHidden; showScreen('game'); }
   else if (act === 'full') { try { await document.documentElement.requestFullscreen(); if (screen.orientation && screen.orientation.lock) screen.orientation.lock(screen.orientation.type).catch(() => {}); } catch (err) { toast('Pełny ekran niedostępny.'); } }
   else if (act === 'intro') showScreen('intro');
+  else if (act === 'board') openTb();
   else if (act === 'home') { setStatus('idle'); hideStageMsg(); showScreen('home'); }
 });
 
@@ -5876,15 +5991,245 @@ $('#opt-off-reset').addEventListener('click', () => { S.point = { mm: 14, sample
 $('#opt-voice-test').addEventListener('click', () => { const was = S.settings.voice; S.settings.voice = true; speak('potrójne 20. Razem 180'); S.settings.voice = was; });
 $('#set-close').addEventListener('click', () => closeSheet('#sh-set'));
 
+/* ---------------- Tablica wyników na drugim urządzeniu (2026.11.01b, Piotr 2026-11-01) ----------------
+   The phone that counts registers at the free PeerJS server under a name made from a 6-character code
+   (kept in localStorage 'tablica'); the tablet opens the page with #tablica=CODE and connects over WebRTC.
+   The server only introduces the two devices; the score then goes straight from the phone (or through the
+   PeerJS relay when the network does not allow a direct link). The phone sends the whole game (the saved form)
+   on every change, the camera status and the sentences of the voice; the tablet draws them with the same core. */
+const TB_PEER = 'https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js', TB_PEER_SRI = 'sha384-x0YgkOr/3UOZP2CRDxGW9e0Q+2Qjyr3uJrm4xU32Y7ZCNAo7Cc7bjhrZMi/dwczu';
+const TB_QR = 'https://cdn.jsdelivr.net/npm/qrcode-generator@2.0.4/dist/qrcode.js', TB_QR_SRI = 'sha384-e9EFD6BGC90bkW9aDV5xbbBfzwN7G8YImHao2lfLVKV/hPB0E0go+H3I64h7oHtA';
+const TB_ABC = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';   // no I, O, 0, 1: easy to type
+function tbNewCode() { let s = ''; for (const b of crypto.getRandomValues(new Uint8Array(6))) s += TB_ABC[b % 32]; return s; }
+function tbCfg() {
+  const c = store.get('tablica', {}) || {};
+  if (!/^[A-Z2-9]{6}$/.test(c.code || '')) { c.code = tbNewCode(); store.set('tablica', c); }
+  return c;
+}
+const tbId = (code) => 'oko-tarczy-' + code.toLowerCase();
+const tbUrl = (code) => location.origin + location.pathname + '#tablica=' + code;
+// Tests may point to their own PeerJS server: ?peerhost=localhost:9000
+function tbOpts() {
+  const h = new URLSearchParams(location.search).get('peerhost');
+  if (!h) return { debug: 0 };
+  const [host, port] = h.split(':');
+  return { host, port: +port || 9000, path: '/', secure: false, debug: 0, config: { iceServers: [] } };
+}
+const TB_ERR = { 'unavailable-id': 'kod jest zajęty (czy strona jest otwarta drugi raz?)', network: 'brak połączenia z serwerem', 'server-error': 'serwer nie odpowiada', 'socket-error': 'zerwane połączenie z serwerem', 'socket-closed': 'zerwane połączenie z serwerem', 'browser-incompatible': 'ta przeglądarka nie obsługuje połączeń WebRTC', 'peer-unavailable': 'telefon nie udostępnia teraz wyniku', webrtc: 'nie udało się połączyć urządzeń' };
+const tbErr = (e) => TB_ERR[e && e.type] || (e && e.message) || 'błąd połączenia';
+async function tbLib() { if (!window.Peer) await aiLoadScript(TB_PEER, TB_PEER_SRI); }
+
+/* ---- the phone that counts ---- */
+function tbLater(fn) { clearTimeout(TB.tm); const ms = Math.min(60000, 4000 * Math.pow(2, Math.min(4, TB.retry++))); TB.tm = setTimeout(fn, ms); }
+function tbStop() {
+  clearTimeout(TB.tm);
+  const p = TB.peer; TB.peer = null; TB.conns = []; TB.conn = null;
+  if (p) try { p.destroy(); } catch (e) {}
+}
+async function tbHostStart() {
+  if (TB.viewer || TB.peer || !tbCfg().on) return;
+  const code = tbCfg().code; TB.code = code;
+  try { await tbLib(); } catch (e) { TB.err = 'nie wczytano biblioteki połączeń (brak internetu?)'; tbInfo(); tbLater(tbHostStart); return; }
+  if (TB.peer || !tbCfg().on) return;
+  let peer;
+  try { peer = new Peer(tbId(code), tbOpts()); } catch (e) { TB.err = tbErr(e); tbInfo(); return; }
+  TB.peer = peer; TB.err = 'łączę z serwerem…'; tbInfo();
+  peer.on('open', () => { TB.err = ''; TB.retry = 0; tbInfo(); logNote('tablica: gotowa, kod ' + code); });
+  peer.on('connection', (conn) => {
+    conn.on('open', () => { TB.conns.push(conn); tbPush(true); tbInfo(); logNote('tablica: połączona (' + TB.conns.length + ')'); });
+    conn.on('close', () => { TB.conns = TB.conns.filter(x => x !== conn); tbInfo(); });
+    conn.on('error', () => { TB.conns = TB.conns.filter(x => x !== conn); tbInfo(); });
+  });
+  peer.on('disconnected', () => { setTimeout(() => { if (TB.peer === peer && !peer.destroyed && peer.disconnected) try { peer.reconnect(); } catch (e) {} }, 3000); });
+  peer.on('error', (e) => {
+    if (TB.peer !== peer) return;
+    TB.err = tbErr(e); tbInfo();
+    if (e.type === 'browser-incompatible') return;
+    if (['unavailable-id', 'network', 'server-error', 'socket-error', 'socket-closed', 'ssl-unavailable'].includes(e.type)) { logNote('!! tablica: ' + TB.err); tbStop(); tbLater(tbHostStart); }
+  });
+}
+function tbSend(msg) {
+  for (const c of TB.conns) if (c.open) try { c.send(msg); } catch (e) {}
+}
+// Send the game when what the scoreboard shows has changed.
+function tbPush(force) {
+  if (TB.viewer || !TB.conns.length || !S.game) return;
+  const st = S.mode !== 'game' ? 'Przerwa' : S.manual ? 'Liczenie ręczne' : (STATUS_TEXT[S.status] || '');
+  const msg = { t: 'state', g: gameForStore(), st, v: APP_VERSION };
+  const key = JSON.stringify(msg);
+  if (!force && key === TB.last) return;
+  TB.last = key; tbSend(msg);
+}
+function tbSay(text) { if (!TB.viewer && TB.conns.length) tbSend({ t: 'say', text: String(text) }); }
+
+/* ---- settings sheet (both sides) ---- */
+async function openTb() {
+  const c = tbCfg();
+  $('#tb-share').checked = !!c.on;
+  $('#tb-in').value = (store.get('tablicaView', '') || '');
+  openSheet('#sh-tb');
+  tbInfo();
+  if (c.on) tbQr(c.code);
+}
+function tbInfo() {
+  if (TB.viewer || $('#sh-tb').hidden) return;
+  const c = tbCfg();
+  $('#tb-host').hidden = !c.on;
+  $('#tb-code').textContent = c.code;
+  const n = TB.conns.length;
+  $('#tb-info').textContent = !c.on ? '' : TB.err ? 'Uwaga: ' + TB.err + '.' : !TB.peer || !TB.peer.open ? 'Łączę z serwerem…' : n ? 'Połączone tablice: ' + n + '.' : 'Gotowe, czekam na tablicę.';
+}
+async function tbQr(code) {
+  const box = $('#tb-qr');
+  if (box.dataset.code === code) return;
+  box.innerHTML = ''; box.dataset.code = '';
+  try {
+    if (!window.qrcode) await aiLoadScript(TB_QR, TB_QR_SRI);
+    const q = window.qrcode(0, 'M'); q.addData(tbUrl(code)); q.make();
+    box.innerHTML = q.createSvgTag({ cellSize: 4, margin: 0, scalable: true });
+    box.dataset.code = code;
+  } catch (e) { box.textContent = 'Kod QR niedostępny (brak internetu?). Wpisz kod na tablecie.'; }
+}
+$('#home-tb').addEventListener('click', () => openTb());
+$('#tb-close').addEventListener('click', () => closeSheet('#sh-tb'));
+$('#tb-share').addEventListener('change', (e) => {
+  const c = tbCfg(); c.on = e.target.checked; store.set('tablica', c);
+  TB.retry = 0; TB.err = '';
+  if (c.on) { tbQr(c.code); tbHostStart(); } else tbStop();
+  tbInfo();
+});
+$('#tb-newcode').addEventListener('click', () => {
+  const c = tbCfg(); c.code = tbNewCode(); store.set('tablica', c);
+  tbStop(); TB.retry = 0; TB.err = ''; tbQr(c.code); tbInfo(); tbHostStart();
+});
+$('#tb-in').addEventListener('input', (e) => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); });
+$('#tb-go').addEventListener('click', () => {
+  const code = $('#tb-in').value.trim().toUpperCase();
+  if (!/^[A-Z2-9]{6}$/.test(code)) { toast('Kod ma 6 znaków, np. ABC234.'); return; }
+  store.set('tablicaView', code);
+  closeSheet('#sh-tb');
+  location.hash = 'tablica=' + code;   // hashchange starts the scoreboard
+});
+
+/* ---- the scoreboard (tablet, laptop, TV) ---- */
+function tbConnState(s, t) { const el = $('#tb-conn'); el.dataset.s = s; el.textContent = t; }
+function tbView(code) {
+  if (TB.viewer && TB.code === code) return;
+  tbStop();
+  TB.viewer = true; TB.code = code; TB.g = null; TB.retry = 0;
+  try { speechSynthesis.cancel(); } catch (e) {}
+  $('#tb-voice').textContent = 'Głos: ' + (store.get('tablicaGlos', false) ? 'wł.' : 'wył.');
+  showScreen('tb'); tbRender(); tbWake();
+  tbDial();
+}
+async function tbDial() {
+  clearTimeout(TB.tm);
+  if (!TB.viewer) return;
+  tbConnState('wait', 'Łączę…');
+  try { await tbLib(); } catch (e) { tbConnState('off', 'Brak internetu'); tbLater(tbDial); return; }
+  if (!TB.viewer) return;
+  const peer = TB.peer;
+  if (!peer || peer.destroyed) {
+    let np;
+    try { np = new Peer(tbOpts()); } catch (e) { tbConnState('off', tbErr(e)); return; }
+    TB.peer = np;
+    np.on('open', () => tbDial());
+    np.on('disconnected', () => { setTimeout(() => { if (TB.peer === np && !np.destroyed && np.disconnected) try { np.reconnect(); } catch (e) {} }, 3000); });
+    np.on('error', (e) => {
+      if (TB.peer !== np) return;
+      tbConnState('off', tbErr(e));
+      if (e.type === 'peer-unavailable') $('#tb-wait-t').textContent = 'Telefon z kodem ' + TB.code + ' teraz nie udostępnia wyniku. Na telefonie: Oko Tarczy, „Tablica wyników”, włącz „Udostępniaj wynik tablicy”. Próbuję dalej.';
+      if (e.type === 'browser-incompatible') return;
+      if (e.type !== 'peer-unavailable') { try { np.destroy(); } catch (e2) {} TB.peer = null; }
+      tbLater(tbDial);
+    });
+    return;   // 'open' dials
+  }
+  if (!peer.open) return;
+  if (TB.conn) try { TB.conn.close(); } catch (e) {}
+  const conn = peer.connect(tbId(TB.code), { serialization: 'json', reliable: true });
+  TB.conn = conn;
+  const guard = setTimeout(() => { if (TB.conn === conn && !conn.open) { try { conn.close(); } catch (e) {} tbLater(tbDial); } }, 15000);
+  conn.on('open', () => { clearTimeout(guard); TB.retry = 0; tbConnState('ok', 'Połączono'); });
+  conn.on('data', tbOnData);
+  const lost = () => { clearTimeout(guard); if (TB.conn !== conn) return; TB.conn = null; tbConnState('off', 'Rozłączono, łączę ponownie…'); tbLater(tbDial); };
+  conn.on('close', lost); conn.on('error', lost);
+}
+function tbOnData(m) {
+  if (!m || typeof m !== 'object') return;
+  if (m.t === 'state' && m.g && m.g.players && m.g.cur) { TB.g = m.g; TB.st = m; tbRender(); }
+  else if (m.t === 'say' && typeof m.text === 'string' && store.get('tablicaGlos', false)) {
+    const was = S.settings.voice; S.settings.voice = true; speak(m.text.slice(0, 300)); S.settings.voice = was;
+  }
+}
+function tbRender() {
+  const g = TB.g;
+  $('#tb-wait').hidden = !!g; $('#tb-main').hidden = !g;
+  if (!g) { $('#tb-game').textContent = 'Kod ' + TB.code; return; }
+  const p = g.cur.p, m = C.modeOf(g), v = C.currentView(g);
+  const live = v.states.slice(); live[p] = v.after;
+  const stats = C.gameStats(g);
+  const round = v.played[p] + 1, R = C.roundsOf(g);
+  $('#tb-game').textContent = gameLabel(g) + ' · Runda ' + Math.min(round, R || round) + (R ? '/' + R : '');
+  $('#tb-status').textContent = (TB.st && TB.st.st) || '';
+  const host = $('#tb-players');
+  host.classList.toggle('tb-solo', g.players.length === 1);
+  host.innerHTML = g.players.map((pl, i) => {
+    const me = i === p, bust = me && v.state === 'bust';
+    const big = bust ? v.before : bigOf(g, live[i], me ? v.played[p] + (g.cur.darts.length >= 3 ? 1 : 0) : v.played[i]);
+    const sub = [statLine(m, stats[i]), g.legs && g.legs[i] ? 'wygrane ' + g.legs[i] : '', bust ? 'PRZERZUT' : ''].filter(Boolean).join(' · ');
+    return '<div class="tb-p' + (me && g.winner == null ? ' cur' : '') + '"><div class="n">' + escapeHtml(pl.name) + '</div><div class="r num' + (bust ? ' bust' : '') + '">' + escapeHtml(String(big)) + '</div><div class="s">' + escapeHtml(sub) + '</div></div>';
+  }).join('');
+  $$('#tb-turn .slot').forEach((el, i) => fillSlot(el, g.cur.darts[i], v.flags[i], i));
+  $('#tb-sum-l').textContent = sumLabel(m);
+  $('#tb-sum').textContent = turnSum(m, v);
+  $('#tb-co').innerHTML = hintHtml(g, v, live, p);
+  const crk = $('#tb-cricket');
+  if (m === 'cricket') renderCricket(g, live, p, crk); else crk.innerHTML = '';
+  const win = $('#tb-win');
+  win.hidden = g.winner == null;
+  if (g.winner != null) win.textContent = winText(g, stats);
+}
+// Keep the tablet's screen on.
+async function tbWake() {
+  if (!TB.viewer || !('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
+  try { TB.lock = await navigator.wakeLock.request('screen'); } catch (e) {}
+}
+document.addEventListener('visibilitychange', () => {
+  if (!TB.viewer || document.visibilityState !== 'visible') return;
+  tbWake();
+  if (!TB.conn || !TB.conn.open) { TB.retry = 0; tbDial(); }
+});
+$('#tb-voice').addEventListener('click', () => {
+  const on = !store.get('tablicaGlos', false); store.set('tablicaGlos', on);
+  $('#tb-voice').textContent = 'Głos: ' + (on ? 'wł.' : 'wył.');
+  const was = S.settings.voice; S.settings.voice = true; speak(on ? 'Głos włączony' : ''); S.settings.voice = was;   // the tap unlocks speech
+});
+$('#tb-full').addEventListener('click', async () => { try { await document.documentElement.requestFullscreen(); } catch (e) { toast('Pełny ekran niedostępny.'); } });
+$('#tb-exit').addEventListener('click', () => { history.replaceState(null, '', location.pathname + location.search); tbLeave(); });
+function tbLeave() {
+  if (!TB.viewer) return;
+  TB.viewer = false; TB.g = null; tbStop();
+  try { if (TB.lock) TB.lock.release(); } catch (e) {}
+  showScreen('home');
+  tbHostStart();
+}
+const tbHashCode = () => { const m = /tablica=([A-Za-z2-9]{6})/.exec(location.hash || ''); return m ? m[1].toUpperCase() : ''; };
+window.addEventListener('hashchange', () => { const c = tbHashCode(); if (c) tbView(c); else tbLeave(); });
+
 /* ---------------- Boot ---------------- */
 if (!window.isSecureContext) $('#secure-warn').hidden = false;
 renderGame();
-showScreen('home');   // always the main menu first (Piotr, 2026-10-31); without calibration "play" calibrates first
+if (tbHashCode()) tbView(tbHashCode());   // this device is the scoreboard (opened from the QR code)
+else {
+  showScreen('home');   // always the main menu first (Piotr, 2026-10-31); without calibration "play" calibrates first
+  setTimeout(tbHostStart, 1500);   // the scoreboard link comes back by itself when it was on
+}
 
 // Hooks for automated testing.
 window.OkoTarczy = { S, C, DS, G, glRead, hiA, stabD, gridShot, bitsToPng, captureSnap, openFix, fix, fixSnap, fixMap, hiRefine, hiCaptureRef, setPoints(p) { S.pts = p.map(q => q.slice()); updateReadout(); }, finishCalibration() { $('#cal-done').click(); }, startCamera, screenMap, exportDataset, dsIdle: () => dsChain, version: APP_VERSION };
 // the AI model loads in the background a moment after start, so the first dart does not wait for it
-setTimeout(() => { if ((S.settings.ai || 'on') !== 'off') aiLoad().catch(() => {}); }, 4000);
+setTimeout(() => { if (!TB.viewer && (S.settings.ai || 'on') !== 'off') aiLoad().catch(() => {}); }, 4000);
 })();
 </script>
 </body>
