@@ -876,6 +876,7 @@ input[type=range]{accent-color:var(--cream);width:100%}
     </div>
     <div class="set-group">
       <p class="set-h">Podgląd i diagnostyka</p>
+      <label class="toggle"><span>Siatka tarczy na obrazie w grze</span><input type="checkbox" id="opt-grid" checked></label>
       <label class="toggle"><span>Pokaż, co widzi wykrywanie (różowe)</span><input type="checkbox" id="opt-mask"></label>
       <label class="toggle"><span>Pokaż diagnostykę (liczby na obrazie)</span><input type="checkbox" id="opt-diag"></label>
     </div>
@@ -2038,6 +2039,7 @@ input[type=range]{accent-color:var(--cream);width:100%}
     this.moving = false; this.lastMotion = 0; this.motionStart = 0; this.lastCheck = 0; this.blockedSince = 0; this.sawBlock = false;
     this.personMs = cfg.personMs || 1400;
     this.dartsInTurn = 0; this.turnFull = false;
+    this.turnDarts = []; this.goneAt = 0;   // pixels of each dart of the turn; when their places were first seen empty
     this.lastMask = null;
   }
   Detector.prototype.reset = function (frame) {
@@ -2046,6 +2048,7 @@ input[type=range]{accent-color:var(--cream);width:100%}
     this.prev = Uint8ClampedArray.from(frame);
     this.prevHalf = halfRes(frame, this.w, this.h, null);
     this.occ.fill(0); if (this.occWide) this.occWide.fill(0); this.dartsInTurn = 0; this.turnFull = false; this.blockedSince = 0; this.moving = false; this.sawBlock = false;
+    this.turnDarts = []; this.goneAt = 0;
   };
   // Accept the current picture as the new reference without starting a new turn
   // (used after a dart was entered by hand).
@@ -2067,6 +2070,19 @@ input[type=range]{accent-color:var(--cream);width:100%}
     if (d.seed) { robust = 0; const sd = d.seed; for (let i = 0; i < sd.length; i++) if (sd[i] > T) robust++; }
     r.robust = robust; r.seed = d.seed; r.T = T;
     return r;
+  };
+  // Every dart of the turn (known by its pixels) is gone: its place is back to how it was at the start of
+  // the turn (t = changeCount against turnRef). Unknown places (a dart entered by hand) say nothing.
+  Detector.prototype.dartsGone = function (t) {
+    const ds = this.turnDarts;
+    if (!ds || !ds.length || ds.length < this.dartsInTurn) return false;
+    const sd = t.seed, T = t.T, m = t.mask;
+    for (const pix of ds) {
+      let k = 0;
+      for (let i = 0; i < pix.length; i++) if (sd ? sd[pix[i]] > T : m[pix[i]]) k++;
+      if (k > 0.15 * pix.length) return false;
+    }
+    return true;
   };
   Detector.prototype.step = function (frame, now) {
     if (!this.ref) { this.reset(frame); this.lastCheck = now; return []; }
@@ -2110,11 +2126,23 @@ input[type=range]{accent-color:var(--cream);width:100%}
   Detector.prototype.analyze = function (frame, now, quiet, long) {
     // 1. Darts pulled out? Compare with the board as it was at the start of the turn.
     if (this.dartsInTurn > 0 || this.turnFull) {
-      const c0 = this.changeCount(this.aligned(this.turnRef, frame, 'alignT'), frame).robust;
+      const t0 = this.changeCount(this.aligned(this.turnRef, frame, 'alignT'), frame), c0 = t0.robust;
+      this.diag.c0 = c0;
       if (c0 < this.lim.clean) {
         this.reset(frame);
         return [{ type: 'takeout' }];
       }
+      // The darts are out, but something else stays changed for good (a dart left in the wall, the board
+      // moved a little, other light, the edge of the picture; Piotr 2026-11-04: "sometimes no next turn"):
+      // every dart of the turn left its place as it was at the start of the turn. Taken on a second look
+      // with nothing moving in between, so not while someone still stands at the board.
+      if (c0 <= this.lim.maxDartArea && this.dartsGone(t0)) {
+        if (this.goneAt && this.lastMotion < this.goneAt && now - this.goneAt >= 1000) {
+          this.reset(frame);
+          return [{ type: 'takeout', byPlaces: true, rest: c0 }];
+        }
+        if (!this.goneAt || this.lastMotion >= this.goneAt) this.goneAt = now;
+      } else this.goneAt = 0;
     }
     const refA = this.aligned(this.ref, frame, 'alignR');
     const th = this.changeCount(refA, frame);
@@ -2198,6 +2226,7 @@ input[type=range]{accent-color:var(--cream);width:100%}
     const refBefore = refA === this.ref ? Uint8ClampedArray.from(refA) : refA;
     this.ref.set(frame); this.refVer++;
     this.dartsInTurn++;
+    this.turnDarts.push(Int32Array.from(det.pixels));
     const tipRaw = det.tip.slice(), tip = det.tip.slice();
     const b = applyH(this.Hpi, tip[0], tip[1]);
     // The point may continue behind an earlier dart (camera at the side, tight group).
@@ -4382,6 +4411,7 @@ function handleEvent(e) {
   if (e.type === 'dart') { onDart(e); return; }
   if (e.type === 'takeout') {
     hideStageMsg();
+    if (e.byPlaces) logNote('lotki wyjęte (miejsca lotek jak przed turą, reszta zmian ' + e.rest + ' px)');
     if (S.game.winner != null) { setStatus('win'); return; }
     if (S.settings.autoNext && S.game.cur.darts.length) nextTurn(false);
     setStatus('ready');
@@ -4392,7 +4422,12 @@ function handleEvent(e) {
     if (e.ms > 2500 && !S.blockedShown) { $('#stage-msg-t').textContent = 'Coś zasłania tarczę albo telefon się poruszył.'; showStageMsg(); }
     return;
   }
-  if (e.type === 'ignored') { setStatus('pull'); return; }
+  if (e.type === 'ignored') {
+    // the turn is full but the picture changed: darts being pulled out, or the takeout was not recognised yet
+    const now = performance.now();
+    if (!(now - (S.ignLogAt || 0) < 30000)) { S.ignLogAt = now; logNote('tura pełna, obraz się zmienił (od początku tury ' + (S.det && S.det.diag.c0 != null ? S.det.diag.c0 : '?') + ' px): czekam na wyjęcie lotek'); }
+    setStatus('pull'); return;
+  }
   if (e.type === 'quiet') { if (S.status === 'motion') setStatus(S.game.winner != null ? 'win' : (C.turnOpen(S.game) ? 'ready' : 'pull')); return; }
   if (e.type === 'shifted') { toast('Telefon drgnął. Nie liczę tego jako rzut.', 2500); }
   if (e.type === 'removed' || e.type === 'rebased' || e.type === 'shifted') { hideStageMsg(); setStatus(S.game.winner != null ? 'win' : (C.turnOpen(S.game) ? 'ready' : 'pull')); }
@@ -5013,7 +5048,8 @@ function drawOverlay() {
       const A = C.affMul([m.scale, 0, m.ox, 0, m.scale, m.oy], Mp);
       ctx.save(); ctx.globalAlpha = 0.85; ctx.transform(A[0], A[3], A[1], A[4], A[2], A[5]); ctx.drawImage(S.maskCanvas, 0, 0); ctx.restore();
     }
-    drawBoard(ctx, C.mulH([D[0], D[1], D[2], D[3], D[4], D[5], 0, 0, 1], S.cal.H), m.v2s, { color: 'rgba(255,240,200,.28)', width: 1 });
+    // Only the drawing: the grid itself (calibration) is still what tells which field a dart is in.
+    if (S.settings.grid !== false) drawBoard(ctx, C.mulH([D[0], D[1], D[2], D[3], D[4], D[5], 0, 0, 1], S.cal.H), m.v2s, { color: 'rgba(255,240,200,.28)', width: 1 });
     if (S.settings.diag && S.det) drawDiag(ctx);
     const placed = [];
     S.game.cur.darts.forEach((d, i) => {
@@ -5325,7 +5361,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.11.01b';
+const APP_VERSION = '2026.11.04a';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
@@ -5940,7 +5976,7 @@ function openSettings() {
   { const c = elCfg(); $('#el-on').checked = c.on; $('#el-key').value = c.key; $('#el-model').value = c.model; elFillVoices(store.get('elvoices', []) || [], c.voice); elInfo(); }
   $('#opt-rate').value = S.settings.rate || 1.05; $('#opt-rate-v').textContent = (+(S.settings.rate || 1.05)).toFixed(2);
   $('#opt-torch').checked = !!S.settings.torch; $('#torch-info').textContent = '';
-  $('#opt-lock').checked = S.settings.lock; $('#opt-mask').checked = S.settings.mask; $('#opt-diag').checked = S.settings.diag;
+  $('#opt-lock').checked = S.settings.lock; $('#opt-mask').checked = S.settings.mask; $('#opt-diag').checked = S.settings.diag; $('#opt-grid').checked = S.settings.grid !== false;
   $('#opt-off').textContent = S.point.mm.toFixed(1) + ' mm' + (S.point.samples.length ? ' (' + S.point.samples.length + ' popr.)' : '');
   $('#opt-collect').checked = !!S.settings.collect;
   $('#opt-track').checked = !!S.settings.track;
@@ -5975,6 +6011,7 @@ $('#el-listen').addEventListener('click', elListen);
 $('#el-clear').addEventListener('click', async () => { EL.mem.clear(); try { await caches.delete(EL_CACHE); } catch (e) {} elInfo('Usunięte.'); });
 $('#opt-mask').addEventListener('change', (e) => { S.settings.mask = e.target.checked; S.maskImg = null; saveSettings(); });
 $('#opt-diag').addEventListener('change', (e) => { S.settings.diag = e.target.checked; saveSettings(); });
+$('#opt-grid').addEventListener('change', (e) => { S.settings.grid = e.target.checked; saveSettings(); });
 $('#opt-lock').addEventListener('change', async (e) => {
   S.settings.lock = e.target.checked; saveSettings();
   const res = await applyLocks(S.settings.lock);
