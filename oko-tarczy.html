@@ -812,6 +812,7 @@ input[type=range]{accent-color:var(--cream);width:100%}
       <label class="toggle"><span>Ignoruj cienie lotek</span><input type="checkbox" id="opt-shadow" checked></label>
       <label class="toggle"><span>Następna tura po wyjęciu lotek</span><input type="checkbox" id="opt-auto" checked></label>
       <label class="toggle"><span>Śledź tarczę (chwiejący się statyw)</span><input type="checkbox" id="opt-track" checked></label>
+      <label class="toggle"><span>Dociągaj siatkę do drutów na początku tury</span><input type="checkbox" id="opt-snap" checked></label>
       <label class="toggle"><span>Grot na ostrym obrazie (pełna rozdzielczość)</span><input type="checkbox" id="opt-hitip" checked></label>
       <div class="field">
       <span class="lab">Długość grota nad tarczą (uczy się z Twoich poprawek): <b id="opt-off" class="num">14 mm</b></span>
@@ -3955,7 +3956,7 @@ function gridShot(tag, info) {
 function logHead() {
   const st = S.track && S.track.getSettings ? S.track.getSettings() : {};
   return ['Oko Tarczy ' + APP_VERSION + '  ' + new Date().toLocaleString('pl-PL'), navigator.userAgent,
-    'Kamera: ' + S.vw + '×' + S.vh + ' ' + (st.frameRate || '?') + ' kl/s, 4K ' + (S.settings.cam4k ? 'tak' : 'nie') + ', latarka ' + (S.settings.torch ? 'tak' : 'nie') + ', śledzenie ' + (S.settings.track ? 'tak' : 'nie') + ', karta graficzna ' + (G.ok ? 'tak' : (S.settings.gpu === false ? 'wyłączona' : G.failed ? 'błąd' : 'nie')) + ', lektor ' + (elCfg().on ? 'ElevenLabs' + (elActive() ? '' : ' (przerwa)') + ' z pamięci ' + EL.hit + ', pobrane ' + EL.got : 'telefon') + ', model AI ' + (S.settings.ai || 'on') + (AI.sess ? ' ' + AI.backend + (AI.n ? ' ' + Math.round(AI.ms / AI.n) + ' ms' : '') : AI.err ? ' błąd' : '') + (S.proc ? ', przetwarzanie ' + S.proc.pw + '×' + S.proc.ph : ''),
+    'Kamera: ' + S.vw + '×' + S.vh + ' ' + (st.frameRate || '?') + ' kl/s, 4K ' + (S.settings.cam4k ? 'tak' : 'nie') + ', latarka ' + (S.settings.torch ? 'tak' : 'nie') + ', śledzenie ' + (S.settings.track ? 'tak' : 'nie') + ', karta graficzna ' + (G.ok ? 'tak' : (S.settings.gpu === false ? 'wyłączona' : G.failed ? 'błąd' : 'nie')) + ', lektor ' + (elCfg().on ? 'ElevenLabs' + (elActive() ? '' : ' (przerwa)') + ' z pamięci ' + EL.hit + ', pobrane ' + EL.got : 'telefon') + ', model AI ' + (S.settings.ai || 'on') + (AI.sess ? ' ' + AI.backend + (AI.n ? ' ' + Math.round(AI.ms / AI.n) + ' ms' : '') : AI.err ? ' błąd' : '') + ', siatka do drutów ' + (S.settings.snap === false ? 'wył.' : (S.snaps || 0) + '×') + (S.proc ? ', przetwarzanie ' + S.proc.pw + '×' + S.proc.ph : ''),
     'Każda linia: średnio/najdłużej w ms, ile razy na sekundę.', ''];
 }
 // Dragging: touch anywhere, the selected point follows at half speed (precise, finger never covers it).
@@ -4119,12 +4120,17 @@ function setupProc() {
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   const Hp = C.mulH([s, 0, -x * s, 0, s, -y * s, 0, 0, 1], H);
   S.proc = { x, y, w, h, s, pw, ph, canvas, ctx, Hp };
-  S.det = new C.Detector({ w: pw, h: ph, Hp, nearDir: S.cal.nearDir, thr: S.settings.thr, shadows: S.settings.shadows, pp: [(S.vw / 2 - x) * s, (S.vh / 2 - y) * s], pointMm: S.point.mm, pointMaxMm: S.point.max || 25, keepFull: !!S.settings.collect });
+  S.det = newDetector();
   S.maskCanvas = document.createElement('canvas'); S.maskCanvas.width = pw; S.maskCanvas.height = ph;
   S.maskImg = null;
   setupStab();
 }
 const toVideo = (p) => [S.proc.x + p[0] / S.proc.s, S.proc.y + p[1] / S.proc.s];
+// Detector for the processing picture and the calibration as they are now (start of play, grid moved).
+function newDetector() {
+  const P = S.proc;
+  return new C.Detector({ w: P.pw, h: P.ph, Hp: P.Hp, nearDir: S.cal.nearDir, thr: S.settings.thr, shadows: S.settings.shadows, pp: [(S.vw / 2 - P.x) * P.s, (S.vh / 2 - P.y) * P.s], pointMm: S.point.mm, pointMaxMm: S.point.max || 25, keepFull: !!S.settings.collect });
+}
 
 /* ---------------- Board tracking (shaky tripod) ----------------
    M maps a pixel of the still "processing" picture to the live video; M0 is the position at
@@ -4205,9 +4211,55 @@ function alignCalibration() {
     S.cal = C.makeCalibration(S.pts); savePoints();
     const P = S.proc;
     P.Hp = C.mulH([P.s, 0, -P.x * P.s, 0, P.s, -P.y * P.s, 0, 0, 1], S.cal.H);
-    S.det = new C.Detector({ w: P.pw, h: P.ph, Hp: P.Hp, nearDir: S.cal.nearDir, thr: S.settings.thr, shadows: S.settings.shadows, pp: [(S.vw / 2 - P.x) * P.s, (S.vh / 2 - P.y) * P.s], pointMm: S.point.mm, pointMaxMm: S.point.max || 25, keepFull: !!S.settings.collect });
+    S.det = newDetector();
     S.resetPending = true;
   } catch (e) {}
+}
+/* Grid back onto the wires at the start of a turn (2026.11.05a).
+   Piotr (2026-11-05): "look through all the throws for a grid that was not on the wires and fix it". On the 1459
+   throws with the whole picture (paczki 26.10-5.11) the grid was off by 0.3 mm (median) and at most 1.6 mm; in 4 sessions
+   it stayed 1-1.6 mm off for dozens of turns (board tracking took a small wrong step, or the start after calibration
+   left a rest), e.g. 5.11 15:23-15:39 (Polish time). Now, once per turn, before the first dart and with the picture still
+   for 1.2 s, the wires are looked for on the processing picture (C.refineGrid, the same fit as the calibration) and when
+   the grid is 0.5-4 mm off it moves there. Checked on those throws: 2nd/3rd darts > 1 mm off 119 -> 0 of 903.
+   Pixels: the app maps processing px <-> video px by plain scaling (p = s*(u - x)), the picture is drawn with pixel
+   centres, so the board in the picture is half = 0.5 - 0.5*s px up-left of where Hp says (0.35 px in 4K). Darts, taps
+   and the AI model (learnt from taps) all use that mapping, so the moved grid keeps the half pixel. */
+const SNAP = { min: 0.5, max: 4, wait: 1200, rounds: [6, 4, 3] };
+// Largest distance (board mm) between where two grids put the same board point.
+function gridGap(Ha, Hb) {
+  const Hbi = C.invertH(Hb);
+  let mx = 0;
+  for (let r = 20; r <= 170; r += 30) for (let a = 0; a < 360; a += 30) {
+    const bx = r * Math.cos(a * Math.PI / 180), by = r * Math.sin(a * Math.PI / 180);
+    const p = C.applyH(Ha, bx, by), q = C.applyH(Hbi, p[0], p[1]);
+    mx = Math.max(mx, Math.hypot(q[0] - bx, q[1] - by));
+  }
+  return mx;
+}
+function snapGrid(data, now) {
+  const P = S.proc;
+  S.snapWant = 0;
+  try {
+    const half = 0.5 - 0.5 * P.s, sh = (o) => [1, 0, o, 0, 1, o, 0, 0, 1];
+    const H0 = C.mulH(sh(-half), P.Hp);
+    const t = performance.now();
+    const r = C.refineGrid(data, P.pw, P.ph, H0, { rounds: SNAP.rounds });
+    perfAdd('siatka do drutów', performance.now() - t);
+    if (!r.ok || !(r.rms < 0.8)) { S.snapLast = { at: now, ok: false }; return; }
+    const g = gridGap(H0, r.H);
+    S.snapLast = { at: now, ok: true, mm: g };
+    if (g < SNAP.min || g > SNAP.max) return;
+    const Hv = C.mulH([1 / P.s, 0, P.x, 0, 1 / P.s, P.y, 0, 0, 1], C.mulH(sh(half), r.H));   // processing px -> start video px
+    const pts = C.calBoardPoints().map(b => C.applyH(Hv, b[0], b[1]));
+    const cal = C.makeCalibration(pts);
+    if (!cal) return;
+    S.pts = pts; S.cal = cal; savePoints();
+    P.Hp = C.mulH([P.s, 0, -P.x * P.s, 0, P.s, -P.y * P.s, 0, 0, 1], S.cal.H);
+    S.det = newDetector(); S.det.reset(data);   // this still picture is the new empty board: no gap a dart could fall into
+    S.snaps = (S.snaps || 0) + 1;
+    logNote('siatka dociągnięta do drutów o ' + g.toFixed(1) + ' mm');
+  } catch (e) { logNote('siatka do drutów: błąd ' + (e && e.message || e)); }
 }
 // Live video px <-> start video px (identity without tracking).
 function stabD() { const T = S.stab; return T && T.tracker ? C.affMul(T.M, C.affInv(T.M0)) : [1, 0, 0, 0, 1, 0]; }
@@ -4370,6 +4422,7 @@ function processFrame(now) {
   if (S.rebasePending && !S.resetPending) { S.det.rebase(data); S.rebasePending = false; }
   if (S.resetPending) {
     S.det.reset(data); S.resetPending = false; S.rebasePending = false;
+    S.snapWant = now;   // new empty board: look at the wires once it is still
     setStatus(C.turnOpen(S.game) ? 'ready' : (S.game.winner != null ? 'win' : 'pull'));
     return;
   }
@@ -4389,6 +4442,12 @@ function processFrame(now) {
   t = performance.now();
   for (const e of evs) handleEvent(e);
   if (evs.some(e => e.type === 'dart')) perfAdd('obsługa rzutu', performance.now() - t);
+  // Grid back onto the wires before the first dart of the turn (snapGrid), once the picture has been still a moment.
+  if (S.snapWant && S.det) {
+    if (S.settings.snap === false || !C.turnOpen(S.game) || S.game.cur.darts.length) S.snapWant = 0;
+    else if (!evs.length && now - S.snapWant >= SNAP.wait && !S.det.moving && now - (S.det.lastMotion || 0) >= SNAP.wait &&
+      S.status === 'ready' && !(T && T.lost) && !S.blockedShown) snapGrid(data, now);
+  }
   if (S.settings.hiTip && !S.hiOff && S.det && (!S.hi || S.hi.det !== S.det || S.hi.ver !== S.det.refVer)) {
     t = performance.now(); hiCaptureRef(); const dt = performance.now() - t; perfAdd('ostre zdjęcie przed', dt);
     // Too slow on this phone: switch the sharp tip off for this session instead of slowing the picture.
@@ -4411,6 +4470,7 @@ function handleEvent(e) {
   if (e.type === 'dart') { onDart(e); return; }
   if (e.type === 'takeout') {
     hideStageMsg();
+    S.snapWant = performance.now();
     if (e.byPlaces) logNote('lotki wyjęte (miejsca lotek jak przed turą, reszta zmian ' + e.rest + ' px)');
     if (S.game.winner != null) { setStatus('win'); return; }
     if (S.settings.autoNext && S.game.cur.darts.length) nextTurn(false);
@@ -5361,7 +5421,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.11.04b';
+const APP_VERSION = '2026.11.05a';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
@@ -5985,6 +6045,7 @@ function openSettings() {
   $('#opt-gpu').checked = S.settings.gpu !== false;
   $('#opt-lean').checked = S.settings.lean !== false;
   $('#opt-eco').checked = S.settings.eco !== false;
+  $('#opt-snap').checked = S.settings.snap !== false;
   $('#opt-4k').checked = !!S.settings.cam4k; camInfo();
   refreshDsInfo();
   { const c = ghCfg(); $('#gh-on').checked = c.on; $('#gh-cell').checked = c.cell; $('#gh-token').value = c.token; $('#gh-repo').value = c.repo; ghInfo(); }
@@ -6012,6 +6073,7 @@ $('#el-clear').addEventListener('click', async () => { EL.mem.clear(); try { awa
 $('#opt-mask').addEventListener('change', (e) => { S.settings.mask = e.target.checked; S.maskImg = null; saveSettings(); });
 $('#opt-diag').addEventListener('change', (e) => { S.settings.diag = e.target.checked; saveSettings(); });
 $('#opt-grid').addEventListener('change', (e) => { S.settings.grid = e.target.checked; saveSettings(); });
+$('#opt-snap').addEventListener('change', (e) => { S.settings.snap = e.target.checked; saveSettings(); });
 $('#opt-lock').addEventListener('change', async (e) => {
   S.settings.lock = e.target.checked; saveSettings();
   const res = await applyLocks(S.settings.lock);

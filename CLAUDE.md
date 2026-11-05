@@ -69,7 +69,7 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - Od 2026.10.19e każda udana automatyczna kalibracja mierzy pierścienie (`refineGrid` z `rings: true`), `learnRings` trzyma 5 ostatnich pomiarów
   w `localStorage` `rings`, `C.setRings` ustawia średnią w `RING` (tylko trebleIn/trebleOut/doubleIn, maks. ±3 mm od 97/107/160; 170 = skala).
   Na zrzutach Piotra: 96,6/107,7/158,9 i 97,6/107,4/159,7. Wynik widać w górnym pasku zrzutu z kalibracji („pierścienie …”).
-- Jeszcze nie: dociąganie w trakcie gry (śledzenie tarczy jest tylko afiniczne).
+- Dociąganie w trakcie gry: od 2026.11.05a na początku każdej tury (sekcja niżej).
 
 ## Kamera 4K (od 2026.10.19g)
 - Ustawienia wykrywania, „Kamera 4K”: `S.settings.cam4k`, prosi o 3840×2160 zamiast 1920×1080; pod przełącznikiem `camInfo()` pokazuje, co kamera naprawdę daje i ile kl/s ma wykrywanie.
@@ -124,6 +124,19 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
   Krok po kroku na rzutach 185–187 z 4.11: stara wersja stoi na „tura pełna” i pomija następny rzut, nowa wyjmuje 1,9 s po uspokojeniu (przy oszczędzaniu baterii 1,8 s) i liczy następny rzut. `test_rzutow.js` na `rz6` identyczny co do bajta.
 - Dziennik: `!! lotki wyjęte (miejsca lotek jak przed turą, reszta zmian N px)` oraz najwyżej raz na 30 s `!! tura pełna, obraz się zmienił (od początku tury N px): czekam na wyjęcie lotek`.
 - Przy okazji: Ustawienia wykrywania, Podgląd i diagnostyka, „Siatka tarczy na obrazie w grze” (`S.settings.grid`, domyślnie wł.). Wyłącza tylko rysowanie linii; kalibracja nadal decyduje, w które pole weszła lotka.
+
+## Siatka dociągana do drutów na początku tury (2026.11.05a)
+- Piotr (2026-11-05): przejrzeć wszystkie rzuty, gdzie siatka nie leżała na drutach, i poprawić. Pomiar: `refineGrid` na zdjęciu „przed” (`fullref`) każdego rzutu z całym obrazem, 1459 rzutów 26.10–5.11, i na 158 zdjęciach z kalibracji (scratchpad `measure.js`, `simsnap.js`, giną z kontenerem).
+  W grze siatka była od drutów średnio 0,6 mm (najgorszy punkt tarczy), najwyżej 1,6 mm. Gdyby leżała idealnie, inne pole wyszłoby tylko w 6 rzutach, wszystkie < 0,35 mm od drutu, a Piotr potwierdził tam wynik aplikacji.
+- Stałe pół piksela: aplikacja przelicza piksele obrazu przetwarzania i wideo zwykłym skalowaniem (p = s·(u − x)), a obraz jest rysowany ze środkami pikseli, więc tarcza leży 0,5 − 0,5·s px obok `Hp` (w 4K 0,35 px: ok. 0,3 mm w prawo i 0,15 mm w dół).
+  Tak samo przeliczane są stuknięcia i etykiety, więc model AI (uczony na stuknięciach) to kompensuje, a grot z samych reguł jest przesunięty o te ok. 0,3 mm. Zostawione świadomie (zmiana przesunęłaby punkty modelu AI); pamiętać przy zmianie etykiet albo przeliczania.
+- Bez tego pół piksela mediana 0,3 mm, ale w 4 sesjach siatka stała 1–1,6 mm obok przez dziesiątki tur (28.10 18:33–18:56, 29.10 20:12–20:23, 5.11 15:23–15:39 czasu polskiego): skokowo (zły krok śledzenia albo reszta po starcie gry), nie powolny dryf.
+- Zdjęcia z kalibracji bywały 3–11 mm obok, ale wtedy Piotr przestawiał telefon (tarcza na kolejnych zdjęciach przesunięta o setki px, zdjęcie robione chwilę po klatce kalibracji albo śledzenia). Rzuty z tych sesji były w porządku, śledzenie dogania.
+- Teraz `snapGrid`: raz na turę (po `takeout` i po nowym `ref` z `resetPending`, flaga `S.snapWant`), przed pierwszą lotką, gdy obraz stoi ≥ 1,2 s (status ready, bez ruchu, śledzenie nie zgubione), `refineGrid` na obrazie przetwarzania (okna 6/4/3 px) od `Hp` bez pół piksela.
+  Gdy `ok`, rms < 0,8 mm i siatka różni się o 0,5–4 mm (`gridGap`, najdalszy punkt tarczy): nowe `S.pts`/`S.cal` (z powrotem z pół pikselem), `P.Hp`, nowy `Detector` (`newDetector`, wspólne z `setupProc`/`alignCalibration`) i `reset` na tej samej klatce, więc nie ma przerwy, w którą mogłaby wpaść lotka.
+  Dziennik: `!! siatka dociągnięta do drutów o N mm`, w nagłówku „siatka do drutów N×”, krok czasu `siatka do drutów`. Ustawienia wykrywania, „Dociągaj siatkę do drutów na początku tury” (`S.settings.snap`, domyślnie wł.).
+- Symulacja na tych rzutach (dociąganie na zdjęciu przed 1. lotką tury, ocena na 2. i 3. lotce, czyli na innych zdjęciach): ponad 1 mm od drutów 119 → 0 z 903, 90% 1,10 → 0,41 mm; 24 dociągnięcia na 558 tur. Próg 0,8 mm zostawiał 2 rzuty > 1 mm. Rdzeń bez zmian (`test_rzutow.js` identyczny).
+- Playwright (atrapa kamery: zdjęcie tarczy z 5.11, 2160×3840): siatka celowo przesunięta o 3,6 mm jest po starcie gry dociągnięta (zostaje 0,3 mm, czyli to pół piksela), następna tura nic nie rusza; dobra siatka i wyłącznik: bez zmian. `refineGrid` ok. 90 ms (Chromium bez karty); na S26 jeszcze nie sprawdzone.
 
 ## Menu główne (2026.10.30b)
 - Piotr: po „Gotowe, gramy” aplikacja od razu liczyła, czy grał, czy nie. Nowy ekran `scr-home` (`renderHome`): Kontynuuj grę (gdy gra ma rzuty i nie jest skończona), Nowa gra, Statystyki, Kalibracja kamery, Ustawienia wykrywania, Licz ręcznie, Instrukcja.
