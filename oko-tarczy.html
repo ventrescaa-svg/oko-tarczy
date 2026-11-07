@@ -3342,6 +3342,8 @@ const S = {
   point: Object.assign({ mm: 14, samples: [], max: 25 }, store.get('point', {})),   // max = measured point (25 mm), barrel 40 mm
   game: null, status: 'idle', blockedShown: false, lastProc: 0, maskImg: null, maskCanvas: null
 };
+// Counting by hand or with the camera; remembered, so „Kontynuuj grę” after a reload goes on the same way (test 2026-11-07).
+function setManual(on) { S.manual = !!on; store.set('manual', S.manual); }
 
 /* ---------------- Game state ---------------- */
 function loadGame() {
@@ -3353,7 +3355,7 @@ function loadGame() {
 function gameForStore() {
   // board = where the dart landed (mm), kept for the heat map after a reload
   const strip = (d) => Object.assign({ num: d.num, mult: d.mult, pts: d.pts, label: d.label, auto: !!d.auto, unsure: !!d.unsure, fixed: !!d.fixed },
-    d.board ? { board: [Math.round(d.board[0] * 10) / 10, Math.round(d.board[1] * 10) / 10] } : {});
+    d.board ? { board: [Math.round(d.board[0] * 10) / 10, Math.round(d.board[1] * 10) / 10] } : {}, d.bounce ? { bounce: true } : {});
   return Object.assign({}, S.game, {
     cur: { p: S.game.cur.p, darts: S.game.cur.darts.map(strip) },
     turns: S.game.turns.map(t => Object.assign({}, t, { darts: t.darts.map(strip) }))
@@ -3848,7 +3850,7 @@ $('#cal-done').addEventListener('click', () => {
 });
 // Into play with the camera (from calibration or from the main menu): the empty board is learnt again.
 function enterGame() {
-  S.afterCal = null; S.manual = false;
+  S.afterCal = null; setManual(false);
   showScreen('game');
   setStatus('starting');
   S.resetPending = true; S.busyAt = performance.now();
@@ -3882,7 +3884,7 @@ async function playFromHome() {
   speak(''); // unlock speech on Android after a user gesture
   if (S.stream && S.cal && S.det) { enterGame(); return; }
   if (!S.stream) { const ok = await startCamera(); if (!ok) { showScreen('intro'); return; } S.pts = loadPoints(); }
-  S.manual = false; S.afterCal = 'game';
+  setManual(false); S.afterCal = 'game';
   selectPoint(0); showScreen('cal'); autoCalSoon();
 }
 // Logo for the menu: an eye whose iris is a dartboard (Piotr's idea, 2026-10-30). Drawn, not a photo:
@@ -3925,12 +3927,12 @@ $('#home-new').addEventListener('click', () => openNew());
 $$('.qcard[data-quick]:not(#home-new)').forEach(b => b.addEventListener('click', () => {
   openNew(); ng.mode = b.dataset.quick; if (ng.mode === 'x01') ng.start = 501; syncNew();
 }));
-$('#home-continue').addEventListener('click', () => { if (S.manual) startManual(); else playFromHome(); });
+$('#home-continue').addEventListener('click', () => { if (S.manual || store.get('manual', false)) startManual(); else playFromHome(); });
 $('#home-stats').addEventListener('click', () => openStats());
 $('#home-calib').addEventListener('click', async () => {
   speak('');
   if (!S.stream) { const ok = await startCamera(); if (!ok) { showScreen('intro'); return; } S.pts = loadPoints(); }
-  S.manual = false; S.afterCal = 'home';
+  setManual(false); S.afterCal = 'home';
   selectPoint(0); showScreen('cal'); autoCalSoon();
 });
 $('#home-settings').addEventListener('click', () => openSettings());
@@ -4723,6 +4725,7 @@ function captureWide() {
 
 function nextTurn(manual) {
   if (S.game.winner != null) return;
+  S.nextAt = performance.now();
   // Darts not on the board when the turn ends (bounced out, or off the board) count as misses (Piotr, 2026-10-28).
   while (C.turnOpen(S.game)) C.addDart(S.game, Object.assign(C.makeDart(0, 0), { auto: false, bounce: true }));
   harvestTurn(S.game.cur.darts);
@@ -5472,7 +5475,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.11.07a';
+const APP_VERSION = '2026.11.07b';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
@@ -5854,13 +5857,13 @@ $('#btn-start').addEventListener('click', async () => {
   speak(''); // unlock speech on Android after a user gesture
   const ok = await startCamera();
   if (!ok) return;
-  S.manual = false; S.afterCal = 'home';
+  setManual(false); S.afterCal = 'home';
   S.pts = loadPoints(); selectPoint(0);
   showScreen('cal');
   autoCalSoon();
 });
 function startManual() {
-  S.manual = true; S.afterCal = null;
+  setManual(true); S.afterCal = null;
   buildPad($('#pad-inline'), manualDart);
   showScreen('game'); setStatus('manual'); renderGame();
 }
@@ -5871,12 +5874,18 @@ $('#btn-undo').addEventListener('click', () => {
   const r = C.undo(S.game);
   if (r === 'dart' && last) { last.deleted = 'undone'; harvestTurn([last]); }
   if (!r) { toast('Nie ma czego cofnąć.'); return; }
+  // The misses added when the turn ended („Dalej”, darts pulled) go too, so one tap reopens the turn as it was (test 2026-11-07).
+  if (r === 'turn') { const ds = S.game.cur.darts; while (ds.length && ds[ds.length - 1].bounce) C.undo(S.game); }
   if (S.det) S.resetPending = true;
   afterChange(); setStatus(S.manual ? 'manual' : (C.turnOpen(S.game) ? 'ready' : 'pull'));
 });
 $('#btn-undo-win').addEventListener('click', () => $('#btn-undo').click());
 $('#btn-key').addEventListener('click', () => { if (C.turnOpen(S.game)) openFix(-1); else toast('Tura jest pełna. Stuknij Dalej.'); });
-$('#btn-next').addEventListener('click', () => { nextTurn(true); if (!S.manual) setStatus('ready'); });
+$('#btn-next').addEventListener('click', () => {
+  // A double tap (or a tap just after the camera saw the darts pulled) must not give the next player an empty turn (test 2026-11-07).
+  if (!S.game.cur.darts.length && performance.now() - (S.nextAt || 0) < 1200) return;
+  nextTurn(true); if (!S.manual) setStatus('ready');
+});
 $('#btn-newleg').addEventListener('click', () => {
   const g = S.game;
   harvestTurn(g.cur.darts);
@@ -5918,7 +5927,7 @@ $('#sh-menu').addEventListener('click', async (e) => {
   if (act === 'newgame') openNew();
   else if (act === 'stats') openStats();
   else if (act === 'calib') {
-    if (S.manual || !S.stream) { const ok = await startCamera(); if (!ok) { showScreen('intro'); return; } S.manual = false; S.pts = loadPoints(); }
+    if (S.manual || !S.stream) { const ok = await startCamera(); if (!ok) { showScreen('intro'); return; } setManual(false); S.pts = loadPoints(); }
     selectPoint(0); showScreen('cal'); autoCalSoon();
   }
   else if (act === 'settings') openSettings();

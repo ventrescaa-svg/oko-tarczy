@@ -149,6 +149,15 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
 - Sprawdzone w Playwright (kopia strony z dostępem do środka, scratchpad `pw_heat.js`, `pw_fix.js`): 1711 prawdziwych rzutów z paczek 25.10–5.11 jako 8 gier, filtry, stuknięcia, zbliżenie, 2 graczy, Cofnij, odświeżenie, nowa gra (archiwum), poprawka stuknięciem i klawiaturą, 360×640.
   Rysowanie 30 000 lotek: 69 ms cała tarcza, 127 ms zbliżenie (Chromium na komputerze; siatka gęstości ma oczko ≥ sigma/3). Rdzeń bez zmian (identyczny co do bajta).
 
+## Test kliknięć bez kamery i poprawki (2026.11.07b)
+- Piotr (2026-11-07) chciał przetestować aplikację przez ChatGPT. Prompt z 19 scenariuszami i oczekiwanymi liczbami: `/mnt/project-files/oko-tarczy/testy-gpt/prompt-testy-gpt.md`
+  (ChatGPT musi być w trybie agenta, inaczej tylko czyta kod; tak było przy pierwszej próbie). Te same scenariusze przeszły w Playwright (scratchpad `h.js`, `t2`–`t10.js`; tablica: lokalny serwer PeerJS przez express + `ExpressPeerServer` na 127.0.0.1, bo `peerjs --port` chce IPv6).
+- Poprawione:
+  - podwójne stuknięcie „Dalej” dawało następnemu graczowi pustą turę (3 pudła) i go przeskakiwało: „Dalej” przy pustej turze < 1,2 s po zmianie tury (`S.nextAt`, ustawiane w `nextTurn`, też po wyjęciu lotek kamerą) jest pomijane;
+  - „Cofnij” po „Dalej” zdejmuje od razu pudła dopisane na koniec tury (`bounce`, teraz zapisywane w `gameForStore`, więc działa też po odświeżeniu), czyli wraca tura taka, jak była;
+  - „Kontynuuj grę” po odświeżeniu gry ręcznej wraca do liczenia ręcznego (`setManual`, `localStorage` `manual`), a nie do kamery.
+- Zostawione (do decyzji): systemowe „Wstecz” przy otwartym oknie wychodzi ze strony (brak `history.pushState`); telefon poziomo 640×360: napisy lotek w polach tury ucięte (sprawdzone tylko z zastępczą czcionką, Barlow zablokowany w kontenerze).
+
 ## Menu główne (2026.10.30b)
 - Piotr: po „Gotowe, gramy” aplikacja od razu liczyła, czy grał, czy nie. Nowy ekran `scr-home` (`renderHome`): Kontynuuj grę (gdy gra ma rzuty i nie jest skończona), Nowa gra, Statystyki, Kalibracja kamery, Ustawienia wykrywania, Licz ręcznie, Instrukcja.
 - Start aplikacji: zawsze menu główne (od 2026.10.31d, Piotr; wcześniej bez zapisanej kalibracji instrukcja). Gra bez kalibracji najpierw kalibruje (`playFromHome`), instrukcja jest w kafelku. Kalibracja z menu albo z instrukcji kończy się w menu (`S.afterCal = 'home'`, przycisk „Gotowe”); kalibracja z gry albo przed grą (`playFromHome`) wchodzi do gry (`enterGame`: nowe `ref`, „Wyjmij lotki”).
