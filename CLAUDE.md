@@ -1,4 +1,4 @@
-# Oko Tarczy – kontekst projektu (stan na 2026-10-24)
+# Oko Tarczy – kontekst projektu (stan na 2026-11-07)
 
 Aplikacja do automatycznego liczenia punktów w darta (501/301/701, Cricket, tryby treningowe) kamerą telefonu, w stylu Dartsmind.
 Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej tarczy i zgłasza wyniki.
@@ -137,6 +137,17 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
   Dziennik: `!! siatka dociągnięta do drutów o N mm`, w nagłówku „siatka do drutów N×”, krok czasu `siatka do drutów`. Ustawienia wykrywania, „Dociągaj siatkę do drutów na początku tury” (`S.settings.snap`, domyślnie wł.).
 - Symulacja na tych rzutach (dociąganie na zdjęciu przed 1. lotką tury, ocena na 2. i 3. lotce, czyli na innych zdjęciach): ponad 1 mm od drutów 119 → 0 z 903, 90% 1,10 → 0,41 mm; 24 dociągnięcia na 558 tur. Próg 0,8 mm zostawiał 2 rzuty > 1 mm. Rdzeń bez zmian (`test_rzutow.js` identyczny).
 - Playwright (atrapa kamery: zdjęcie tarczy z 5.11, 2160×3840): siatka celowo przesunięta o 3,6 mm jest po starcie gry dociągnięta (zostaje 0,3 mm, czyli to pół piksela), następna tura nic nie rusza; dobra siatka i wyłącznik: bez zmian. `refineGrid` ok. 90 ms (Chromium bez karty); na S26 jeszcze nie sprawdzone.
+
+## Mapa trafień (heat mapa) w Statystykach (2026.11.07a)
+- Piotr (2026-11-07): „Zróbmy heat mapę”. Statystyki mają na górze kartę „Mapa trafień”: tarcza w stonowanych zieleniach, na niej ciepło (ciemna czerwień → czerwień → bursztyn → krem = więcej lotek, skala liniowa do najgęstszego miejsca), druty i liczby na wierzchu.
+  Zakres: Ta gra / 7 dni / 30 dni / Wszystko (po czasie startu gry), tryb gry (gdy gracz ma lotki z więcej niż jednego), wybrany gracz to ten sam co w statystykach (`statsWho`; lista graczy bierze też nazwy z mapy).
+  „Zbliżenie” (`heatViewOf`: kwadrat wokół najgęstszego miejsca z ok. 70% lotek, połowa 45–90 mm), „Pokaż/Ukryj lotki” (kropki, same włączone przy ≤ 150 lotkach), stuknięcie pola na mapie albo na liście „Najczęściej trafiane pola” obrysowuje pole i pisze liczbę lotek.
+- Dane: każda lotka ze znanym miejscem (`d.board`, mm tarczy: kamera, model AI albo poprawka stuknięciem), osobno od historii gier, bo historia ma tylko skończone gry.
+  `heatEntry(g)` = {id: `g.hid`, t: `g.ht`, m: tryb, n: nazwy graczy, d: [[gracz, x, y]] co 0,1 mm, u: lotki bez miejsca na gracza}. `heatSync` w `afterChange`: `localStorage` `heatnow` = bieżąca gra (przepisywana przy każdej zmianie, więc Cofnij i poprawki się zgadzają), poprzednia trafia do `heat` przy nowej grze. `HEAT_MAX` = 30 000 lotek (ok. 15 bajtów każda), najstarsze gry wypadają.
+  `gameForStore` zapisuje teraz `board` lotek (przeżywa odświeżenie strony). Poprawka stuknięciem (`fix-save`) przelicza `board` z nowego miejsca (wcześniej zostawało stare z wykrycia), poprawka z klawiatury usuwa miejsce. „Usuń historię” czyści też mapę (bieżąca gra zostaje).
+- Lotki wpisane ręcznie i odbite nie mają miejsca (liczone w „bez miejsca”). Stare rzuty z paczek Nauka AI nie są wczytane (brak gracza i trybu); mapa zbiera od tej wersji.
+- Sprawdzone w Playwright (kopia strony z dostępem do środka, scratchpad `pw_heat.js`, `pw_fix.js`): 1711 prawdziwych rzutów z paczek 25.10–5.11 jako 8 gier, filtry, stuknięcia, zbliżenie, 2 graczy, Cofnij, odświeżenie, nowa gra (archiwum), poprawka stuknięciem i klawiaturą, 360×640.
+  Rysowanie 30 000 lotek: 69 ms cała tarcza, 127 ms zbliżenie (Chromium na komputerze; siatka gęstości ma oczko ≥ sigma/3). Rdzeń bez zmian (identyczny co do bajta).
 
 ## Menu główne (2026.10.30b)
 - Piotr: po „Gotowe, gramy” aplikacja od razu liczyła, czy grał, czy nie. Nowy ekran `scr-home` (`renderHome`): Kontynuuj grę (gdy gra ma rzuty i nie jest skończona), Nowa gra, Statystyki, Kalibracja kamery, Ustawienia wykrywania, Licz ręcznie, Instrukcja.
@@ -317,7 +328,7 @@ Rozmawiamy po polsku, prosto, bez żargonu. Użytkownik testuje na prawdziwej ta
   `speak` → `elSay` (kolejka `EL.q`): zdanie (po `sayNums`) z pamięci Cache API `lektor-el` (klucz: głos/model/tempo/tekst), inaczej pobranie; odpowiedź > `EL_WAIT` = 2,5 s, brak sieci albo błąd → `sysSpeak` (lektor telefonu), błąd daje przerwę 2 min (401/403: 1 h) i wpis `!!`. `speak('')` nadal odblokowuje mowę Androida. Dziennik: `lektor ElevenLabs z pamięci N, pobrane M`.
   Od 2026.10.31f „Posłuchaj” w części ElevenLabs (`elListen`) czeka na nagranie bez limitu 2,5 s i pisze pod spodem, co się stało (błąd API, czas pobrania); ostatni błąd lektora (`EL.last`) też jest w tym opisie. Powód: Piotr słyszał tylko lektora telefonu i nie było wiadomo dlaczego.
   Playwright (atrapa API): zły klucz 401, pamięć działa też po odświeżeniu, wolna odpowiedź i brak sieci → lektor telefonu. Na S26 i z prawdziwym API jeszcze nie sprawdzone (CORS, odtwarzanie dźwięku bez stuknięcia).
-- Pomysły na dalej: Killer, Cricket „cut-throat”, statystyki trafień (mapa tarczy), eksport historii.
+- Pomysły na dalej: Killer, Cricket „cut-throat”, eksport historii (mapa trafień zrobiona w 2026.11.07a).
 
 ## Model AI grota (od 2026.10.25b)
 - Próba na eksporcie z 2026-10-25 (691 próbek, 624 do nauki), sprawdzian po czasie w 5 częściach (każdy rzut ocenia model, który go nie widział):

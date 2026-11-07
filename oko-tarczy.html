@@ -394,6 +394,15 @@ input[type=range]{accent-color:var(--cream);width:100%}
 .st-list div:last-child{border-bottom:0}
 .st-list span:first-child{color:var(--muted)}
 .st-list span:last-child{text-align:right;font-weight:600}
+.heat-cv{display:block;width:100%;aspect-ratio:1;border-radius:var(--r-sm);border:1px solid var(--line);background:#060907;touch-action:manipulation;cursor:pointer}
+.heat-key{display:flex;align-items:center;gap:8px;font-size:.78rem;color:var(--muted)}
+.heat-key i{flex:1;height:8px;border-radius:4px;background:linear-gradient(90deg, rgba(158,36,27,.5), #e2493d 30%, #f2b441 62%, #fff6d6)}
+.heat-tools{display:flex;gap:6px}
+.heat-tools .btn{flex:1;min-height:40px;padding:6px 8px;font-size:.95rem}
+.heat-top div{cursor:pointer}
+.heat-top div[aria-current="true"] span:first-child{color:var(--cream);font-weight:600}
+.st-card .seg.wrap button{min-height:38px;font-size:.98rem}
+#heat-span button{flex-basis:20%}
 .ds{display:grid;gap:8px}
 .ds .lab{font:700 .9rem/1 var(--display);letter-spacing:.2em;text-transform:uppercase;color:var(--cream)}
 .ds-count{margin:0}
@@ -3342,7 +3351,9 @@ function loadGame() {
 }
 // The game without pictures and detector data: what is saved, and what the scoreboard on another device gets.
 function gameForStore() {
-  const strip = (d) => ({ num: d.num, mult: d.mult, pts: d.pts, label: d.label, auto: !!d.auto, unsure: !!d.unsure, fixed: !!d.fixed });
+  // board = where the dart landed (mm), kept for the heat map after a reload
+  const strip = (d) => Object.assign({ num: d.num, mult: d.mult, pts: d.pts, label: d.label, auto: !!d.auto, unsure: !!d.unsure, fixed: !!d.fixed },
+    d.board ? { board: [Math.round(d.board[0] * 10) / 10, Math.round(d.board[1] * 10) / 10] } : {});
   return Object.assign({}, S.game, {
     cur: { p: S.game.cur.p, darts: S.game.cur.darts.map(strip) },
     turns: S.game.turns.map(t => Object.assign({}, t, { darts: t.darts.map(strip) }))
@@ -4722,7 +4733,7 @@ function nextTurn(manual) {
   speak(turnPrompt());
 }
 
-function afterChange() { recordGame(); saveGame(); renderGame(); }
+function afterChange() { recordGame(); heatSync(); saveGame(); renderGame(); }
 
 /* ---------------- History of finished games (statistics) ---------------- */
 // A finished game is written once; Cofnij or a correction that changes the result rewrites or removes it.
@@ -4743,6 +4754,45 @@ function recordGame() {
     g.rec = rec.id;
   }
   store.set('history', hist);
+}
+
+/* ---------------- Heat map data: where the darts landed ---------------- */
+// Every dart with a known spot on the board (camera, model AI or a tap correction; typed-in and bounced darts have none), per game, in board mm.
+// 'heatnow' = the game in progress, rewritten at every change (so Cofnij and corrections stay right); 'heat' = earlier games, moved there once a new game starts.
+const HEAT_MAX = 30000;   // darts kept (about 15 bytes each); the oldest games go first
+const r1 = (n) => Math.round(n * 10) / 10;
+function heatLoad() { const a = store.get('heat', []); return Array.isArray(a) ? a : []; }
+function heatEntry(g) {
+  if (!g.hid) { g.hid = Date.now().toString(36) + Math.random().toString(36).slice(2, 6); g.ht = Date.now(); }
+  const d = [], u = g.players.map(() => 0);
+  const add = (p, x) => { if (x.board) d.push([p, r1(x.board[0]), r1(x.board[1])]); else u[p]++; };
+  g.turns.forEach(t => t.darts.forEach(x => add(t.p, x)));
+  g.cur.darts.forEach(x => add(g.cur.p, x));
+  return { id: g.hid, t: g.ht, m: C.modeOf(g), n: g.players.map(p => p.name), d, u };
+}
+function heatArchive(e) {
+  const a = heatLoad(), i = a.findIndex(x => x.id === e.id);
+  if (i >= 0) a[i] = e; else a.push(e);
+  let n = a.reduce((s, x) => s + x.d.length, 0);
+  while (n > HEAT_MAX && a.length > 1) n -= a.shift().d.length;
+  store.set('heat', a);
+}
+let heatLast = null;
+function heatSync() {
+  const e = heatEntry(S.game), js = JSON.stringify(e);
+  if (js === heatLast) return;
+  heatLast = js;
+  const prev = store.get('heatnow', null);
+  if (prev && prev.id !== e.id && prev.d && prev.d.length) heatArchive(prev);
+  store.set('heatnow', e.d.length ? e : null);
+}
+// All games for the map: the archive plus the game in progress.
+function heatAll() {
+  const a = heatLoad(), e = heatEntry(S.game), prev = store.get('heatnow', null);
+  if (prev && prev.id !== e.id && prev.d && !a.some(x => x.id === prev.id)) a.push(prev);
+  const i = a.findIndex(x => x.id === e.id);
+  if (i >= 0) a[i] = e; else a.push(e);
+  return a;
 }
 
 /* ---------------- Rendering the scoreboard ---------------- */
@@ -5381,7 +5431,8 @@ $('#fix-save').addEventListener('click', () => {
   if (!d || !fix.dart) { closeSheet('#sh-fix'); return; }
   const moved = fix.tip && d.tip && (fix.tip[0] !== d.tip[0] || fix.tip[1] !== d.tip[1]);
   if (moved && d.auto && d.axis) learnPoint(d, fix.tip);
-  C.setDart(g, fix.i, Object.assign({}, fix.dart, { tip: fix.tip, unsure: false, auto: d.auto, fixed: d.fixed || moved, confirmed: true }));
+  const board = moved && S.cal ? C.applyH(S.cal.Hi, fix.tip[0], fix.tip[1]) : d.board;   // the tapped spot, for the heat map
+  C.setDart(g, fix.i, Object.assign({}, fix.dart, { tip: fix.tip, board: board || undefined, unsure: false, auto: d.auto, fixed: d.fixed || moved, confirmed: true }));
   closeSheet('#sh-fix'); afterChange();
 });
 $('#fix-del').addEventListener('click', () => {
@@ -5421,7 +5472,7 @@ function learnPoint(d, trueTip) {
    Every dart seen by the camera keeps a crop of the picture before and after the throw.
    When the turn ends, the crop goes to IndexedDB with the final score, the point the player
    tapped (when corrected) and the geometry. Exported as one ZIP to train the tip model. */
-const APP_VERSION = '2026.11.05a';
+const APP_VERSION = '2026.11.07a';
 $('#menu-title').textContent = 'Menu · wersja ' + APP_VERSION;
 const DS = {
   p: null,
@@ -5939,6 +5990,7 @@ let statsWho = null;
 function openStats() {
   const hist = loadHistory(), cnt = new Map();
   for (const r of hist) for (const o of r.players) cnt.set(o.name, (cnt.get(o.name) || 0) + 1);
+  for (const e of heatAll()) e.n.forEach((n, p) => { if (e.d.some(q => q[0] === p)) cnt.set(n, (cnt.get(n) || 0) + 0.5); });   // players with darts on the heat map only
   const names = Array.from(cnt.keys()).sort((a, b) => cnt.get(b) - cnt.get(a));
   if (!names.includes(statsWho)) statsWho = names.includes(S.game.players[0].name) ? S.game.players[0].name : names[0];
   const who = $('#stats-who');
@@ -5946,14 +5998,14 @@ function openStats() {
   who.hidden = names.length < 2;
   names.forEach(n => { const b = document.createElement('button'); b.dataset.v = n; b.textContent = n; who.appendChild(b); });
   syncSeg('#stats-who', statsWho);
+  openSheet('#sh-stats');   // first, so the heat map knows its width
   renderStats(hist);
-  openSheet('#sh-stats');
 }
 $('#stats-who').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; statsWho = b.dataset.v; syncSeg('#stats-who', statsWho); renderStats(loadHistory()); });
 $('#stats-close').addEventListener('click', () => closeSheet('#sh-stats'));
 $('#stats-clear').addEventListener('click', () => {
   if (!confirm('Usunąć całą historię gier i statystyki? Tego nie da się cofnąć.')) return;
-  store.set('history', []); S.game.rec = null; saveGame(); openStats();
+  store.set('history', []); store.set('heat', []); store.set('heatnow', null); heatLast = null; S.game.rec = null; saveGame(); openStats();
 });
 const tile = (label, value) => `<div class="st-tile"><small>${label}</small><b>${value}</b></div>`;
 const dateOf = (t) => { const d = new Date(t), z = (n) => String(n).padStart(2, '0'); return z(d.getDate()) + '.' + z(d.getMonth() + 1) + ' ' + z(d.getHours()) + ':' + z(d.getMinutes()); };
@@ -5969,7 +6021,8 @@ function resultOf(r, o) {
 function renderStats(hist) {
   const body = $('#stats-body');
   const mine = hist.map(r => ({ r, o: r.players.find(o => o.name === statsWho) })).filter(x => x.o);
-  if (!mine.length) { body.innerHTML = '<p class="hint">Tu pojawią się statystyki skończonych gier: średnie, najlepsze wyniki, ostatnie gry. Zagraj pierwszą grę do końca.</p>'; return; }
+  const heat = '<div class="st-card" id="heat-card"></div>';
+  if (!mine.length) { body.innerHTML = heat + '<p class="hint">Tu pojawią się statystyki skończonych gier: średnie, najlepsze wyniki, ostatnie gry. Zagraj pierwszą grę do końca.</p>'; renderHeat(); return; }
   const multi = (x) => x.r.players.length > 1;
   const winsLine = (list) => { const m = list.filter(multi); return m.length ? tile('Wygrane z rywalem', m.filter(x => x.o.won).length + ' z ' + m.length) : ''; };
   let html = '';
@@ -6025,8 +6078,180 @@ function renderStats(hist) {
   html += scored('shanghai', 'Shanghai', (x) => C.roundsOf(x.r) + ' rund');
   html += `<div class="st-card"><h4>Ostatnie gry</h4><div class="st-list">` + mine.slice(-20).reverse().map(x =>
     `<div><span>${dateOf(x.r.t)} · ${escapeHtml(x.r.label)}</span><span>${escapeHtml(resultOf(x.r, x.o))}</span></div>`).join('') + `</div></div>`;
-  body.innerHTML = html;
+  body.innerHTML = heat + html;
+  renderHeat();
 }
+
+/* ---------------- Heat map (statistics): where the player's darts land ---------------- */
+// Board drawn in quiet greens, heat on top in one direction (dark red -> red -> amber -> cream = more darts), thin wires over it so the fields stay readable.
+// Tap a field (on the map or in the list) to see how many darts went there.
+const HM = { span: 'all', mode: 'all', zoom: false, dotsUser: null, sel: null, view: null, pts: [], u: 0, off: null, offKey: '' };
+const HEAT_SPANS = [['game', 'Ta gra'], ['7', '7 dni'], ['30', '30 dni'], ['all', 'Wszystko']];
+const HEAT_FULL = { cx: 0, cy: 0, r: 215 };   // mm: the board (170) with its numbers and the near misses
+const HEAT_STOPS = [[0, 158, 36, 27, 0], [0.12, 158, 36, 27, 0.3], [0.38, 226, 73, 61, 0.68], [0.7, 242, 180, 65, 0.9], [1, 255, 246, 214, 0.98]];
+const HEAT_LUT = (() => {
+  const L = new Uint8ClampedArray(256 * 4);
+  for (let i = 0; i < 256; i++) {
+    const t = i / 255; let j = 0;
+    while (j < HEAT_STOPS.length - 2 && t > HEAT_STOPS[j + 1][0]) j++;
+    const a = HEAT_STOPS[j], b = HEAT_STOPS[j + 1], f = Math.max(0, Math.min(1, (t - a[0]) / (b[0] - a[0])));
+    for (let c = 0; c < 4; c++) L[i * 4 + c] = (a[c + 1] + (b[c + 1] - a[c + 1]) * f) * (c === 3 ? 255 : 1);
+  }
+  return L;
+})();
+const heatDots = () => HM.dotsUser != null ? HM.dotsUser : HM.pts.length <= 150;
+const heatName = (l) => l === '0' ? 'Poza tarczą' : l === 'BULL' ? 'Bull' : l;
+function heatPick() {
+  const lim = HM.span === 'all' || HM.span === 'game' ? 0 : Date.now() - (+HM.span) * 864e5;
+  const pts = [], modes = new Map(); let u = 0;
+  for (const e of heatAll()) {
+    if (HM.span === 'game' ? e.id !== S.game.hid : (e.t || 0) < lim) continue;
+    const ps = []; e.n.forEach((n, p) => { if (n === statsWho) ps.push(p); });
+    if (!ps.length) continue;
+    const mine = e.d.filter(q => ps.includes(q[0]));
+    if (mine.length) modes.set(e.m, (modes.get(e.m) || 0) + mine.length);
+    if (HM.mode !== 'all' && e.m !== HM.mode) continue;
+    mine.forEach(q => pts.push([q[1], q[2]]));
+    ps.forEach(p => { u += (e.u && e.u[p]) || 0; });
+  }
+  return { pts, u, modes };
+}
+// Gaussian blobs (sigma in mm) summed on a G x G grid over the view.
+function heatDensity(pts, v, G, sigma) {
+  const dens = new Float32Array(G * G), cell = 2 * v.r / G, s = sigma / cell, rad = Math.ceil(3 * s), k2 = -1 / (2 * s * s), n = 2 * rad + 2;
+  const wx = new Float32Array(n), wy = new Float32Array(n);
+  for (const p of pts) {
+    const gx = (p[0] - v.cx + v.r) / cell, gy = (v.cy + v.r - p[1]) / cell;
+    if (gx < -rad || gy < -rad || gx > G + rad || gy > G + rad) continue;
+    const x0 = Math.floor(gx - rad), y0 = Math.floor(gy - rad);
+    for (let j = 0; j < n; j++) { const dx = x0 + j + 0.5 - gx, dy = y0 + j + 0.5 - gy; wx[j] = Math.exp(dx * dx * k2); wy[j] = Math.exp(dy * dy * k2); }
+    for (let b = 0; b < n; b++) {
+      const y = y0 + b; if (y < 0 || y >= G) continue;
+      const row = y * G, w = wy[b];
+      for (let a = 0; a < n; a++) { const x = x0 + a; if (x >= 0 && x < G) dens[row + x] += w * wx[a]; }
+    }
+  }
+  return dens;
+}
+// Close-up: a square around the densest spot that holds about 70% of the darts (at least 2x closer than the whole board).
+function heatViewOf(pts) {
+  if (!HM.zoom || pts.length < 3) return HEAT_FULL;
+  const G = 64, v = HEAT_FULL, cell = 2 * v.r / G, dens = heatDensity(pts, v, G, 15);
+  let bi = 0; for (let i = 1; i < dens.length; i++) if (dens[i] > dens[bi]) bi = i;
+  const cx = v.cx - v.r + (bi % G + 0.5) * cell, cy = v.cy + v.r - (Math.floor(bi / G) + 0.5) * cell;
+  const ds = pts.map(p => Math.max(Math.abs(p[0] - cx), Math.abs(p[1] - cy))).sort((a, b) => a - b);
+  return { cx, cy, r: Math.max(45, Math.min(90, ds[Math.floor(0.7 * (ds.length - 1))] + 12)) };
+}
+const heatLab = (l) => l === 'BULL' ? [25, 2] : l === '0' ? [0, 0] : /^[TD]/.test(l) ? [+l.slice(1), l[0] === 'T' ? 3 : 2] : [+l, 1];
+function drawHeatMap() {
+  const cv = $('#heat-cv'); if (!cv) return;
+  const pts = HM.pts, v = HM.view = heatViewOf(pts), dpr = Math.min(3, window.devicePixelRatio || 1);
+  const W = Math.max(200, Math.round((cv.clientWidth || 320) * dpr));
+  if (cv.width !== W) cv.width = cv.height = W;
+  const ctx = cv.getContext('2d'), k = W / (2 * v.r), RG = C.RING, D = Math.PI / 180;
+  const ox = (0 - v.cx) * k + W / 2, oy = (v.cy - 0) * k + W / 2;
+  const seg = (r0, r1, a0, a1) => { ctx.beginPath(); ctx.arc(ox, oy, r1 * k, a0, a1); ctx.arc(ox, oy, r0 * k, a1, a0, true); ctx.closePath(); };
+  const ang = (i) => [-(99 - 18 * i) * D, -(81 - 18 * i) * D];   // sector i of C.SECTORS (20 at the top)
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = '#060907'; ctx.fillRect(0, 0, W, W);
+  ctx.fillStyle = '#0d130f'; ctx.beginPath(); ctx.arc(ox, oy, 205 * k, 0, 2 * Math.PI); ctx.fill();
+  C.SECTORS.forEach((n, i) => {
+    const [a0, a1] = ang(i), dark = i % 2 === 0;
+    ctx.fillStyle = dark ? '#141a16' : '#262f29'; seg(RG.outerBull, RG.trebleIn, a0, a1); ctx.fill(); seg(RG.trebleOut, RG.doubleIn, a0, a1); ctx.fill();
+    ctx.fillStyle = dark ? '#2c372f' : '#3b473e'; seg(RG.trebleIn, RG.trebleOut, a0, a1); ctx.fill(); seg(RG.doubleIn, RG.doubleOut, a0, a1); ctx.fill();
+  });
+  ctx.fillStyle = '#3b473e'; ctx.beginPath(); ctx.arc(ox, oy, RG.outerBull * k, 0, 2 * Math.PI); ctx.fill();
+  ctx.fillStyle = '#56645a'; ctx.beginPath(); ctx.arc(ox, oy, RG.bull * k, 0, 2 * Math.PI); ctx.fill();
+  // heat layer (kept until the darts or the view change: tapping a field only redraws the outline)
+  // blob size in mm (smaller in the close-up, to show the spread inside a treble); grid cell >= sigma/3 keeps it quick with many darts
+  const n = pts.length, sig = (n < 40 ? 9 : n < 300 ? 7 : 6) * (v.r < HEAT_FULL.r ? 0.7 : 1), G = Math.max(60, Math.min(240, Math.floor(6 * v.r / sig)));
+  const key = [v.cx, v.cy, v.r, n, HM.span, HM.mode, statsWho].join('|');
+  if (HM.offKey !== key) {
+    const dens = heatDensity(pts, v, G, sig);
+    let top = 0; for (let i = 0; i < dens.length; i++) if (dens[i] > top) top = dens[i];
+    const off = HM.off || document.createElement('canvas'); off.width = off.height = G;
+    const img = new ImageData(G, G);
+    if (top > 0) for (let i = 0; i < dens.length; i++) {
+      const t = dens[i] / top; if (t < 0.04) continue;
+      const q = Math.round(t * 255) * 4, j = i * 4;
+      img.data[j] = HEAT_LUT[q]; img.data[j + 1] = HEAT_LUT[q + 1]; img.data[j + 2] = HEAT_LUT[q + 2]; img.data[j + 3] = HEAT_LUT[q + 3];
+    }
+    off.getContext('2d').putImageData(img, 0, 0);
+    HM.off = off; HM.offKey = key;
+  }
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(HM.off, 0, 0, W, W);
+  // wires and numbers
+  ctx.strokeStyle = 'rgba(233,220,186,.3)'; ctx.lineWidth = Math.max(1, 0.8 * dpr);
+  [RG.bull, RG.outerBull, RG.trebleIn, RG.trebleOut, RG.doubleIn, RG.doubleOut].forEach(r => { ctx.beginPath(); ctx.arc(ox, oy, r * k, 0, 2 * Math.PI); ctx.stroke(); });
+  ctx.beginPath();
+  for (let i = 0; i < 20; i++) { const a = ang(i)[0]; ctx.moveTo(ox + RG.outerBull * k * Math.cos(a), oy + RG.outerBull * k * Math.sin(a)); ctx.lineTo(ox + RG.doubleOut * k * Math.cos(a), oy + RG.doubleOut * k * Math.sin(a)); }
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(233,220,186,.78)'; ctx.font = '700 ' + Math.round(14 * dpr) + 'px "Barlow Condensed","Arial Narrow",sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  C.SECTORS.forEach((num, i) => { const a = (90 - 18 * i) * D; ctx.fillText(String(num), ox + 190 * k * Math.cos(a), oy - 190 * k * Math.sin(a)); });
+  // the darts themselves
+  if (heatDots()) {
+    const rr = 1.8 * dpr;
+    ctx.fillStyle = 'rgba(244,238,220,.92)'; ctx.strokeStyle = 'rgba(6,9,7,.85)'; ctx.lineWidth = dpr;
+    for (const p of pts) { ctx.beginPath(); ctx.arc(ox + p[0] * k, oy - p[1] * k, rr, 0, 2 * Math.PI); ctx.fill(); ctx.stroke(); }
+  }
+  // outline of the chosen field
+  if (HM.sel) {
+    const [num, mult] = heatLab(HM.sel), i = C.SECTORS.indexOf(num);
+    ctx.strokeStyle = '#e9dcba'; ctx.lineWidth = 2.5 * dpr;
+    const out = () => { ctx.save(); ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.lineWidth = 5 * dpr; ctx.stroke(); ctx.restore(); ctx.stroke(); };
+    if (num === 25) { ctx.beginPath(); ctx.arc(ox, oy, (mult === 2 ? RG.bull : RG.outerBull) * k, 0, 2 * Math.PI); out(); }
+    else if (num === 0) { ctx.setLineDash([6 * dpr, 5 * dpr]); ctx.beginPath(); ctx.arc(ox, oy, RG.doubleOut * k, 0, 2 * Math.PI); out(); ctx.setLineDash([]); }
+    else if (i >= 0) {
+      const [a0, a1] = ang(i);
+      const parts = mult === 3 ? [[RG.trebleIn, RG.trebleOut]] : mult === 2 ? [[RG.doubleIn, RG.doubleOut]] : [[RG.outerBull, RG.trebleIn], [RG.trebleOut, RG.doubleIn]];
+      parts.forEach(([r0, r1]) => { seg(r0, r1, a0, a1); out(); });
+    }
+  }
+}
+function heatInfo() {
+  const info = $('#heat-info'), list = $('#heat-top'); if (!info) return;
+  const pts = HM.pts, n = pts.length, cnt = new Map();
+  pts.forEach(p => { const l = C.scoreAt(p[0], p[1]).label; cnt.set(l, (cnt.get(l) || 0) + 1); });
+  const pc = (c) => Math.round(c / n * 100) + '%';
+  const top = Array.from(cnt.entries()).sort((a, b) => b[1] - a[1]);
+  if (HM.sel) { const c = cnt.get(HM.sel) || 0; info.textContent = heatName(HM.sel) + ': ' + lotek(c) + ' z ' + n + ' (' + pc(c) + '). Stuknij jeszcze raz, żeby odznaczyć.'; }
+  else info.textContent = lotek(n) + ' na mapie' + (HM.u ? ', ' + HM.u + ' bez miejsca (wpisane ręcznie albo odbite)' : '') + '. Stuknij pole, żeby zobaczyć liczbę trafień.';
+  $('#heat-cv').setAttribute('aria-label', 'Mapa trafień: ' + lotek(n) + '. Najczęściej: ' + top.slice(0, 3).map(([l, c]) => heatName(l) + ' ' + pc(c)).join(', '));
+  list.innerHTML = '<div style="cursor:default"><span>Najczęściej trafiane pola</span><span>lotki</span></div>'
+    + top.slice(0, 8).map(([l, c]) => `<div data-l="${escapeHtml(l)}" aria-current="${l === HM.sel}"><span>${escapeHtml(heatName(l))}</span><span>${c} · ${pc(c)}</span></div>`).join('');
+}
+function renderHeat() {
+  const card = $('#heat-card'); if (!card) return;
+  let r = heatPick();
+  if (HM.mode !== 'all' && !r.modes.has(HM.mode)) { HM.mode = 'all'; r = heatPick(); }
+  HM.pts = r.pts; HM.u = r.u;
+  const seg = (id, list, v) => `<div class="seg wrap" id="${id}">` + list.map(([k, t]) => `<button data-v="${k}" aria-pressed="${k === v}">${escapeHtml(t)}</button>`).join('') + '</div>';
+  let h = '<h4>Mapa trafień</h4>' + seg('heat-span', HEAT_SPANS, HM.span);
+  if (r.modes.size > 1) h += seg('heat-mode', [['all', 'Wszystkie gry']].concat(Array.from(r.modes.keys()).map(m => [m, MODE_LABEL[m] || m])), HM.mode);
+  if (!r.pts.length) {
+    card.innerHTML = h + `<p class="hint">${HM.span === 'game' ? 'W tej grze nie ma jeszcze lotek policzonych kamerą.' : 'Brak lotek w tym czasie.'} Mapa pokazuje miejsca lotek policzonych kamerą (także poprawionych stuknięciem), zbierane od wersji 2026.11.07a. Lotki wpisane ręcznie nie mają miejsca.</p>`;
+    return;
+  }
+  card.innerHTML = h + '<canvas class="heat-cv" id="heat-cv" role="img"></canvas>'
+    + '<div class="heat-key"><span>rzadko</span><i></i><span>często</span></div>'
+    + `<div class="heat-tools"><button class="btn" id="heat-zoom">${HM.zoom ? 'Cała tarcza' : 'Zbliżenie'}</button><button class="btn" id="heat-dots">${heatDots() ? 'Ukryj lotki' : 'Pokaż lotki'}</button></div>`
+    + '<p class="hint" id="heat-info"></p><div class="st-list heat-top" id="heat-top"></div>';
+  drawHeatMap(); heatInfo();
+}
+$('#stats-body').addEventListener('click', (e) => {
+  if (e.target.id === 'heat-cv') {
+    const v = HM.view, r = e.target.getBoundingClientRect(); if (!v || !r.width) return;
+    const x = v.cx + ((e.clientX - r.left) / r.width * 2 - 1) * v.r, y = v.cy - ((e.clientY - r.top) / r.height * 2 - 1) * v.r;
+    const l = C.scoreAt(x, y).label; HM.sel = HM.sel === l ? null : l; drawHeatMap(); heatInfo(); return;
+  }
+  const b = e.target.closest('#heat-span button, #heat-mode button, #heat-zoom, #heat-dots, #heat-top [data-l]'); if (!b) return;
+  if (b.closest('#heat-span')) { HM.span = b.dataset.v; HM.sel = null; renderHeat(); }
+  else if (b.closest('#heat-mode')) { HM.mode = b.dataset.v; HM.sel = null; renderHeat(); }
+  else if (b.id === 'heat-zoom') { HM.zoom = !HM.zoom; renderHeat(); }
+  else if (b.id === 'heat-dots') { HM.dotsUser = !heatDots(); renderHeat(); }
+  else { HM.sel = HM.sel === b.dataset.l ? null : b.dataset.l; drawHeatMap(); heatInfo(); }
+});
 
 // Settings
 function openSettings() {
